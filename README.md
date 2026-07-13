@@ -8,7 +8,7 @@ En Windows-app som läser Twitch-chatten och visar den som en stor, lugn och kli
 - Transparent, alltid-överst och fokusfri chatt-overlay.
 - Låst klickigenom-läge och separat redigeringsläge för flytt/storleksändring.
 - Globala snabbtangenter (fungerar även när spelet har fokus): visa/dölj overlay (standard `Ctrl+F9`) och redigeringsläge (standard `Ctrl+F10`). Ändra kombinationerna direkt i appen.
-- Twitch-emotes renderas som bilder inuti meddelanden – fungerar anonymt, ingen app-registrering behövs.
+- Twitch-emotes renderas som bilder inuti meddelanden, inklusive animerade emotes med automatisk statisk fallback – fungerar anonymt, ingen app-registrering behövs.
 - Unicode-emojis renderas i färg med [Twemoji](https://github.com/jdecked/twemoji) (CC-BY 4.0) eftersom WPF annars visar dem monokromt.
 - Separata reglage för hela rutans bakgrund och varje meddelandes bakgrund; båda kan dras till 0 % för helt ren overlay.
 - Valfri kantlinje runt texten som håller den läsbar utan bakgrund.

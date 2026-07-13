@@ -1,3 +1,5 @@
+using System.Net.Http;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -10,14 +12,20 @@ using System.Windows.Threading;
 using TwitchOverlayHelper.Models;
 using TwitchOverlayHelper.Settings;
 using TwitchOverlayHelper.Twitch;
+using XamlAnimatedGif;
 
 namespace TwitchOverlayHelper.Overlay;
 
 public partial class OverlayWindow : Window
 {
     private static readonly System.Windows.Media.Effects.DropShadowEffect TextOutlineEffect = CreateTextOutline();
+    private static readonly HttpClient EmoteHttpClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(8)
+    };
     private readonly AppSettings _settings;
     private readonly TwitchBadgeCatalog _badges;
+    private readonly AnimatedEmoteLoader _animatedEmotes = new(EmoteHttpClient);
     private readonly DispatcherTimer _topmostTimer;
     private readonly Dictionary<string, BitmapImage> _imageCache = new(StringComparer.Ordinal);
     private RenderSettings? _renderSettings;
@@ -48,7 +56,7 @@ public partial class OverlayWindow : Window
     {
         byte alpha = (byte)Math.Round(Math.Clamp(_settings.BackgroundOpacity, 0, 0.96) * 255);
         Surface.Background = new SolidColorBrush(Color.FromArgb(alpha, 14, 17, 25));
-        while (MessagePanel.Children.Count > _settings.MaxMessages) MessagePanel.Children.RemoveAt(0);
+        while (MessagePanel.Children.Count > _settings.MaxMessages) RemoveOldestMessage();
 
         RenderSettings current = RenderSettings.From(_settings);
         if (!forceRefresh && _renderSettings == current) return;
@@ -56,7 +64,7 @@ public partial class OverlayWindow : Window
 
         ChatMessage[] messages = MessagePanel.Children.OfType<Border>().Select(card => card.Tag).OfType<ChatMessage>()
             .TakeLast(_settings.MaxMessages).ToArray();
-        MessagePanel.Children.Clear();
+        ClearMessages();
         foreach (ChatMessage message in messages) MessagePanel.Children.Add(CreateMessageCard(message));
         if (messages.Length > 0) ChatScroller.ScrollToEnd();
     }
@@ -68,7 +76,7 @@ public partial class OverlayWindow : Window
     {
         foreach (ChatMessage message in messages)
             MessagePanel.Children.Add(CreateMessageCard(message));
-        while (MessagePanel.Children.Count > _settings.MaxMessages) MessagePanel.Children.RemoveAt(0);
+        while (MessagePanel.Children.Count > _settings.MaxMessages) RemoveOldestMessage();
         if (messages.Count > 0) ChatScroller.ScrollToEnd();
     }
 
@@ -212,7 +220,9 @@ public partial class OverlayWindow : Window
             // WPF renders Twitch's static PNG reliably. The "default" format may
             // select an animated format whose first frame can be decoded incorrectly.
             string url = $"https://static-cdn.jtvnw.net/emoticons/v2/{Uri.EscapeDataString(emote.EmoteId)}/static/dark/2.0";
-            image.Source = GetImage(url, 64);
+            BitmapImage staticImage = GetImage(url, 64);
+            image.Source = staticImage;
+            EnableAnimation(image, emote.EmoteId, staticImage);
         }
         catch (UriFormatException)
         {
@@ -220,6 +230,67 @@ public partial class OverlayWindow : Window
         }
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
         return new InlineUIContainer(image) { BaselineAlignment = BaselineAlignment.Center };
+    }
+
+    private void EnableAnimation(Image image, string emoteId, ImageSource staticImage)
+    {
+        bool removed = false;
+
+        void StopAnimation(object sender, RoutedEventArgs args)
+        {
+            removed = true;
+            image.ClearValue(AnimationBehavior.SourceStreamProperty);
+            image.Unloaded -= StopAnimation;
+            AnimationBehavior.RemoveErrorHandler(image, FallBackToStatic);
+        }
+
+        void FallBackToStatic(object sender, AnimationErrorEventArgs args)
+        {
+            args.Handled = true;
+            _animatedEmotes.MarkUnavailable(emoteId);
+            image.ClearValue(AnimationBehavior.SourceStreamProperty);
+            image.Source = staticImage;
+        }
+
+        image.Unloaded += StopAnimation;
+        AnimationBehavior.AddErrorHandler(image, FallBackToStatic);
+        _ = LoadAnimationAsync();
+
+        async Task LoadAnimationAsync()
+        {
+            try
+            {
+                byte[]? animationBytes = await _animatedEmotes.GetAnimationAsync(emoteId);
+                if (removed || animationBytes is null) return;
+
+                var stream = new MemoryStream(animationBytes, writable: false);
+                image.Source = null;
+                AnimationBehavior.SetCacheFramesInMemory(image, false);
+                AnimationBehavior.SetRepeatBehavior(image, System.Windows.Media.Animation.RepeatBehavior.Forever);
+                AnimationBehavior.SetSourceStream(image, stream);
+            }
+            catch (Exception)
+            {
+                // Rendering an emote must never be able to take down the overlay.
+                if (!removed)
+                {
+                    image.ClearValue(AnimationBehavior.SourceStreamProperty);
+                    image.Source = staticImage;
+                }
+            }
+        }
+    }
+
+    private void RemoveOldestMessage()
+    {
+        if (MessagePanel.Children.Count > 0)
+            MessagePanel.Children.RemoveAt(0);
+    }
+
+    private void ClearMessages()
+    {
+        while (MessagePanel.Children.Count > 0)
+            MessagePanel.Children.RemoveAt(MessagePanel.Children.Count - 1);
     }
 
     private static System.Windows.Media.Effects.DropShadowEffect CreateTextOutline()
@@ -275,7 +346,10 @@ public partial class OverlayWindow : Window
 
     private static Border CreateLabel(string text, Color color) => new()
     {
-        Background = new SolidColorBrush(color), CornerRadius = new CornerRadius(4), Margin = new Thickness(0, 0, 6, 0), Padding = new Thickness(5, 2, 5, 2),
+        Background = new SolidColorBrush(color),
+        CornerRadius = new CornerRadius(4),
+        Margin = new Thickness(0, 0, 6, 0),
+        Padding = new Thickness(5, 2, 5, 2),
         Child = new TextBlock { Text = text, Foreground = Brushes.White, FontSize = 10, FontWeight = FontWeights.ExtraBold, VerticalAlignment = VerticalAlignment.Center }
     };
 
