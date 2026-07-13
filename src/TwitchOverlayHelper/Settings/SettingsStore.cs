@@ -19,11 +19,13 @@ public sealed class SettingsStore
     {
         try
         {
-            return File.Exists(_path)
+            AppSettings settings = File.Exists(_path)
                 ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path), JsonOptions) ?? new AppSettings()
                 : new AppSettings();
+            settings.Normalize();
+            return settings;
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
             return new AppSettings();
         }

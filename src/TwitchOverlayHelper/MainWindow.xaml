@@ -14,7 +14,7 @@
             <TextBlock Text="En lugn, stor och dyslexivänlig chatt-overlay som du styr härifrån." Foreground="{StaticResource MutedTextBrush}" FontSize="15" Margin="0,7,0,0" />
         </StackPanel>
 
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
             <StackPanel>
                 <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20">
                     <StackPanel>
@@ -51,7 +51,7 @@
                             <Border Background="#10141F" BorderBrush="#343B50" BorderThickness="1" CornerRadius="8" Padding="11,8">
                                 <TextBlock x:Name="ToggleHotkeyLabel" Text="Ctrl + F9" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" />
                             </Border>
-                            <Button x:Name="RecordToggleHotkeyButton" Grid.Column="2" Content="⌨ Spela in" Background="#343B50" Padding="13,8" Click="RecordToggleHotkey_Click" />
+                            <Button x:Name="RecordToggleHotkeyButton" Grid.Column="2" Content="⌨ Ändra" Background="#343B50" Padding="13,8" Click="RecordToggleHotkey_Click" />
                         </Grid>
 
                         <TextBlock Text="Redigera overlay" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,5" />
@@ -60,10 +60,10 @@
                             <Border Background="#10141F" BorderBrush="#343B50" BorderThickness="1" CornerRadius="8" Padding="11,8">
                                 <TextBlock x:Name="EditHotkeyLabel" Text="Ctrl + F10" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" />
                             </Border>
-                            <Button x:Name="RecordEditHotkeyButton" Grid.Column="2" Content="⌨ Spela in" Background="#343B50" Padding="13,8" Click="RecordEditHotkey_Click" />
+                            <Button x:Name="RecordEditHotkeyButton" Grid.Column="2" Content="⌨ Ändra" Background="#343B50" Padding="13,8" Click="RecordEditHotkey_Click" />
                         </Grid>
 
-                        <TextBlock x:Name="HotkeyHint" Text="Tryck på Spela in och sedan tangentkombinationen. Esc avbryter." TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,12,0,0" />
+                        <TextBlock x:Name="HotkeyHint" Text="Välj Ändra och tryck sedan önskad tangentkombination. Esc avbryter." TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,12,0,0" />
                     </StackPanel>
                 </Border>
 
@@ -80,7 +80,7 @@
             </StackPanel>
         </ScrollViewer>
 
-        <ScrollViewer Grid.Row="2" Grid.Column="2" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Row="2" Grid.Column="2" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
             <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22">
                 <StackPanel>
                     <TextBlock Text="Läsbarhet" FontSize="19" FontWeight="SemiBold" />
@@ -107,10 +107,10 @@
                     <CheckBox x:Name="EmotesCheck" Content="Visa emotes som bilder" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
                     <CheckBox x:Name="OutlineCheck" Content="Kantlinje runt texten" ToolTip="Gör texten läsbar även utan bakgrund" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
 
-                    <TextBlock Text="Antal meddelanden på skärmen" Margin="0,17,0,6" />
-                    <ComboBox x:Name="MaxMessagesBox" SelectionChanged="Setting_ValueChanged">
-                        <ComboBoxItem Content="10" /><ComboBoxItem Content="14" /><ComboBoxItem Content="18" /><ComboBoxItem Content="24" /><ComboBoxItem Content="30" />
-                    </ComboBox>
+                    <TextBlock Text="Max antal meddelanden" Margin="0,17,0,6" />
+                    <TextBox x:Name="MaxMessagesInput" TextChanged="MaxMessages_TextChanged" LostKeyboardFocus="MaxMessages_LostKeyboardFocus" ToolTip="Ange ett tal mellan 1 och 200" />
+                    <TextBlock Text="De senaste meddelandena behålls i overlayen. När gränsen nås tas det äldsta bort. Hur många som ryms samtidigt beror också på overlayens höjd och textstorlek. (1–200)"
+                               TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,7,0,0" />
 
                     <Border Background="#171F2B" BorderBrush="#293649" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,21,0,0">
                         <StackPanel>

@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using TwitchOverlayHelper.Models;
@@ -6,13 +7,13 @@ namespace TwitchOverlayHelper.Twitch;
 
 public sealed class TwitchChatClient : IAsyncDisposable
 {
-    private ClientWebSocket? _socket;
     private CancellationTokenSource? _lifetime;
     private Task? _runTask;
 
     public event Action<ChatMessage>? MessageReceived;
     public event Action<string>? StatusChanged;
     public event Action<string>? RoomDiscovered;
+    public event Action? ConnectionStopped;
 
     public bool IsRunning => _runTask is { IsCompleted: false };
 
@@ -22,17 +23,27 @@ public sealed class TwitchChatClient : IAsyncDisposable
         channel = NormalizeChannel(channel);
         if (channel.Length == 0) throw new ArgumentException("Ange ett Twitch-kanalnamn.", nameof(channel));
 
+        _lifetime?.Dispose();
         _lifetime = new CancellationTokenSource();
         _runTask = RunWithReconnectAsync(channel, userName, oauthToken, _lifetime.Token);
+        _ = NotifyWhenStoppedAsync(_runTask);
         return Task.CompletedTask;
     }
 
     public async Task DisconnectAsync()
     {
-        _lifetime?.Cancel();
-        if (_runTask is not null)
+        CancellationTokenSource? lifetime = _lifetime;
+        Task? runTask = _runTask;
+        lifetime?.Cancel();
+        if (runTask is not null)
         {
-            try { await _runTask; } catch (OperationCanceledException) { }
+            try { await runTask.ConfigureAwait(false); } catch (OperationCanceledException) { }
+        }
+        if (ReferenceEquals(_lifetime, lifetime))
+        {
+            _lifetime = null;
+            _runTask = null;
+            lifetime?.Dispose();
         }
         StatusChanged?.Invoke("Frånkopplad");
     }
@@ -45,7 +56,7 @@ public sealed class TwitchChatClient : IAsyncDisposable
             try
             {
                 StatusChanged?.Invoke(attempt == 0 ? "Ansluter …" : "Återansluter …");
-                await RunConnectionAsync(channel, userName, oauthToken, token);
+                await RunConnectionAsync(channel, userName, oauthToken, token).ConfigureAwait(false);
                 attempt = 0;
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
@@ -60,16 +71,23 @@ public sealed class TwitchChatClient : IAsyncDisposable
                 attempt++;
                 int delay = Math.Min(20, 2 * attempt);
                 StatusChanged?.Invoke($"Kontakt tappad – nytt försök om {delay} s ({ex.Message})");
-                await Task.Delay(TimeSpan.FromSeconds(delay), token);
+                await Task.Delay(TimeSpan.FromSeconds(delay), token).ConfigureAwait(false);
             }
         }
+    }
+
+    private async Task NotifyWhenStoppedAsync(Task runTask)
+    {
+        try { await runTask.ConfigureAwait(false); }
+        catch (OperationCanceledException) { }
+        catch (Exception) { }
+        finally { ConnectionStopped?.Invoke(); }
     }
 
     private async Task RunConnectionAsync(string channel, string? userName, string? oauthToken, CancellationToken token)
     {
         using var socket = new ClientWebSocket();
-        _socket = socket;
-        await socket.ConnectAsync(new Uri("wss://irc-ws.chat.twitch.tv:443"), token);
+        await socket.ConnectAsync(new Uri("wss://irc-ws.chat.twitch.tv:443"), token).ConfigureAwait(false);
 
         bool authenticated = !string.IsNullOrWhiteSpace(userName) && !string.IsNullOrWhiteSpace(oauthToken);
         string nick = authenticated ? userName!.Trim().ToLowerInvariant() : $"justinfan{Random.Shared.Next(10000, 99999)}";
@@ -79,19 +97,31 @@ public sealed class TwitchChatClient : IAsyncDisposable
 
         // Twitch is happiest when each IRC command is its own WebSocket message.
         // Request metadata before joining so the first chat line already carries badges.
-        await SendAsync("CAP REQ :twitch.tv/tags twitch.tv/commands\r\n", token);
-        await SendAsync($"PASS {password}\r\n", token);
-        await SendAsync($"NICK {nick}\r\n", token);
-        await SendAsync($"JOIN #{channel}\r\n", token);
+        await SendAsync(socket, "CAP REQ :twitch.tv/tags twitch.tv/commands\r\n", token).ConfigureAwait(false);
+        await SendAsync(socket, $"PASS {password}\r\n", token).ConfigureAwait(false);
+        await SendAsync(socket, $"NICK {nick}\r\n", token).ConfigureAwait(false);
+        await SendAsync(socket, $"JOIN #{channel}\r\n", token).ConfigureAwait(false);
         StatusChanged?.Invoke($"Live • #{channel}");
 
         byte[] buffer = new byte[16 * 1024];
         var pending = new StringBuilder();
+        using var messageBytes = new MemoryStream();
+        string? discoveredRoom = null;
         while (socket.State == WebSocketState.Open && !token.IsCancellationRequested)
         {
-            WebSocketReceiveResult result = await socket.ReceiveAsync(buffer, token);
-            if (result.MessageType == WebSocketMessageType.Close) throw new WebSocketException("Twitch stängde anslutningen");
-            pending.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+            messageBytes.SetLength(0);
+            WebSocketReceiveResult result;
+            do
+            {
+                result = await socket.ReceiveAsync(buffer, token).ConfigureAwait(false);
+                if (result.MessageType == WebSocketMessageType.Close)
+                    throw new WebSocketException("Twitch stängde anslutningen");
+                messageBytes.Write(buffer, 0, result.Count);
+            }
+            while (!result.EndOfMessage);
+
+            if (result.MessageType != WebSocketMessageType.Text) continue;
+            pending.Append(Encoding.UTF8.GetString(messageBytes.GetBuffer(), 0, checked((int)messageBytes.Length)));
             string buffered = pending.ToString();
             int lineEnd;
             while ((lineEnd = buffered.IndexOf("\r\n", StringComparison.Ordinal)) >= 0)
@@ -101,15 +131,22 @@ public sealed class TwitchChatClient : IAsyncDisposable
                 if (line.Length == 0) continue;
                 if (line.StartsWith("PING", StringComparison.Ordinal))
                 {
-                    await SendAsync(line.Replace("PING", "PONG", StringComparison.Ordinal) + "\r\n", token);
+                    await SendAsync(socket, "PONG" + line[4..] + "\r\n", token).ConfigureAwait(false);
                     continue;
                 }
                 if (line.Contains(" NOTICE ", StringComparison.Ordinal) &&
                     (line.Contains("Login authentication failed", StringComparison.OrdinalIgnoreCase) ||
                      line.Contains("Improperly formatted auth", StringComparison.OrdinalIgnoreCase)))
                     throw new TwitchAuthenticationException("Inloggningen nekades av Twitch – kontrollera användarnamn och OAuth-token.");
-                string? roomId = IrcMessageParser.TryGetRoomId(line);
-                if (!string.IsNullOrWhiteSpace(roomId)) RoomDiscovered?.Invoke(roomId);
+                if (discoveredRoom is null)
+                {
+                    string? roomId = IrcMessageParser.TryGetRoomId(line);
+                    if (!string.IsNullOrWhiteSpace(roomId))
+                    {
+                        discoveredRoom = roomId;
+                        RoomDiscovered?.Invoke(roomId);
+                    }
+                }
                 if (IrcMessageParser.TryParseChatMessage(line, out ChatMessage? message)) MessageReceived?.Invoke(message!);
             }
             pending.Clear();
@@ -117,10 +154,10 @@ public sealed class TwitchChatClient : IAsyncDisposable
         }
     }
 
-    private async Task SendAsync(string message, CancellationToken token)
+    private static async Task SendAsync(ClientWebSocket socket, string message, CancellationToken token)
     {
         byte[] bytes = Encoding.UTF8.GetBytes(message);
-        await _socket!.SendAsync(bytes, WebSocketMessageType.Text, true, token);
+        await socket.SendAsync(bytes, WebSocketMessageType.Text, true, token).ConfigureAwait(false);
     }
 
     internal static string NormalizeChannel(string value)
@@ -131,7 +168,7 @@ public sealed class TwitchChatClient : IAsyncDisposable
         return new string(channel.Where(c => char.IsLetterOrDigit(c) || c == '_').ToArray());
     }
 
-    public async ValueTask DisposeAsync() => await DisconnectAsync();
+    public async ValueTask DisposeAsync() => await DisconnectAsync().ConfigureAwait(false);
 }
 
 public sealed class TwitchAuthenticationException(string message) : Exception(message);

@@ -16,18 +16,20 @@ public sealed class TwitchBadgeCatalog
     {
         if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(token)) return;
         token = token.StartsWith("oauth:", StringComparison.OrdinalIgnoreCase) ? token[6..] : token;
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Trim());
-        _httpClient.DefaultRequestHeaders.Remove("Client-Id");
-        _httpClient.DefaultRequestHeaders.Add("Client-Id", clientId.Trim());
+        clientId = clientId.Trim();
+        token = token.Trim();
 
-        await LoadEndpointAsync("https://api.twitch.tv/helix/chat/badges/global", cancellationToken);
+        await LoadEndpointAsync("https://api.twitch.tv/helix/chat/badges/global", clientId, token, cancellationToken);
         if (!string.IsNullOrWhiteSpace(broadcasterId))
-            await LoadEndpointAsync($"https://api.twitch.tv/helix/chat/badges?broadcaster_id={Uri.EscapeDataString(broadcasterId)}", cancellationToken);
+            await LoadEndpointAsync($"https://api.twitch.tv/helix/chat/badges?broadcaster_id={Uri.EscapeDataString(broadcasterId)}", clientId, token, cancellationToken);
     }
 
-    private async Task LoadEndpointAsync(string url, CancellationToken token)
+    private async Task LoadEndpointAsync(string url, string clientId, string accessToken, CancellationToken token)
     {
-        using HttpResponseMessage response = await _httpClient.GetAsync(url, token);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Headers.Add("Client-Id", clientId);
+        using HttpResponseMessage response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
         response.EnsureSuccessStatusCode();
         using Stream stream = await response.Content.ReadAsStreamAsync(token);
         using JsonDocument json = await JsonDocument.ParseAsync(stream, cancellationToken: token);

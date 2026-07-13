@@ -1,8 +1,12 @@
+using System.Collections.Concurrent;
+using System.ComponentModel;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using TwitchOverlayHelper.Interop;
 using TwitchOverlayHelper.Models;
 using TwitchOverlayHelper.Overlay;
@@ -21,27 +25,117 @@ public partial class MainWindow : Window
     private readonly TwitchChatClient _chatClient = new();
     private readonly AppSettings _settings;
     private readonly OverlayWindow _overlay;
+    private readonly ConcurrentQueue<ChatMessage> _pendingMessages = new();
+    private readonly DispatcherTimer _chatFlushTimer;
+    private readonly DispatcherTimer _settingsApplyTimer;
+    private readonly DispatcherTimer _settingsSaveTimer;
+    private readonly System.Windows.Forms.NotifyIcon _trayIcon;
     private HwndSource? _hwndSource;
     private Button? _recordingButton;
     private bool _loading = true;
     private bool _editing;
+    private bool _closing;
+    private bool _exitRequested;
     private string? _lastBadgeRoom;
+    private CancellationTokenSource? _badgeLoadCancellation;
+    private int _pendingMessageCount;
+    private int _chatTimerRequested;
 
     public MainWindow()
     {
         InitializeComponent();
         _settings = _settingsStore.Load();
         _overlay = new OverlayWindow(_settings, _badgeCatalog);
+        _chatFlushTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(75) };
+        _chatFlushTimer.Tick += FlushPendingMessages;
+        _settingsApplyTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(150) };
+        _settingsApplyTimer.Tick += (_, _) => { _settingsApplyTimer.Stop(); _overlay.ApplySettings(); };
+        _settingsSaveTimer = new DispatcherTimer(DispatcherPriority.ApplicationIdle) { Interval = TimeSpan.FromMilliseconds(450) };
+        _settingsSaveTimer.Tick += (_, _) => { _settingsSaveTimer.Stop(); SaveSettingsNow(); };
+        _trayIcon = CreateTrayIcon();
         _overlay.PlacementChanged += SaveSettings;
         _overlay.AddWelcomeMessages();
         PopulateControls();
         _loading = false;
         if (_settings.OverlayVisible) _overlay.Show();
 
-        _chatClient.MessageReceived += message => Dispatcher.Invoke(() => _overlay.AddMessage(message));
-        _chatClient.StatusChanged += status => Dispatcher.Invoke(() => SetStatus(status));
-        _chatClient.RoomDiscovered += room => Dispatcher.InvokeAsync(() => LoadBadgesAsync(room));
+        _chatClient.MessageReceived += QueueMessage;
+        _chatClient.StatusChanged += status => RunOnUi(() => SetStatus(status));
+        _chatClient.RoomDiscovered += room => RunOnUi(async () => await LoadBadgesAsync(room));
+        _chatClient.ConnectionStopped += () => RunOnUi(() => SetConnectionButtons(false));
+        Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
+    }
+
+    private System.Windows.Forms.NotifyIcon CreateTrayIcon()
+    {
+        var menu = new System.Windows.Forms.ContextMenuStrip();
+        menu.Items.Add("Öppna inställningar", null, (_, _) => RestoreFromTray());
+        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        menu.Items.Add("Avsluta", null, (_, _) => ExitApplication());
+
+        Stream? iconStream = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/app.ico"))?.Stream;
+        var icon = iconStream is null ? System.Drawing.SystemIcons.Application : new System.Drawing.Icon(iconStream);
+        var trayIcon = new System.Windows.Forms.NotifyIcon
+        {
+            Icon = icon,
+            Text = "Twitch Overlay Helper",
+            ContextMenuStrip = menu,
+            Visible = true
+        };
+        trayIcon.DoubleClick += (_, _) => RestoreFromTray();
+        return trayIcon;
+    }
+
+    private void MainWindow_Closing(object? sender, CancelEventArgs e)
+    {
+        if (_exitRequested) return;
+
+        e.Cancel = true;
+        Hide();
+    }
+
+    private void RestoreFromTray()
+    {
+        if (_closing) return;
+        Show();
+        WindowState = WindowState.Normal;
+        Activate();
+    }
+
+    private void ExitApplication()
+    {
+        if (_closing) return;
+        _exitRequested = true;
+        Close();
+    }
+
+    private void QueueMessage(ChatMessage message)
+    {
+        _pendingMessages.Enqueue(message);
+        int count = Interlocked.Increment(ref _pendingMessageCount);
+        while (count > 500 && _pendingMessages.TryDequeue(out _))
+            count = Interlocked.Decrement(ref _pendingMessageCount);
+
+        if (Interlocked.Exchange(ref _chatTimerRequested, 1) == 0)
+            RunOnUi(() => _chatFlushTimer.Start());
+    }
+
+    private void FlushPendingMessages(object? sender, EventArgs e)
+    {
+        var batch = new List<ChatMessage>(50);
+        while (batch.Count < 50 && _pendingMessages.TryDequeue(out ChatMessage? message))
+        {
+            Interlocked.Decrement(ref _pendingMessageCount);
+            batch.Add(message);
+        }
+        if (batch.Count > 0) _overlay.AddMessages(batch);
+
+        if (!_pendingMessages.IsEmpty) return;
+        _chatFlushTimer.Stop();
+        Interlocked.Exchange(ref _chatTimerRequested, 0);
+        if (!_pendingMessages.IsEmpty && Interlocked.Exchange(ref _chatTimerRequested, 1) == 0)
+            _chatFlushTimer.Start();
     }
 
     private void PopulateControls()
@@ -60,7 +154,8 @@ public partial class MainWindow : Window
         EmotesCheck.IsChecked = _settings.ShowEmotes;
         OutlineCheck.IsChecked = _settings.TextOutline;
         SelectComboByText(FontFamilyBox, _settings.FontFamily);
-        SelectComboByText(MaxMessagesBox, _settings.MaxMessages.ToString());
+        _settings.MaxMessages = Math.Clamp(_settings.MaxMessages, 1, 200);
+        MaxMessagesInput.Text = _settings.MaxMessages.ToString();
         VisibilityButton.Content = _settings.OverlayVisible ? "Dölj overlay" : "Visa overlay";
         ToggleHotkeyLabel.Text = _settings.ToggleHotkeyText;
         EditHotkeyLabel.Text = _settings.EditHotkeyText;
@@ -80,7 +175,7 @@ public partial class MainWindow : Window
         bool toggleOk = GlobalHotkeys.ReRegister(this, ToggleHotkeyId, _settings.ToggleHotkeyModifiers, _settings.ToggleHotkeyVk);
         bool editOk = GlobalHotkeys.ReRegister(this, EditHotkeyId, _settings.EditHotkeyModifiers, _settings.EditHotkeyVk);
         HotkeyHint.Text = toggleOk && editOk
-            ? "Tryck på Spela in och sedan tangentkombinationen. Esc avbryter."
+            ? "Välj Ändra och tryck sedan önskad tangentkombination. Esc avbryter."
             : "En snabbtangent kunde inte registreras – den används troligen av ett annat program. Välj en annan kombination.";
     }
 
@@ -161,7 +256,7 @@ public partial class MainWindow : Window
         PreviewKeyDown -= OnHotkeyRecordKeyDown;
         if (_recordingButton is not null)
         {
-            _recordingButton.Content = "⌨ Spela in";
+            _recordingButton.Content = "⌨ Ändra";
             _recordingButton.Background = new SolidColorBrush(Color.FromRgb(52, 59, 80));
             _recordingButton = null;
         }
@@ -180,21 +275,22 @@ public partial class MainWindow : Window
         _settings.Channel = channel;
         _settings.ClientId = ClientIdBox.Text.Trim();
         _settings.UserName = UserNameBox.Text.Trim();
+        _lastBadgeRoom = null;
+        _badgeLoadCancellation?.Cancel();
+        ScheduleOverlayApply();
         SaveSettings();
+        SetConnectionButtons(true);
         try
         {
             await _chatClient.ConnectAsync(channel, _settings.UserName, TokenBox.Password);
-            ConnectButton.IsEnabled = false;
-            DisconnectButton.IsEnabled = true;
         }
-        catch (Exception ex) { SetStatus(ex.Message, true); }
+        catch (Exception ex) { SetConnectionButtons(false); SetStatus(ex.Message, true); }
     }
 
     private async void DisconnectButton_Click(object sender, RoutedEventArgs e)
     {
         await _chatClient.DisconnectAsync();
-        ConnectButton.IsEnabled = true;
-        DisconnectButton.IsEnabled = false;
+        SetConnectionButtons(false);
     }
 
     private void EditButton_Click(object sender, RoutedEventArgs e) => ToggleEditMode();
@@ -237,18 +333,54 @@ public partial class MainWindow : Window
         _settings.ShowEmotes = EmotesCheck.IsChecked == true;
         _settings.TextOutline = OutlineCheck.IsChecked == true;
         _settings.FontFamily = SelectedText(FontFamilyBox) ?? "Verdana";
-        if (int.TryParse(SelectedText(MaxMessagesBox), out int max)) _settings.MaxMessages = max;
         UpdateValueLabels();
-        _overlay.ApplySettings();
+        ScheduleOverlayApply();
         SaveSettings();
+    }
+
+    private void MaxMessages_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_loading || _overlay is null) return;
+        if (!int.TryParse(MaxMessagesInput.Text, out int max) || max is < 1 or > 200) return;
+
+        _settings.MaxMessages = max;
+        ScheduleOverlayApply();
+        SaveSettings();
+    }
+
+    private void MaxMessages_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (!int.TryParse(MaxMessagesInput.Text, out int max) || max is < 1 or > 200)
+            MaxMessagesInput.Text = _settings.MaxMessages.ToString();
     }
 
     private async Task LoadBadgesAsync(string roomId)
     {
         if (_lastBadgeRoom == roomId || string.IsNullOrWhiteSpace(ClientIdBox.Text) || string.IsNullOrWhiteSpace(TokenBox.Password)) return;
-        _lastBadgeRoom = roomId;
-        try { await _badgeCatalog.LoadAsync(ClientIdBox.Text, TokenBox.Password, roomId); }
+        _badgeLoadCancellation?.Cancel();
+        _badgeLoadCancellation?.Dispose();
+        var cancellation = new CancellationTokenSource();
+        CancellationToken cancellationToken = cancellation.Token;
+        _badgeLoadCancellation = cancellation;
+        try
+        {
+            await _badgeCatalog.LoadAsync(ClientIdBox.Text, TokenBox.Password, roomId, cancellationToken);
+            _lastBadgeRoom = roomId;
+            _overlay.RefreshMessages();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception ex) { SetStatus("Chat ansluten • badges kunde inte laddas: " + ex.Message, true); }
+        finally
+        {
+            if (ReferenceEquals(_badgeLoadCancellation, cancellation)) _badgeLoadCancellation = null;
+            cancellation.Dispose();
+        }
+    }
+
+    private void SetConnectionButtons(bool connectedOrConnecting)
+    {
+        ConnectButton.IsEnabled = !connectedOrConnecting;
+        DisconnectButton.IsEnabled = connectedOrConnecting;
     }
 
     private void SetStatus(string text, bool error = false)
@@ -268,17 +400,51 @@ public partial class MainWindow : Window
 
     private void SaveSettings()
     {
-        if (!_loading) _settingsStore.Save(_settings);
+        if (_loading || _closing) return;
+        _settingsSaveTimer.Stop();
+        _settingsSaveTimer.Start();
+    }
+
+    private void SaveSettingsNow()
+    {
+        try { _settingsStore.Save(_settings); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            if (!_closing) SetStatus("Inställningarna kunde inte sparas: " + ex.Message, true);
+        }
+    }
+
+    private void ScheduleOverlayApply()
+    {
+        _settingsApplyTimer.Stop();
+        _settingsApplyTimer.Start();
+    }
+
+    private void RunOnUi(Action action)
+    {
+        if (_closing || Dispatcher.HasShutdownStarted) return;
+        _ = Dispatcher.BeginInvoke(action, DispatcherPriority.Background);
     }
 
     private async void MainWindow_Closed(object? sender, EventArgs e)
     {
-        SaveSettings();
+        _closing = true;
+        _trayIcon.Visible = false;
+        _chatFlushTimer.Stop();
+        _settingsApplyTimer.Stop();
+        _settingsSaveTimer.Stop();
+        _badgeLoadCancellation?.Cancel();
+        _badgeLoadCancellation?.Dispose();
+        _badgeLoadCancellation = null;
+        SaveSettingsNow();
         GlobalHotkeys.Unregister(this, ToggleHotkeyId);
         GlobalHotkeys.Unregister(this, EditHotkeyId);
         _hwndSource?.RemoveHook(WndProc);
         _overlay.Close();
         await _chatClient.DisposeAsync();
+        _trayIcon.ContextMenuStrip?.Dispose();
+        _trayIcon.Dispose();
+        Application.Current.Shutdown();
     }
 
     private static string? SelectedText(ComboBox box) => (box.SelectedItem as ComboBoxItem)?.Content?.ToString();

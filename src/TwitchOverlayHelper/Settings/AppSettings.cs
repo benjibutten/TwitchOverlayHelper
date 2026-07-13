@@ -28,4 +28,25 @@ public sealed class AppSettings
     public uint EditHotkeyModifiers { get; set; } = 0x0002;   // MOD_CONTROL
     public uint EditHotkeyVk { get; set; } = 0x79;            // VK_F10
     public string EditHotkeyText { get; set; } = "Ctrl + F10";
+
+    public void Normalize()
+    {
+        OverlayLeft = FiniteOrDefault(OverlayLeft, 42);
+        OverlayTop = FiniteOrDefault(OverlayTop, 120);
+        OverlayWidth = Math.Clamp(FiniteOrDefault(OverlayWidth, 520), 320, 4000);
+        OverlayHeight = Math.Clamp(FiniteOrDefault(OverlayHeight, 720), 260, 4000);
+        BackgroundOpacity = Math.Clamp(FiniteOrDefault(BackgroundOpacity, 0.72), 0, 0.95);
+        MessageBackgroundOpacity = Math.Clamp(FiniteOrDefault(MessageBackgroundOpacity, 0.19), 0, 0.8);
+        FontSize = Math.Clamp(FiniteOrDefault(FontSize, 22), 16, 36);
+        LineSpacing = Math.Clamp(FiniteOrDefault(LineSpacing, 1.42), 1.15, 1.8);
+        MaxMessages = Math.Clamp(MaxMessages, 1, 200);
+        FontFamily = string.IsNullOrWhiteSpace(FontFamily) ? "Verdana" : FontFamily;
+        Channel ??= string.Empty;
+        ClientId ??= string.Empty;
+        UserName ??= string.Empty;
+        ToggleHotkeyText ??= "Ctrl + F9";
+        EditHotkeyText ??= "Ctrl + F10";
+    }
+
+    private static double FiniteOrDefault(double value, double fallback) => double.IsFinite(value) ? value : fallback;
 }

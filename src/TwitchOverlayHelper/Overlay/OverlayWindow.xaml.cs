@@ -15,9 +15,12 @@ namespace TwitchOverlayHelper.Overlay;
 
 public partial class OverlayWindow : Window
 {
+    private static readonly System.Windows.Media.Effects.DropShadowEffect TextOutlineEffect = CreateTextOutline();
     private readonly AppSettings _settings;
     private readonly TwitchBadgeCatalog _badges;
     private readonly DispatcherTimer _topmostTimer;
+    private readonly Dictionary<string, BitmapImage> _imageCache = new(StringComparer.Ordinal);
+    private RenderSettings? _renderSettings;
     private bool _editMode;
 
     public event Action? PlacementChanged;
@@ -27,20 +30,30 @@ public partial class OverlayWindow : Window
         InitializeComponent();
         _settings = settings;
         _badges = badges;
-        Left = settings.OverlayLeft;
-        Top = settings.OverlayTop;
         Width = Math.Max(320, settings.OverlayWidth);
         Height = Math.Max(260, settings.OverlayHeight);
+        Left = Math.Clamp(settings.OverlayLeft, SystemParameters.VirtualScreenLeft - Width + 80, SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth - 80);
+        Top = Math.Clamp(settings.OverlayTop, SystemParameters.VirtualScreenTop - Height + 80, SystemParameters.VirtualScreenTop + SystemParameters.VirtualScreenHeight - 80);
         ApplySettings();
         _topmostTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         _topmostTimer.Tick += (_, _) => EnsureTopmost();
         _topmostTimer.Start();
     }
 
-    public void ApplySettings()
+    public void ApplySettings() => ApplySettings(forceRefresh: false);
+
+    public void RefreshMessages() => ApplySettings(forceRefresh: true);
+
+    private void ApplySettings(bool forceRefresh)
     {
         byte alpha = (byte)Math.Round(Math.Clamp(_settings.BackgroundOpacity, 0, 0.96) * 255);
         Surface.Background = new SolidColorBrush(Color.FromArgb(alpha, 14, 17, 25));
+        while (MessagePanel.Children.Count > _settings.MaxMessages) MessagePanel.Children.RemoveAt(0);
+
+        RenderSettings current = RenderSettings.From(_settings);
+        if (!forceRefresh && _renderSettings == current) return;
+        _renderSettings = current;
+
         ChatMessage[] messages = MessagePanel.Children.OfType<Border>().Select(card => card.Tag).OfType<ChatMessage>()
             .TakeLast(_settings.MaxMessages).ToArray();
         MessagePanel.Children.Clear();
@@ -49,11 +62,14 @@ public partial class OverlayWindow : Window
     }
 
     public void AddMessage(ChatMessage message)
+        => AddMessages([message]);
+
+    public void AddMessages(IReadOnlyList<ChatMessage> messages)
     {
-        Border card = CreateMessageCard(message);
-        MessagePanel.Children.Add(card);
+        foreach (ChatMessage message in messages)
+            MessagePanel.Children.Add(CreateMessageCard(message));
         while (MessagePanel.Children.Count > _settings.MaxMessages) MessagePanel.Children.RemoveAt(0);
-        ChatScroller.ScrollToEnd();
+        if (messages.Count > 0) ChatScroller.ScrollToEnd();
     }
 
     public void AddWelcomeMessages()
@@ -119,9 +135,11 @@ public partial class OverlayWindow : Window
         ApplyMessageTypography(card);
         if (_settings.TextOutline)
         {
-            System.Windows.Media.Effects.DropShadowEffect outline = CreateTextOutline();
-            body.Effect = outline;
-            identity.Effect = CreateTextOutline();
+            identity.Effect = TextOutlineEffect;
+            // Applying an Effect to the TextBlock also runs the pixel shader over
+            // InlineUIContainer images, which makes small emotes look grey/dark.
+            if (!body.Inlines.OfType<InlineUIContainer>().Any())
+                body.Effect = TextOutlineEffect;
         }
         return card;
     }
@@ -129,9 +147,15 @@ public partial class OverlayWindow : Window
     private TextBlock CreateMessageBody(ChatMessage message)
     {
         var body = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.White };
-        if (!_settings.ShowEmotes || message.Emotes.Count == 0)
+        if (!_settings.ShowEmotes)
         {
             body.Text = message.Text;
+            return body;
+        }
+
+        if (message.Emotes.Count == 0)
+        {
+            AddTextAndEmojiInlines(body, message.Text);
             return body;
         }
 
@@ -141,15 +165,39 @@ public partial class OverlayWindow : Window
         foreach (EmoteSpan emote in message.Emotes)
         {
             if (emote.Start < cursor || emote.Start + emote.Length > message.Text.Length) continue;
-            if (emote.Start > cursor) body.Inlines.Add(new Run(message.Text[cursor..emote.Start]));
+            if (emote.Start > cursor) AddTextAndEmojiInlines(body, message.Text[cursor..emote.Start]);
             body.Inlines.Add(CreateEmoteInline(emote, message.Text.Substring(emote.Start, emote.Length), emoteSize));
             cursor = emote.Start + emote.Length;
         }
-        if (cursor < message.Text.Length) body.Inlines.Add(new Run(message.Text[cursor..]));
+        if (cursor < message.Text.Length) AddTextAndEmojiInlines(body, message.Text[cursor..]);
         return body;
     }
 
-    private static Inline CreateEmoteInline(EmoteSpan emote, string emoteName, double size)
+    private void AddTextAndEmojiInlines(TextBlock body, string text)
+    {
+        double size = Math.Round(_settings.FontSize * Math.Min(1.35, _settings.LineSpacing * 0.95));
+        foreach ((string part, string? imageCode) in UnicodeEmoji.Split(text))
+        {
+            if (imageCode is null)
+            {
+                body.Inlines.Add(new Run(part));
+                continue;
+            }
+
+            var image = new Image
+            {
+                Source = GetImage($"https://cdn.jsdelivr.net/gh/jdecked/twemoji@17.0.3/assets/72x72/{imageCode}.png", 72),
+                Width = size,
+                Height = size,
+                Stretch = Stretch.Uniform,
+                ToolTip = part
+            };
+            RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
+            body.Inlines.Add(new InlineUIContainer(image) { BaselineAlignment = BaselineAlignment.Center });
+        }
+    }
+
+    private Inline CreateEmoteInline(EmoteSpan emote, string emoteName, double size)
     {
         // Emote images are served from Twitch's open CDN – no authentication needed.
         var image = new Image
@@ -161,7 +209,10 @@ public partial class OverlayWindow : Window
         };
         try
         {
-            image.Source = new BitmapImage(new Uri($"https://static-cdn.jtvnw.net/emoticons/v2/{Uri.EscapeDataString(emote.EmoteId)}/default/dark/2.0"));
+            // WPF renders Twitch's static PNG reliably. The "default" format may
+            // select an animated format whose first frame can be decoded incorrectly.
+            string url = $"https://static-cdn.jtvnw.net/emoticons/v2/{Uri.EscapeDataString(emote.EmoteId)}/static/dark/2.0";
+            image.Source = GetImage(url, 64);
         }
         catch (UriFormatException)
         {
@@ -171,13 +222,18 @@ public partial class OverlayWindow : Window
         return new InlineUIContainer(image) { BaselineAlignment = BaselineAlignment.Center };
     }
 
-    private static System.Windows.Media.Effects.DropShadowEffect CreateTextOutline() => new()
+    private static System.Windows.Media.Effects.DropShadowEffect CreateTextOutline()
     {
-        Color = Colors.Black,
-        ShadowDepth = 0,
-        BlurRadius = 4,
-        Opacity = 0.95
-    };
+        var effect = new System.Windows.Media.Effects.DropShadowEffect
+        {
+            Color = Colors.Black,
+            ShadowDepth = 0,
+            BlurRadius = 4,
+            Opacity = 0.95
+        };
+        effect.Freeze();
+        return effect;
+    }
 
     private FrameworkElement CreateBadge(ChatBadge badge)
     {
@@ -185,7 +241,7 @@ public partial class OverlayWindow : Window
         {
             try
             {
-                return new Image { Source = new BitmapImage(new Uri(info!.ImageUrl)), Width = 22, Height = 22, Margin = new Thickness(0, 0, 5, 0), ToolTip = info.Title };
+                return new Image { Source = GetImage(info!.ImageUrl, 44), Width = 22, Height = 22, Margin = new Thickness(0, 0, 5, 0), ToolTip = info.Title };
             }
             catch (UriFormatException) { }
         }
@@ -200,6 +256,21 @@ public partial class OverlayWindow : Window
             _ => (badge.SetId.Length <= 4 ? badge.SetId.ToUpperInvariant() : "◆", Color.FromRgb(96, 101, 122))
         };
         return CreateLabel(text, color);
+    }
+
+    private BitmapImage GetImage(string url, int decodePixelWidth)
+    {
+        string key = decodePixelWidth + ":" + url;
+        if (_imageCache.TryGetValue(key, out BitmapImage? cached)) return cached;
+        if (_imageCache.Count >= 512) _imageCache.Clear();
+
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.UriSource = new Uri(url, UriKind.Absolute);
+        image.DecodePixelWidth = decodePixelWidth;
+        image.EndInit();
+        _imageCache[key] = image;
+        return image;
     }
 
     private static Border CreateLabel(string text, Color color) => new()
@@ -269,4 +340,31 @@ public partial class OverlayWindow : Window
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
+
+    private readonly record struct RenderSettings(
+        double MessageBackgroundOpacity,
+        double FontSize,
+        double LineSpacing,
+        string FontFamily,
+        bool ShowBadges,
+        bool ShowTimestamps,
+        bool UseTwitchNameColors,
+        bool EmphasizeMentions,
+        bool ShowEmotes,
+        bool TextOutline,
+        string MentionName)
+    {
+        public static RenderSettings From(AppSettings settings) => new(
+            settings.MessageBackgroundOpacity,
+            settings.FontSize,
+            settings.LineSpacing,
+            settings.FontFamily,
+            settings.ShowBadges,
+            settings.ShowTimestamps,
+            settings.UseTwitchNameColors,
+            settings.EmphasizeMentions,
+            settings.ShowEmotes,
+            settings.TextOutline,
+            string.IsNullOrWhiteSpace(settings.UserName) ? settings.Channel : settings.UserName);
+    }
 }
