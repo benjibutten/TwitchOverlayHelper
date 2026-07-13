@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/TwitchOverlayHelper/TwitchOverlayHelper.csproj" />
+  <Project Path="tests/TwitchOverlayHelper.Tests/TwitchOverlayHelper.Tests.csproj" />
+</Solution>
