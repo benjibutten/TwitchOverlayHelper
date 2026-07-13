@@ -39,15 +39,13 @@ public partial class OverlayWindow : Window
 
     public void ApplySettings()
     {
-        byte alpha = (byte)Math.Round(Math.Clamp(_settings.BackgroundOpacity, 0.1, 0.96) * 255);
+        byte alpha = (byte)Math.Round(Math.Clamp(_settings.BackgroundOpacity, 0, 0.96) * 255);
         Surface.Background = new SolidColorBrush(Color.FromArgb(alpha, 14, 17, 25));
-        ChatMessage[] messages = MessagePanel.Children.OfType<Border>().Select(card => card.Tag).OfType<ChatMessage>().ToArray();
-        if (messages.Length > 0)
-        {
-            MessagePanel.Children.Clear();
-            foreach (ChatMessage message in messages) MessagePanel.Children.Add(CreateMessageCard(message));
-            ChatScroller.ScrollToEnd();
-        }
+        ChatMessage[] messages = MessagePanel.Children.OfType<Border>().Select(card => card.Tag).OfType<ChatMessage>()
+            .TakeLast(_settings.MaxMessages).ToArray();
+        MessagePanel.Children.Clear();
+        foreach (ChatMessage message in messages) MessagePanel.Children.Add(CreateMessageCard(message));
+        if (messages.Length > 0) ChatScroller.ScrollToEnd();
     }
 
     public void AddMessage(ChatMessage message)
@@ -62,6 +60,9 @@ public partial class OverlayWindow : Window
     {
         AddMessage(new ChatMessage("welcome-1", "Twitch Overlay Helper", "Chatten visas här – stor, lugn och lätt att skanna.", "#A970FF", [new ChatBadge("broadcaster", "1")], false, false, DateTimeOffset.Now));
         AddMessage(new ChatMessage("welcome-2", "Tips", "Tryck på “Redigera overlay” i appen för att flytta eller ändra storlek.", "#5FD6C8", [], false, false, DateTimeOffset.Now));
+        const string emoteDemoPrefix = "Emotes visas som bilder ";
+        AddMessage(new ChatMessage("welcome-3", "Emotes", emoteDemoPrefix + "Kappa", "#F59E0B", [], false, false, DateTimeOffset.Now,
+            [new EmoteSpan("25", emoteDemoPrefix.Length, 5)]));
     }
 
     public void SetEditMode(bool enabled)
@@ -81,9 +82,10 @@ public partial class OverlayWindow : Window
         var card = new Border { CornerRadius = new CornerRadius(10), Margin = new Thickness(0, 0, 0, 8), Padding = new Thickness(11, 8, 11, 9), Tag = message };
         string mentionName = string.IsNullOrWhiteSpace(_settings.UserName) ? _settings.Channel : _settings.UserName;
         bool isMention = _settings.EmphasizeMentions && mentionName.Length > 0 && message.Text.Contains("@" + mentionName, StringComparison.OrdinalIgnoreCase);
+        byte messageAlpha = (byte)Math.Round(Math.Clamp(_settings.MessageBackgroundOpacity, 0, 0.9) * 255);
         card.Background = new SolidColorBrush(isMention
             ? Color.FromArgb(112, 245, 158, 11)
-            : message.IsHighlighted ? Color.FromArgb(92, 169, 112, 255) : Color.FromArgb(48, 255, 255, 255));
+            : message.IsHighlighted ? Color.FromArgb(92, 169, 112, 255) : Color.FromArgb(messageAlpha, 255, 255, 255));
         if (isMention)
         {
             card.BorderBrush = new SolidColorBrush(Color.FromRgb(251, 191, 36));
@@ -110,13 +112,72 @@ public partial class OverlayWindow : Window
         if (isMention)
             identity.Children.Add(CreateLabel("TILL DIG", Color.FromRgb(217, 119, 6)));
 
-        var body = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.White, Text = message.Text };
+        TextBlock body = CreateMessageBody(message);
         stack.Children.Add(identity);
         stack.Children.Add(body);
         card.Child = stack;
         ApplyMessageTypography(card);
+        if (_settings.TextOutline)
+        {
+            System.Windows.Media.Effects.DropShadowEffect outline = CreateTextOutline();
+            body.Effect = outline;
+            identity.Effect = CreateTextOutline();
+        }
         return card;
     }
+
+    private TextBlock CreateMessageBody(ChatMessage message)
+    {
+        var body = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.White };
+        if (!_settings.ShowEmotes || message.Emotes.Count == 0)
+        {
+            body.Text = message.Text;
+            return body;
+        }
+
+        // Cap emote height to the fixed block line height so images never clip.
+        double emoteSize = Math.Round(_settings.FontSize * Math.Min(1.35, _settings.LineSpacing * 0.95));
+        int cursor = 0;
+        foreach (EmoteSpan emote in message.Emotes)
+        {
+            if (emote.Start < cursor || emote.Start + emote.Length > message.Text.Length) continue;
+            if (emote.Start > cursor) body.Inlines.Add(new Run(message.Text[cursor..emote.Start]));
+            body.Inlines.Add(CreateEmoteInline(emote, message.Text.Substring(emote.Start, emote.Length), emoteSize));
+            cursor = emote.Start + emote.Length;
+        }
+        if (cursor < message.Text.Length) body.Inlines.Add(new Run(message.Text[cursor..]));
+        return body;
+    }
+
+    private static Inline CreateEmoteInline(EmoteSpan emote, string emoteName, double size)
+    {
+        // Emote images are served from Twitch's open CDN – no authentication needed.
+        var image = new Image
+        {
+            Width = size,
+            Height = size,
+            ToolTip = emoteName,
+            Stretch = Stretch.Uniform
+        };
+        try
+        {
+            image.Source = new BitmapImage(new Uri($"https://static-cdn.jtvnw.net/emoticons/v2/{Uri.EscapeDataString(emote.EmoteId)}/default/dark/2.0"));
+        }
+        catch (UriFormatException)
+        {
+            return new Run(emoteName);
+        }
+        RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
+        return new InlineUIContainer(image) { BaselineAlignment = BaselineAlignment.Center };
+    }
+
+    private static System.Windows.Media.Effects.DropShadowEffect CreateTextOutline() => new()
+    {
+        Color = Colors.Black,
+        ShadowDepth = 0,
+        BlurRadius = 4,
+        Opacity = 0.95
+    };
 
     private FrameworkElement CreateBadge(ChatBadge badge)
     {

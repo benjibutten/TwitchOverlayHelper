@@ -27,4 +27,48 @@ public sealed class IrcMessageParserTests
     [InlineData(" twitch ", "twitch")]
     public void NormalizesChannelInput(string input, string expected) =>
         Assert.Equal(expected, TwitchChatClient.NormalizeChannel(input));
+
+    [Fact]
+    public void ParsesEmotesSortedByPosition()
+    {
+        const string text = "Kappa hej Kappa PogChamp";
+        var emotes = IrcMessageParser.ParseEmotes("305954156:16-23/25:0-4,10-14", text);
+
+        Assert.Collection(emotes,
+            emote => { Assert.Equal("25", emote.EmoteId); Assert.Equal(0, emote.Start); Assert.Equal(5, emote.Length); },
+            emote => { Assert.Equal("25", emote.EmoteId); Assert.Equal(10, emote.Start); Assert.Equal(5, emote.Length); },
+            emote => { Assert.Equal("305954156", emote.EmoteId); Assert.Equal(16, emote.Start); Assert.Equal(8, emote.Length); });
+        Assert.Equal("Kappa", text.Substring(emotes[0].Start, emotes[0].Length));
+        Assert.Equal("PogChamp", text.Substring(emotes[2].Start, emotes[2].Length));
+    }
+
+    [Fact]
+    public void MapsEmoteIndicesThroughSurrogatePairs()
+    {
+        // Twitch counts indices in code points; the emoji occupies two UTF-16 chars.
+        const string text = "\U0001F600 Kappa";
+        var emotes = IrcMessageParser.ParseEmotes("25:2-6", text);
+
+        var emote = Assert.Single(emotes);
+        Assert.Equal("Kappa", text.Substring(emote.Start, emote.Length));
+    }
+
+    [Fact]
+    public void IgnoresMalformedEmoteRanges()
+    {
+        const string text = "kort";
+        Assert.Empty(IrcMessageParser.ParseEmotes("25:0-99/:1-2/x", text));
+        Assert.Empty(IrcMessageParser.ParseEmotes(null, text));
+    }
+
+    [Fact]
+    public void ParsesEmotesFromChatMessageLine()
+    {
+        const string raw = "@badges=;color=;display-name=Benji;emotes=25:0-4;id=abc;tmi-sent-ts=1700000000000 :benji!benji@benji.tmi.twitch.tv PRIVMSG #demo :Kappa hej";
+
+        Assert.True(IrcMessageParser.TryParseChatMessage(raw, out var message));
+        var emote = Assert.Single(message!.Emotes);
+        Assert.Equal("25", emote.EmoteId);
+        Assert.Equal("Kappa", message.Text.Substring(emote.Start, emote.Length));
+    }
 }

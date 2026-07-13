@@ -9,8 +9,12 @@
     <Product>Twitch Overlay Helper</Product>
     <Company>BenjiButten</Company>
     <Authors>BenjiButten</Authors>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="TwitchOverlayHelper.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
   </ItemGroup>
 </Project>

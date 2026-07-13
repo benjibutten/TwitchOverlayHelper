@@ -49,6 +49,12 @@ public sealed class TwitchChatClient : IAsyncDisposable
                 attempt = 0;
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
+            catch (TwitchAuthenticationException ex)
+            {
+                // Retrying with the same rejected credentials would loop forever.
+                StatusChanged?.Invoke(ex.Message);
+                break;
+            }
             catch (Exception ex)
             {
                 attempt++;
@@ -98,6 +104,10 @@ public sealed class TwitchChatClient : IAsyncDisposable
                     await SendAsync(line.Replace("PING", "PONG", StringComparison.Ordinal) + "\r\n", token);
                     continue;
                 }
+                if (line.Contains(" NOTICE ", StringComparison.Ordinal) &&
+                    (line.Contains("Login authentication failed", StringComparison.OrdinalIgnoreCase) ||
+                     line.Contains("Improperly formatted auth", StringComparison.OrdinalIgnoreCase)))
+                    throw new TwitchAuthenticationException("Inloggningen nekades av Twitch – kontrollera användarnamn och OAuth-token.");
                 string? roomId = IrcMessageParser.TryGetRoomId(line);
                 if (!string.IsNullOrWhiteSpace(roomId)) RoomDiscovered?.Invoke(roomId);
                 if (IrcMessageParser.TryParseChatMessage(line, out ChatMessage? message)) MessageReceived?.Invoke(message!);
@@ -123,3 +133,5 @@ public sealed class TwitchChatClient : IAsyncDisposable
 
     public async ValueTask DisposeAsync() => await DisconnectAsync();
 }
+
+public sealed class TwitchAuthenticationException(string message) : Exception(message);

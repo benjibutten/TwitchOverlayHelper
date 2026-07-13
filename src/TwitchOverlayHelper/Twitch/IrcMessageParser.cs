@@ -30,8 +30,48 @@ internal static class IrcMessageParser
             badges,
             tags.GetValueOrDefault("first-msg") == "1",
             tags.GetValueOrDefault("msg-id") == "highlighted-message",
-            ParseTimestamp(tags.GetValueOrDefault("tmi-sent-ts")));
+            ParseTimestamp(tags.GetValueOrDefault("tmi-sent-ts")),
+            ParseEmotes(tags.GetValueOrDefault("emotes"), text));
         return true;
+    }
+
+    // Tag format: "25:0-4,12-16/1902:6-10". Ranges are inclusive and counted in
+    // Unicode code points, so they must be mapped to UTF-16 indices before use.
+    internal static IReadOnlyList<EmoteSpan> ParseEmotes(string? raw, string text)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return Array.Empty<EmoteSpan>();
+
+        int[] codePointToUtf16 = BuildCodePointIndexMap(text);
+        var result = new List<EmoteSpan>();
+        foreach (string emote in raw.Split('/'))
+        {
+            int colon = emote.IndexOf(':');
+            if (colon <= 0) continue;
+            string emoteId = emote[..colon];
+            foreach (string range in emote[(colon + 1)..].Split(','))
+            {
+                int dash = range.IndexOf('-');
+                if (dash <= 0
+                    || !int.TryParse(range[..dash], out int start)
+                    || !int.TryParse(range[(dash + 1)..], out int end)
+                    || start < 0 || end < start || end + 1 >= codePointToUtf16.Length)
+                    continue;
+                int utf16Start = codePointToUtf16[start];
+                int utf16End = codePointToUtf16[end + 1];
+                result.Add(new EmoteSpan(emoteId, utf16Start, utf16End - utf16Start));
+            }
+        }
+        result.Sort((a, b) => a.Start.CompareTo(b.Start));
+        return result;
+    }
+
+    private static int[] BuildCodePointIndexMap(string text)
+    {
+        var map = new List<int>(text.Length + 1);
+        for (int i = 0; i < text.Length; i += char.IsSurrogatePair(text, i) ? 2 : 1)
+            map.Add(i);
+        map.Add(text.Length);
+        return map.ToArray();
     }
 
     public static string? TryGetRoomId(string line)

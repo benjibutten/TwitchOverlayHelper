@@ -2,15 +2,19 @@
 
 En Windows-app som läser Twitch-chatten och visar den som en stor, lugn och klickigenom overlay ovanpå ett spel. Gränssnittet prioriterar låg visuell trängsel, tydlig avsändare, generöst radavstånd och få beslut per vy.
 
-## Första versionens funktioner
+## Funktioner
 
 - Anslut anonymt genom att bara ange kanalnamn eller Twitch-länk.
 - Transparent, alltid-överst och fokusfri chatt-overlay.
 - Låst klickigenom-läge och separat redigeringsläge för flytt/storleksändring.
-- Liveinställningar för textstorlek, radavstånd, typsnitt, bakgrund och antal meddelanden.
+- Globala snabbtangenter (fungerar även när spelet har fokus): visa/dölj overlay (standard `Ctrl+F9`) och redigeringsläge (standard `Ctrl+F10`). Spela in egna kombinationer direkt i appen.
+- Twitch-emotes renderas som bilder inuti meddelanden – fungerar anonymt, ingen app-registrering behövs.
+- Separata reglage för hela rutans bakgrund och varje meddelandes bakgrund; båda kan dras till 0 % för helt ren overlay.
+- Valfri kantlinje runt texten som håller den läsbar utan bakgrund.
+- Liveinställningar för textstorlek, radavstånd, typsnitt och antal meddelanden.
 - Twitch-metadata för broadcaster, moderator, VIP, subscriber med lokala markörer.
 - Riktiga Twitch-badge-bilder när Client ID och OAuth-token anges.
-- Automatisk återanslutning och PING/PONG-hantering.
+- Automatisk återanslutning, PING/PONG-hantering och tydligt stopp vid nekad inloggning.
 - Inställningar sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\settings.json`. OAuth-token sparas aldrig.
 
 ## Kör
@@ -32,7 +36,6 @@ Projektet använder .NET 10, WPF, Twitch IRC över TLS WebSocket och Helix badge
 ## Nästa produktsteg
 
 - Komplett Device Code OAuth för en enda tydlig “Logga in med Twitch”-knapp.
-- Twitch-emotes som bilder inuti meddelanden.
 - Förhandsgranskning av flera dyslexiprofiler och stöd för OpenDyslexic/Atkinson Hyperlegible som paketerade fonter.
 - Modereringshändelser (`CLEARMSG`/`CLEARCHAT`) och valfri uppläsning/prioritering av mentions.
 - Val av skärm, fästpunkter och OBS Browser Source-läge.
