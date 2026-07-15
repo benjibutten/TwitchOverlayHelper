@@ -17,6 +17,8 @@ En Windows-app som läser Twitch-chatten och visar den som en stor, lugn och kli
 - Riktiga Twitch-badge-bilder när Client ID och OAuth-token anges.
 - Automatisk återanslutning, PING/PONG-hantering och tydligt stopp vid nekad inloggning.
 - Inställningar sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\settings.json`. OAuth-token sparas aldrig.
+- Körs som en enda instans; en ny vanlig start öppnar den redan körande appens inställningsfönster.
+- Valbar **Starta med Windows**-inställning som startar appen minimerad i meddelandefältet utan extra bakgrundstjänst.
 
 ## Kör
 

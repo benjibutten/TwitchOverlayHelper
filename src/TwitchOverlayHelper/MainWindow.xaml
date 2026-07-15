@@ -112,6 +112,16 @@
                     <TextBlock Text="De senaste meddelandena behålls i overlayen. När gränsen nås tas det äldsta bort. Hur många som ryms samtidigt beror också på overlayens höjd och textstorlek. (1–200)"
                                TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,7,0,0" />
 
+                    <Separator Background="#343B50" Margin="0,20" />
+                    <TextBlock Text="Windows" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,6" />
+                    <CheckBox x:Name="StartWithWindowsCheck"
+                              Content="Starta med Windows"
+                              ToolTip="Startar minimerad i aktivitetsfältets meddelandefält när du loggar in"
+                              Checked="StartWithWindows_Changed"
+                              Unchecked="StartWithWindows_Changed" />
+                    <TextBlock Text="Appen startar i bakgrunden utan att öppna inställningsfönstret."
+                               TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,4,0,0" />
+
                     <Border Background="#171F2B" BorderBrush="#293649" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,21,0,0">
                         <StackPanel>
                             <TextBlock Text="Dyslexivänlig grundprofil" Foreground="#78E1D5" FontWeight="SemiBold" />

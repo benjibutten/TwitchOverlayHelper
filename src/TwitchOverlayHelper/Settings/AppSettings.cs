@@ -22,6 +22,7 @@ public sealed class AppSettings
     public bool ShowEmotes { get; set; } = true;
     public bool TextOutline { get; set; }
     public bool OverlayVisible { get; set; } = true;
+    public bool StartWithWindows { get; set; }
     public uint ToggleHotkeyModifiers { get; set; } = 0x0002; // MOD_CONTROL
     public uint ToggleHotkeyVk { get; set; } = 0x78;          // VK_F9
     public string ToggleHotkeyText { get; set; } = "Ctrl + F9";

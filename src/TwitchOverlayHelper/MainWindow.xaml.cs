@@ -10,6 +10,7 @@ using System.Windows.Threading;
 using TwitchOverlayHelper.Interop;
 using TwitchOverlayHelper.Models;
 using TwitchOverlayHelper.Overlay;
+using TwitchOverlayHelper.Services;
 using TwitchOverlayHelper.Settings;
 using TwitchOverlayHelper.Twitch;
 
@@ -23,6 +24,7 @@ public partial class MainWindow : Window
     private readonly SettingsStore _settingsStore = new();
     private readonly TwitchBadgeCatalog _badgeCatalog = new();
     private readonly TwitchChatClient _chatClient = new();
+    private readonly StartupRegistrySyncService _startupRegistrySyncService = new();
     private readonly AppSettings _settings;
     private readonly OverlayWindow _overlay;
     private readonly ConcurrentQueue<ChatMessage> _pendingMessages = new();
@@ -36,6 +38,7 @@ public partial class MainWindow : Window
     private bool _editing;
     private bool _closing;
     private bool _exitRequested;
+    private bool _updatingStartWithWindows;
     private string? _lastBadgeRoom;
     private CancellationTokenSource? _badgeLoadCancellation;
     private int _pendingMessageCount;
@@ -45,6 +48,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _settings = _settingsStore.Load();
+        SyncStartWithWindows();
         _overlay = new OverlayWindow(_settings, _badgeCatalog);
         _chatFlushTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(75) };
         _chatFlushTimer.Tick += FlushPendingMessages;
@@ -97,10 +101,28 @@ public partial class MainWindow : Window
 
     private void RestoreFromTray()
     {
+        ShowAndActivate();
+    }
+
+    public void StartHiddenInTray()
+    {
+        ShowInTaskbar = false;
+        new WindowInteropHelper(this).EnsureHandle();
+        Hide();
+    }
+
+    public void ShowAndActivate()
+    {
         if (_closing) return;
+        ShowInTaskbar = true;
         Show();
         WindowState = WindowState.Normal;
         Activate();
+
+        // Helps Windows reliably foreground a window restored from the tray.
+        Topmost = true;
+        Topmost = false;
+        Focus();
     }
 
     private void ExitApplication()
@@ -153,6 +175,7 @@ public partial class MainWindow : Window
         MentionsCheck.IsChecked = _settings.EmphasizeMentions;
         EmotesCheck.IsChecked = _settings.ShowEmotes;
         OutlineCheck.IsChecked = _settings.TextOutline;
+        StartWithWindowsCheck.IsChecked = _settings.StartWithWindows;
         SelectComboByText(FontFamilyBox, _settings.FontFamily);
         _settings.MaxMessages = Math.Clamp(_settings.MaxMessages, 1, 200);
         MaxMessagesInput.Text = _settings.MaxMessages.ToString();
@@ -346,6 +369,45 @@ public partial class MainWindow : Window
         _settings.MaxMessages = max;
         ScheduleOverlayApply();
         SaveSettings();
+    }
+
+    private void StartWithWindows_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading || _updatingStartWithWindows) return;
+
+        bool previousValue = _settings.StartWithWindows;
+        _settings.StartWithWindows = StartWithWindowsCheck.IsChecked == true;
+
+        if (SyncStartWithWindows())
+        {
+            SaveSettings();
+            return;
+        }
+
+        _updatingStartWithWindows = true;
+        try
+        {
+            _settings.StartWithWindows = previousValue;
+            StartWithWindowsCheck.IsChecked = previousValue;
+        }
+        finally
+        {
+            _updatingStartWithWindows = false;
+        }
+
+        SetStatus("Autostart kunde inte uppdateras i Windows.", true);
+    }
+
+    private bool SyncStartWithWindows()
+    {
+        try
+        {
+            return _startupRegistrySyncService.Sync(_settings.StartWithWindows, Environment.ProcessPath);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException)
+        {
+            return false;
+        }
     }
 
     private void MaxMessages_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
