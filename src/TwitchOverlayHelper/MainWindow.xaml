@@ -132,6 +132,9 @@
             </Border>
         </ScrollViewer>
 
-        <TextBlock Grid.Row="3" Grid.ColumnSpan="3" Text="Tips: lås overlayen när den ligger rätt – då blir den helt klickigenom och stjäl aldrig fokus från spelet." Foreground="#858193" Margin="0,18,0,0" />
+        <DockPanel Grid.Row="3" Grid.ColumnSpan="3" Margin="0,18,0,0">
+            <TextBlock x:Name="VersionText" DockPanel.Dock="Right" Foreground="#5F5B6E" FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0" />
+            <TextBlock Text="Tips: lås overlayen när den ligger rätt – då blir den helt klickigenom och stjäl aldrig fokus från spelet." Foreground="#858193" TextTrimming="CharacterEllipsis" />
+        </DockPanel>
     </Grid>
 </Window>

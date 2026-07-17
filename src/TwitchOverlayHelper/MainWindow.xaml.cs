@@ -47,6 +47,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        VersionText.Text = AppVersion.DisplayText;
         _settings = _settingsStore.Load();
         SyncStartWithWindows();
         _overlay = new OverlayWindow(_settings, _badgeCatalog);
