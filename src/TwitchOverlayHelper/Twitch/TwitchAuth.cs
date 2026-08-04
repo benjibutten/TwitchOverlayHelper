@@ -85,7 +85,10 @@ public sealed class TwitchAuth(HttpClient httpClient)
             string message = DescribeError(json, string.Empty);
             // "authorization_pending" simply means the user has not finished on twitch.tv yet.
             if (response.StatusCode == HttpStatusCode.BadRequest && message.Contains("pending", StringComparison.OrdinalIgnoreCase)) continue;
-            if (message.Contains("slow down", StringComparison.OrdinalIgnoreCase)) { delay += TimeSpan.FromSeconds(2); continue; }
+            // Twitch reports this the OAuth way, with an underscore; the spaced form is only what a
+            // human-readable variant would look like, so both are accepted.
+            if (message.Contains("slow_down", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("slow down", StringComparison.OrdinalIgnoreCase)) { delay += TimeSpan.FromSeconds(2); continue; }
             throw new TwitchAuthException(message.Length > 0 ? message : "Inloggningen avbröts av Twitch.");
         }
 

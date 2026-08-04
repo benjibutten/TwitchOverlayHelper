@@ -315,9 +315,14 @@ public partial class MainWindow : Window
         try
         {
             await _chatClient.DisconnectAsync();
-            string? token = authenticated ? await _session.TryGetIrcTokenAsync() : null;
-            if (authenticated && token is null) return;
-            await _chatClient.ConnectAsync(_settings.Channel, token is null ? null : _session.Login, token);
+            // Checked here so an upgrade to an authenticated connection is not attempted when no
+            // token can be had; the connection itself then asks again per attempt, and the answer
+            // is cached, so this costs nothing extra.
+            if (authenticated && await _session.TryGetIrcTokenAsync() is null) return;
+            await _chatClient.ConnectAsync(
+                _settings.Channel,
+                _session.Login,
+                authenticated ? _session.TryGetIrcTokenAsync : null);
             SetConnectionButtons(true);
             _hub.PublishAuth(_chatClient.CanSend);
         }
@@ -569,8 +574,10 @@ public partial class MainWindow : Window
         try
         {
             // An authenticated connection is what lets the dock send messages; anonymous still reads fine.
-            string? token = await _session.TryGetIrcTokenAsync();
-            await _chatClient.ConnectAsync(channel, token is null ? null : _session.Login, token);
+            await _chatClient.ConnectAsync(
+                channel,
+                _session.Login,
+                _session.IsLoggedIn ? _session.TryGetIrcTokenAsync : null);
             _hub.PublishAuth(_chatClient.CanSend);
         }
         catch (Exception ex) { SetConnectionButtons(false); SetStatus(ex.Message, true); }

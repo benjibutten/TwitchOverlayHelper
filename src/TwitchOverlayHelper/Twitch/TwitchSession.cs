@@ -21,6 +21,13 @@ public sealed class TwitchSession : IDisposable
     private DeviceCodePrompt? _prompt;
     private string? _error;
 
+    /// <summary>
+    /// Bumped on logout. A login or refresh that was already in flight cannot be cancelled once it
+    /// is past its last await, so it checks this before writing – otherwise it would hand the
+    /// credentials back after the user signed out.
+    /// </summary>
+    private int _generation;
+
     public TwitchSession(HttpClient httpClient, TokenStore? tokenStore = null)
     {
         _auth = new TwitchAuth(httpClient);
@@ -53,16 +60,19 @@ public sealed class TwitchSession : IDisposable
         var flow = new CancellationTokenSource();
         _deviceFlow = flow;
         StateChanged?.Invoke();
-        _ = AwaitApprovalAsync(clientId.Trim(), prompt, flow);
+        _ = AwaitApprovalAsync(clientId.Trim(), prompt, flow, Volatile.Read(ref _generation));
         return prompt;
     }
 
-    private async Task AwaitApprovalAsync(string clientId, DeviceCodePrompt prompt, CancellationTokenSource flow)
+    private async Task AwaitApprovalAsync(string clientId, DeviceCodePrompt prompt, CancellationTokenSource flow, int generation)
     {
         try
         {
             TwitchTokens tokens = await _auth.AwaitApprovalAsync(clientId, prompt, flow.Token).ConfigureAwait(false);
             TwitchIdentity identity = await _auth.ValidateAsync(tokens.AccessToken, flow.Token).ConfigureAwait(false);
+
+            // Signed out while this was finishing: the approval belongs to a session that is gone.
+            if (Volatile.Read(ref _generation) != generation) return;
 
             _accessToken = tokens.AccessToken;
             _validatedAt = DateTimeOffset.UtcNow;
@@ -93,6 +103,8 @@ public sealed class TwitchSession : IDisposable
 
     public async Task LogoutAsync()
     {
+        // Anything in flight is now stale, whether or not cancellation reached it in time.
+        Interlocked.Increment(ref _generation);
         CancelPendingLogin();
         string? token = _accessToken;
         string clientId = ClientId;
@@ -117,6 +129,7 @@ public sealed class TwitchSession : IDisposable
         if (_accessToken is not null && DateTimeOffset.UtcNow - _validatedAt < TimeSpan.FromMinutes(30))
             return _accessToken;
 
+        int generation = Volatile.Read(ref _generation);
         await _refreshLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -125,6 +138,11 @@ public sealed class TwitchSession : IDisposable
 
             TwitchTokens tokens = await _auth.RefreshAsync(credentials.ClientId, credentials.RefreshToken, cancellationToken).ConfigureAwait(false);
             TwitchIdentity identity = await _auth.ValidateAsync(tokens.AccessToken, cancellationToken).ConfigureAwait(false);
+
+            // A logout landed while Twitch was answering. Saving now would sign the user back in.
+            if (Volatile.Read(ref _generation) != generation)
+                throw new TwitchAuthException("Du är inte inloggad på Twitch.");
+
             _accessToken = tokens.AccessToken;
             _validatedAt = DateTimeOffset.UtcNow;
             _credentials = credentials with
