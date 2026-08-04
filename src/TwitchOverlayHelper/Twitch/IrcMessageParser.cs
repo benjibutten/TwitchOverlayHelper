@@ -19,7 +19,9 @@ internal static class IrcMessageParser
         if (textAt < 0) return false;
 
         string text = line[(textAt + 2)..];
-        string displayName = tags.GetValueOrDefault("display-name") ?? "Okänd";
+        bool isAction = TryUnwrapAction(ref text);
+        string login = ParseLogin(line[tagEnd..commandAt]);
+        string displayName = tags.GetValueOrDefault("display-name") ?? (login.Length > 0 ? login : "Okänd");
         var badges = ParseBadges(tags.GetValueOrDefault("badges"));
 
         message = new ChatMessage(
@@ -31,7 +33,78 @@ internal static class IrcMessageParser
             tags.GetValueOrDefault("first-msg") == "1",
             tags.GetValueOrDefault("msg-id") == "highlighted-message",
             ParseTimestamp(tags.GetValueOrDefault("tmi-sent-ts")),
-            ParseEmotes(tags.GetValueOrDefault("emotes"), text));
+            ParseEmotes(tags.GetValueOrDefault("emotes"), text))
+        {
+            UserId = tags.GetValueOrDefault("user-id") ?? string.Empty,
+            UserLogin = login,
+            IsAction = isAction
+        };
+        return true;
+    }
+
+    /// <summary>Twitch wraps /me in SOH control characters; they must not reach the reader.</summary>
+    internal static bool TryUnwrapAction(ref string text)
+    {
+        const char marker = (char)1;
+        const string opening = "ACTION ";
+        if (text.Length < opening.Length + 2 || text[0] != marker || text[^1] != marker) return false;
+        if (!text.AsSpan(1).StartsWith(opening, StringComparison.Ordinal)) return false;
+        text = text[(opening.Length + 1)..^1];
+        return true;
+    }
+
+    /// <summary>Extracts "name" from the " :name!name@name.tmi.twitch.tv" prefix that precedes PRIVMSG.</summary>
+    internal static string ParseLogin(string prefix)
+    {
+        int start = prefix.IndexOf(':');
+        if (start < 0) return string.Empty;
+        int end = prefix.IndexOf('!', start);
+        return end > start ? prefix[(start + 1)..end].ToLowerInvariant() : string.Empty;
+    }
+
+    /// <summary>Parses CLEARMSG and CLEARCHAT so deletions, timeouts and bans become visible.</summary>
+    public static bool TryParseModerationEvent(string line, out ChatModerationEvent? moderationEvent)
+    {
+        moderationEvent = null;
+        if (!line.StartsWith('@')) return false;
+
+        int tagEnd = line.IndexOf(' ');
+        if (tagEnd < 0) return false;
+        var tags = ParseTags(line[1..tagEnd]);
+        DateTimeOffset at = ParseTimestamp(tags.GetValueOrDefault("tmi-sent-ts"));
+
+        if (line.IndexOf(" CLEARMSG #", tagEnd, StringComparison.Ordinal) >= 0)
+        {
+            moderationEvent = new ChatModerationEvent(
+                ChatEventKind.MessageDeleted,
+                EmptyToNull(tags.GetValueOrDefault("target-msg-id")),
+                null,
+                EmptyToNull(tags.GetValueOrDefault("login"))?.ToLowerInvariant(),
+                null,
+                at);
+            return true;
+        }
+
+        int clearChat = line.IndexOf(" CLEARCHAT #", tagEnd, StringComparison.Ordinal);
+        if (clearChat < 0) return false;
+
+        // A trailing " :login" names the purged user; without it Twitch cleared the entire room.
+        int targetAt = line.IndexOf(" :", clearChat + 12, StringComparison.Ordinal);
+        string? target = targetAt >= 0 ? line[(targetAt + 2)..].Trim().ToLowerInvariant() : null;
+        if (string.IsNullOrEmpty(target))
+        {
+            moderationEvent = new ChatModerationEvent(ChatEventKind.ChatCleared, null, null, null, null, at);
+            return true;
+        }
+
+        int? duration = int.TryParse(tags.GetValueOrDefault("ban-duration"), out int seconds) ? seconds : null;
+        moderationEvent = new ChatModerationEvent(
+            ChatEventKind.UserPurged,
+            null,
+            EmptyToNull(tags.GetValueOrDefault("target-user-id")),
+            target,
+            duration,
+            at);
         return true;
     }
 

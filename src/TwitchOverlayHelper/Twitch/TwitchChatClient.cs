@@ -7,15 +7,40 @@ namespace TwitchOverlayHelper.Twitch;
 
 public sealed class TwitchChatClient : IAsyncDisposable
 {
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
     private CancellationTokenSource? _lifetime;
     private Task? _runTask;
+    private ClientWebSocket? _activeSocket;
+    private string? _joinedChannel;
 
     public event Action<ChatMessage>? MessageReceived;
+    public event Action<ChatModerationEvent>? ModerationReceived;
     public event Action<string>? StatusChanged;
     public event Action<string>? RoomDiscovered;
     public event Action? ConnectionStopped;
 
     public bool IsRunning => _runTask is { IsCompleted: false };
+
+    /// <summary>True when the connection was authenticated, which is what sending a message requires.</summary>
+    public bool CanSend { get; private set; }
+
+    /// <summary>Sends a chat line over the live IRC connection. Requires an authenticated connection.</summary>
+    public async Task SendMessageAsync(string text, CancellationToken cancellationToken = default)
+    {
+        ClientWebSocket? socket = _activeSocket;
+        string? channel = _joinedChannel;
+        if (!CanSend || socket is null || channel is null || socket.State != WebSocketState.Open)
+            throw new InvalidOperationException("Chatten är inte inloggad – logga in för att kunna skriva.");
+
+        // IRC treats CR/LF as command separators, so a newline in the text could inject a command.
+        string line = text.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal).Trim();
+        if (line.Length == 0) return;
+        if (line.Length > 480) line = line[..480];
+
+        await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try { await SendAsync(socket, $"PRIVMSG #{channel} :{line}\r\n", cancellationToken).ConfigureAwait(false); }
+        finally { _sendLock.Release(); }
+    }
 
     public Task ConnectAsync(string channel, string? userName = null, string? oauthToken = null)
     {
@@ -101,8 +126,22 @@ public sealed class TwitchChatClient : IAsyncDisposable
         await SendAsync(socket, $"PASS {password}\r\n", token).ConfigureAwait(false);
         await SendAsync(socket, $"NICK {nick}\r\n", token).ConfigureAwait(false);
         await SendAsync(socket, $"JOIN #{channel}\r\n", token).ConfigureAwait(false);
+        _activeSocket = socket;
+        _joinedChannel = channel;
+        CanSend = authenticated;
         StatusChanged?.Invoke($"Live • #{channel}");
+        try
+        {
+            await ReadLoopAsync(socket, token).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (ReferenceEquals(_activeSocket, socket)) { _activeSocket = null; CanSend = false; }
+        }
+    }
 
+    private async Task ReadLoopAsync(ClientWebSocket socket, CancellationToken token)
+    {
         byte[] buffer = new byte[16 * 1024];
         var pending = new StringBuilder();
         using var messageBytes = new MemoryStream();
@@ -147,7 +186,8 @@ public sealed class TwitchChatClient : IAsyncDisposable
                         RoomDiscovered?.Invoke(roomId);
                     }
                 }
-                if (IrcMessageParser.TryParseChatMessage(line, out ChatMessage? message)) MessageReceived?.Invoke(message!);
+                if (IrcMessageParser.TryParseChatMessage(line, out ChatMessage? message)) { MessageReceived?.Invoke(message!); continue; }
+                if (IrcMessageParser.TryParseModerationEvent(line, out ChatModerationEvent? moderation)) ModerationReceived?.Invoke(moderation!);
             }
             pending.Clear();
             pending.Append(buffered);
@@ -168,7 +208,11 @@ public sealed class TwitchChatClient : IAsyncDisposable
         return new string(channel.Where(c => char.IsLetterOrDigit(c) || c == '_').ToArray());
     }
 
-    public async ValueTask DisposeAsync() => await DisconnectAsync().ConfigureAwait(false);
+    public async ValueTask DisposeAsync()
+    {
+        await DisconnectAsync().ConfigureAwait(false);
+        _sendLock.Dispose();
+    }
 }
 
 public sealed class TwitchAuthenticationException(string message) : Exception(message);
