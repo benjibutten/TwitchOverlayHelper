@@ -19,6 +19,11 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Assets\app.ico" />
+    <!-- The dock is served from inside the assembly; the app ships as a single self-contained file. -->
+    <EmbeddedResource Include="Web\wwwroot\**\*" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="XamlAnimatedGif" Version="2.3.2" />
