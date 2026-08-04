@@ -5,17 +5,21 @@
         Icon="pack://application:,,,/Assets/app.ico"
         Background="{StaticResource PageBrush}" Foreground="{StaticResource TextBrush}" WindowStartupLocation="CenterScreen">
     <Grid Margin="28">
-        <Grid.ColumnDefinitions><ColumnDefinition Width="1.05*" /><ColumnDefinition Width="24" /><ColumnDefinition Width="0.95*" /></Grid.ColumnDefinitions>
-        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="18" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
 
-        <StackPanel Grid.ColumnSpan="3">
-            <TextBlock Text="TWITCH OVERLAY HELPER" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" FontSize="13" />
-            <TextBlock Text="Läs chatten utan att lämna spelet" FontSize="31" FontWeight="SemiBold" Margin="0,4,0,0" />
-            <TextBlock Text="En lugn, stor och dyslexivänlig chatt-overlay som du styr härifrån." Foreground="{StaticResource MutedTextBrush}" FontSize="15" Margin="0,7,0,0" />
-        </StackPanel>
+        <!-- One scroll region for the whole page so the heading can be scrolled past
+             instead of permanently occupying the top of a short window. -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,10,0">
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="1.05*" /><ColumnDefinition Width="24" /><ColumnDefinition Width="0.95*" /></Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="18" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
 
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel>
+                <StackPanel Grid.ColumnSpan="3">
+                    <TextBlock Text="TWITCH OVERLAY HELPER" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" FontSize="12" />
+                    <TextBlock Text="Läs chatten utan att lämna spelet" FontSize="23" FontWeight="SemiBold" Margin="0,3,0,0" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="2">
                 <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20">
                     <StackPanel>
                         <TextBlock Text="1. Anslut chatten" FontSize="19" FontWeight="SemiBold" />
@@ -67,23 +71,66 @@
                     </StackPanel>
                 </Border>
 
-                <Expander Header="Twitch-inloggning och riktiga badges (valfritt)" Foreground="{StaticResource TextBrush}" Margin="0,18,0,0">
-                    <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,8,0,0">
-                        <StackPanel>
-                            <TextBlock Text="Client ID" Foreground="{StaticResource MutedTextBrush}" /><TextBox x:Name="ClientIdBox" Margin="0,5,0,10" />
-                            <TextBlock Text="Twitch-användarnamn" Foreground="{StaticResource MutedTextBrush}" /><TextBox x:Name="UserNameBox" Margin="0,5,0,10" />
-                            <TextBlock Text="OAuth-token (sparas inte)" Foreground="{StaticResource MutedTextBrush}" /><PasswordBox x:Name="TokenBox" Background="#10141F" Foreground="White" BorderBrush="#343B50" Padding="11,9" Margin="0,5,0,0" />
-                            <TextBlock Text="Utan dessa fungerar chatten anonymt med lokala rollmarkörer." TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,10,0,0" />
-                        </StackPanel>
-                    </Border>
-                </Expander>
-            </StackPanel>
-        </ScrollViewer>
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="4. Chatt i OBS" FontSize="19" FontWeight="SemiBold" />
+                        <TextBlock Text="Lägg till adressen som en Custom Browser Dock i OBS (Vy → Dockor → Anpassade webbläsardockor)."
+                                   TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" Margin="0,7,0,12" LineHeight="20" />
+                        <Border Background="#10141F" BorderBrush="#343B50" BorderThickness="1" CornerRadius="8" Padding="11,9">
+                            <TextBox x:Name="DockUrlBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                     Foreground="{StaticResource PrimaryBrush}" FontFamily="Consolas" Padding="0" />
+                        </Border>
+                        <Grid Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                            <Button x:Name="CopyDockUrlButton" Content="Kopiera adress" Click="CopyDockUrl_Click" />
+                            <Button x:Name="OpenDockButton" Grid.Column="2" Content="Förhandsgranska" Background="#343B50" Click="OpenDock_Click" />
+                        </Grid>
+                        <Button x:Name="DockAppearanceButton" Content="Ändra chattens läsbarhet" Background="#343B50" Margin="0,10,0,0" Click="DockAppearance_Click" />
+                        <Border Background="#10141F" CornerRadius="8" Padding="11" Margin="0,12,0,0">
+                            <DockPanel><Ellipse x:Name="DockStatusDot" Width="9" Height="9" Fill="#6B7280" Margin="0,0,9,0" VerticalAlignment="Center" />
+                                <TextBlock x:Name="DockStatusText" Text="Servern startar …" Foreground="#C8C5D3" TextWrapping="Wrap" /></DockPanel>
+                        </Border>
+                        <TextBlock Text="Adressen innehåller en hemlig nyckel och fungerar bara från den här datorn. Dela den inte."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,10,0,0" LineHeight="18" />
+                    </StackPanel>
+                </Border>
 
-        <ScrollViewer Grid.Row="2" Grid.Column="2" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
-            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22">
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="5. Logga in för moderering" FontSize="19" FontWeight="SemiBold" />
+                        <TextBlock Text="Krävs för timeout, ban, raid och för att kunna skriva i chatten från docken. Chatten går att läsa utan inloggning."
+                                   TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" Margin="0,7,0,12" LineHeight="20" />
+                        <Border Background="#10141F" BorderBrush="#343B50" BorderThickness="1" CornerRadius="8" Padding="13" Margin="0,0,0,13">
+                            <StackPanel>
+                                <TextBlock Text="Så skapar du ett Client ID" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold" FontSize="13" />
+                                <TextBlock TextWrapping="Wrap" Foreground="#B8B4C6" FontSize="12" LineHeight="19" Margin="0,7,0,0">
+                                    1. Öppna dev.twitch.tv/console/apps och välj Registrera din applikation.<LineBreak />
+                                    2. Namn: valfritt. OAuth Redirect URL: http://localhost<LineBreak />
+                                    3. Kategori: Chat Bot. <Run FontWeight="Bold">Klienttyp måste vara Public.</Run><LineBreak />
+                                    4. Kopiera appens Client ID hit nedan.
+                                </TextBlock>
+                                <Button x:Name="OpenDevConsoleButton" Content="Öppna dev.twitch.tv" Background="#343B50" Padding="12,7" HorizontalAlignment="Left" Margin="0,11,0,0" Click="OpenDevConsole_Click" />
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Text="Client ID" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,5" />
+                        <TextBox x:Name="ClientIdBox" TextChanged="ClientId_TextChanged" />
+                        <Button x:Name="LoginButton" Content="Logga in med Twitch" Margin="0,12,0,0" Click="Login_Click" />
+                        <Border x:Name="DeviceCodeCard" Background="#10141F" BorderBrush="#5A3FA0" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,12,0,0" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock x:Name="DeviceCodeHint" Text="Gå till twitch.tv/activate och skriv in koden:" TextWrapping="Wrap" Foreground="#C8C5D3" />
+                                <TextBlock x:Name="DeviceCodeText" Text="" FontSize="30" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"
+                                           HorizontalAlignment="Center" Margin="0,10,0,0" />
+                            </StackPanel>
+                        </Border>
+                        <TextBlock x:Name="LoginStatusText" Text="Inte inloggad." TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,10,0,0" LineHeight="18" />
+                    </StackPanel>
+                </Border>
+
+                </StackPanel>
+
+                <Border Grid.Row="2" Grid.Column="2" VerticalAlignment="Top"
+                        Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22">
                 <StackPanel>
-                    <TextBlock Text="Läsbarhet" FontSize="19" FontWeight="SemiBold" />
+                    <TextBlock Text="Overlayens läsbarhet" FontSize="19" FontWeight="SemiBold" />
                     <TextBlock Text="Ändringar syns direkt i overlayen." Foreground="{StaticResource MutedTextBrush}" Margin="0,6,0,18" />
 
                     <DockPanel><TextBlock Text="Textstorlek" /><TextBlock x:Name="FontSizeValue" Text="22 px" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
@@ -129,10 +176,11 @@
                         </StackPanel>
                     </Border>
                 </StackPanel>
-            </Border>
+                </Border>
+            </Grid>
         </ScrollViewer>
 
-        <DockPanel Grid.Row="3" Grid.ColumnSpan="3" Margin="0,18,0,0">
+        <DockPanel Grid.Row="1" Margin="0,18,0,0">
             <TextBlock x:Name="VersionText" DockPanel.Dock="Right" Foreground="#5F5B6E" FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0" />
             <TextBlock Text="Tips: lås overlayen när den ligger rätt – då blir den helt klickigenom och stjäl aldrig fokus från spelet." Foreground="#858193" TextTrimming="CharacterEllipsis" />
         </DockPanel>

@@ -13,6 +13,7 @@ using TwitchOverlayHelper.Overlay;
 using TwitchOverlayHelper.Services;
 using TwitchOverlayHelper.Settings;
 using TwitchOverlayHelper.Twitch;
+using TwitchOverlayHelper.Web;
 
 namespace TwitchOverlayHelper;
 
@@ -25,6 +26,12 @@ public partial class MainWindow : Window
     private readonly TwitchBadgeCatalog _badgeCatalog = new();
     private readonly TwitchChatClient _chatClient = new();
     private readonly StartupRegistrySyncService _startupRegistrySyncService = new();
+    private readonly System.Net.Http.HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(15) };
+    private readonly TwitchSession _session;
+    private readonly TwitchApiClient _apiClient;
+    private readonly ChatHub _hub;
+    private readonly DockServer _dockServer;
+    private readonly DockServerContext _dockContext;
     private readonly AppSettings _settings;
     private readonly OverlayWindow _overlay;
     private readonly ConcurrentQueue<ChatMessage> _pendingMessages = new();
@@ -39,6 +46,8 @@ public partial class MainWindow : Window
     private bool _closing;
     private bool _exitRequested;
     private bool _updatingStartWithWindows;
+    private bool _reconnecting;
+    private DockSettingsWindow? _dockSettingsWindow;
     private string? _lastBadgeRoom;
     private CancellationTokenSource? _badgeLoadCancellation;
     private int _pendingMessageCount;
@@ -50,6 +59,18 @@ public partial class MainWindow : Window
         VersionText.Text = AppVersion.DisplayText;
         _settings = _settingsStore.Load();
         SyncStartWithWindows();
+        _session = new TwitchSession(_httpClient);
+        _apiClient = new TwitchApiClient(_httpClient, _session);
+        _hub = new ChatHub(_settings, _badgeCatalog, _session);
+        _dockContext = new DockServerContext
+        {
+            Settings = _settings,
+            Hub = _hub,
+            Session = _session,
+            Api = _apiClient,
+            Chat = _chatClient
+        };
+        _dockServer = new DockServer(_dockContext);
         _overlay = new OverlayWindow(_settings, _badgeCatalog);
         _chatFlushTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(75) };
         _chatFlushTimer.Tick += FlushPendingMessages;
@@ -65,11 +86,212 @@ public partial class MainWindow : Window
         if (_settings.OverlayVisible) _overlay.Show();
 
         _chatClient.MessageReceived += QueueMessage;
+        _chatClient.MessageReceived += _hub.PublishMessage;
+        _chatClient.ModerationReceived += _hub.PublishModeration;
         _chatClient.StatusChanged += status => RunOnUi(() => SetStatus(status));
-        _chatClient.RoomDiscovered += room => RunOnUi(async () => await LoadBadgesAsync(room));
+        _chatClient.RoomDiscovered += room => RunOnUi(async () => await OnRoomDiscoveredAsync(room));
         _chatClient.ConnectionStopped += () => RunOnUi(() => SetConnectionButtons(false));
+        _session.StateChanged += () => RunOnUi(UpdateLoginUi);
+
+        UpdateLoginUi();
+        UpdateLoginButtonState();
+        // Sample lines so the dock shows what the reading settings look like before anything is connected.
+        _hub.ShowSamples();
+        _ = StartDockServerAsync();
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
+    }
+
+    private async Task StartDockServerAsync()
+    {
+        if (!_settings.DockServerEnabled)
+        {
+            SetDockStatus("Chattservern är avstängd.", "idle");
+            return;
+        }
+
+        bool started = await _dockServer.StartAsync();
+        DockUrlBox.Text = started ? _dockServer.DockUrl : string.Empty;
+        CopyDockUrlButton.IsEnabled = started;
+        OpenDockButton.IsEnabled = started;
+        SetDockStatus(started ? "Servern kör – klistra in adressen i OBS." : _dockServer.LastError ?? "Servern kunde inte starta.", started ? "live" : "error");
+    }
+
+    private void SetDockStatus(string text, string state)
+    {
+        DockStatusText.Text = text;
+        DockStatusDot.Fill = new SolidColorBrush(state switch
+        {
+            "live" => Color.FromRgb(34, 197, 94),
+            "error" => Color.FromRgb(239, 68, 68),
+            _ => Color.FromRgb(107, 114, 128)
+        });
+    }
+
+    private void CopyDockUrl_Click(object sender, RoutedEventArgs e)
+    {
+        if (DockUrlBox.Text.Length == 0) return;
+        try
+        {
+            Clipboard.SetText(DockUrlBox.Text);
+            SetDockStatus("Adressen är kopierad – klistra in den i OBS.", "live");
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            // The clipboard can be locked by another process; the address is still selectable.
+            SetDockStatus("Kunde inte kopiera – markera adressen och kopiera manuellt.", "error");
+        }
+    }
+
+    private void OpenDock_Click(object sender, RoutedEventArgs e)
+    {
+        if (DockUrlBox.Text.Length == 0) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(DockUrlBox.Text) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            SetDockStatus("Ingen webbläsare kunde öppnas.", "error");
+        }
+    }
+
+    private void ClientId_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_loading) return;
+        UpdateLoginButtonState();
+    }
+
+    private void UpdateLoginButtonState() =>
+        LoginButton.IsEnabled = _session.IsLoggedIn || ClientIdBox.Text.Trim().Length > 0;
+
+    private void OpenDevConsole_Click(object sender, RoutedEventArgs e) =>
+        OpenInBrowser("https://dev.twitch.tv/console/apps");
+
+    private async void Login_Click(object sender, RoutedEventArgs e)
+    {
+        if (_session.IsLoggedIn)
+        {
+            await _session.LogoutAsync();
+            _hub.PublishAuth(_chatClient.CanSend);
+            return;
+        }
+
+        string clientId = ClientIdBox.Text.Trim();
+        if (clientId.Length == 0)
+        {
+            LoginStatusText.Text = "Fyll i Client ID först – se stegen ovan.";
+            ClientIdBox.Focus();
+            return;
+        }
+
+        _settings.ClientId = clientId;
+        SaveSettings();
+        LoginButton.IsEnabled = false;
+        LoginStatusText.Text = "Kontaktar Twitch …";
+        try
+        {
+            DeviceCodePrompt prompt = await _session.BeginLoginAsync(clientId);
+            DeviceCodeCard.Visibility = Visibility.Visible;
+            DeviceCodeHint.Text = $"Gå till {prompt.VerificationUri} och skriv in koden:";
+            DeviceCodeText.Text = prompt.UserCode;
+            LoginStatusText.Text = "Väntar på att du godkänner i webbläsaren …";
+            OpenInBrowser(prompt.VerificationUri);
+            _hub.PublishAuth(_chatClient.CanSend);
+        }
+        catch (Exception ex) when (ex is TwitchAuthException or System.Net.Http.HttpRequestException)
+        {
+            DeviceCodeCard.Visibility = Visibility.Collapsed;
+            LoginStatusText.Text = ex.Message;
+        }
+        finally { UpdateLoginButtonState(); }
+    }
+
+    private void DockAppearance_Click(object sender, RoutedEventArgs e)
+    {
+        if (_dockSettingsWindow is { IsLoaded: true })
+        {
+            _dockSettingsWindow.Activate();
+            return;
+        }
+
+        _dockSettingsWindow = new DockSettingsWindow(_settings, () =>
+        {
+            SaveSettings();
+            _hub.PublishSettings();
+        }) { Owner = this };
+        _dockSettingsWindow.Closed += (_, _) => _dockSettingsWindow = null;
+        _dockSettingsWindow.Show();
+    }
+
+    private void OpenInBrowser(string url)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            // Not being able to launch a browser is not worth blocking on; the address is on screen.
+        }
+    }
+
+    private void UpdateLoginUi()
+    {
+        SessionState state = _session.Snapshot();
+        LoginButton.Content = state.IsLoggedIn ? "Logga ut" : "Logga in med Twitch";
+        DeviceCodeCard.Visibility = state.PendingUserCode is null ? Visibility.Collapsed : Visibility.Visible;
+        if (state.PendingUserCode is not null) DeviceCodeText.Text = state.PendingUserCode;
+
+        LoginStatusText.Text = state.Error
+            ?? (state.IsLoggedIn
+                ? $"Inloggad som {state.Login}. Timeout, ban och raid är upplåsta i docken."
+                : "Inte inloggad. Chatten visas men går inte att moderera.");
+
+        if (state.IsLoggedIn && !string.Equals(_settings.UserName, state.Login, StringComparison.OrdinalIgnoreCase))
+        {
+            _settings.UserName = state.Login;
+            SaveSettings();
+            ScheduleOverlayApply();
+        }
+
+        _hub.PublishAuth(_chatClient.CanSend);
+
+        if (!_chatClient.IsRunning || _reconnecting) return;
+
+        // Logging in mid-session leaves an anonymous IRC connection behind, which cannot send.
+        // Reconnecting upgrades it so the dock's composer works without the user restarting anything.
+        if (state.IsLoggedIn && !_chatClient.CanSend) _ = ReconnectAsync(authenticated: true);
+
+        // Logging out has to take the socket with it, otherwise the connection keeps sending as the
+        // account that just signed out. Reconnecting anonymously keeps the chat readable.
+        else if (!state.IsLoggedIn && _chatClient.CanSend) _ = ReconnectAsync(authenticated: false);
+    }
+
+    private async Task ReconnectAsync(bool authenticated)
+    {
+        _reconnecting = true;
+        try
+        {
+            await _chatClient.DisconnectAsync();
+            string? token = authenticated ? await _session.TryGetIrcTokenAsync() : null;
+            if (authenticated && token is null) return;
+            await _chatClient.ConnectAsync(_settings.Channel, token is null ? null : _session.Login, token);
+            SetConnectionButtons(true);
+            _hub.PublishAuth(_chatClient.CanSend);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or TwitchAuthException)
+        {
+            SetStatus(ex.Message, true);
+        }
+        finally { _reconnecting = false; }
+    }
+
+    private async Task OnRoomDiscoveredAsync(string roomId)
+    {
+        _hub.BroadcasterId = roomId;
+        _hub.PublishAuth(_chatClient.CanSend);
+        await LoadBadgesAsync(roomId);
     }
 
     private System.Windows.Forms.NotifyIcon CreateTrayIcon()
@@ -165,7 +387,6 @@ public partial class MainWindow : Window
     {
         ChannelBox.Text = _settings.Channel;
         ClientIdBox.Text = _settings.ClientId;
-        UserNameBox.Text = _settings.UserName;
         FontSizeSlider.Value = _settings.FontSize;
         LineSpacingSlider.Value = _settings.LineSpacing;
         OpacitySlider.Value = _settings.BackgroundOpacity;
@@ -298,15 +519,18 @@ public partial class MainWindow : Window
 
         _settings.Channel = channel;
         _settings.ClientId = ClientIdBox.Text.Trim();
-        _settings.UserName = UserNameBox.Text.Trim();
         _lastBadgeRoom = null;
         _badgeLoadCancellation?.Cancel();
+        _hub.SetChannel(channel);
         ScheduleOverlayApply();
         SaveSettings();
         SetConnectionButtons(true);
         try
         {
-            await _chatClient.ConnectAsync(channel, _settings.UserName, TokenBox.Password);
+            // An authenticated connection is what lets the dock send messages; anonymous still reads fine.
+            string? token = await _session.TryGetIrcTokenAsync();
+            await _chatClient.ConnectAsync(channel, token is null ? null : _session.Login, token);
+            _hub.PublishAuth(_chatClient.CanSend);
         }
         catch (Exception ex) { SetConnectionButtons(false); SetStatus(ex.Message, true); }
     }
@@ -419,7 +643,7 @@ public partial class MainWindow : Window
 
     private async Task LoadBadgesAsync(string roomId)
     {
-        if (_lastBadgeRoom == roomId || string.IsNullOrWhiteSpace(ClientIdBox.Text) || string.IsNullOrWhiteSpace(TokenBox.Password)) return;
+        if (_lastBadgeRoom == roomId || !_session.IsLoggedIn) return;
         _badgeLoadCancellation?.Cancel();
         _badgeLoadCancellation?.Dispose();
         var cancellation = new CancellationTokenSource();
@@ -427,9 +651,11 @@ public partial class MainWindow : Window
         _badgeLoadCancellation = cancellation;
         try
         {
-            await _badgeCatalog.LoadAsync(ClientIdBox.Text, TokenBox.Password, roomId, cancellationToken);
+            string accessToken = await _session.GetAccessTokenAsync(cancellationToken);
+            await _badgeCatalog.LoadAsync(_session.ClientId, accessToken, roomId, cancellationToken);
             _lastBadgeRoom = roomId;
             _overlay.RefreshMessages();
+            _hub.PublishBadgesLoaded();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception ex) { SetStatus("Chat ansluten • badges kunde inte laddas: " + ex.Message, true); }
@@ -451,6 +677,7 @@ public partial class MainWindow : Window
         StatusText.Text = text;
         bool live = text.StartsWith("Live", StringComparison.Ordinal);
         StatusDot.Fill = new SolidColorBrush(error ? Color.FromRgb(239, 68, 68) : live ? Color.FromRgb(34, 197, 94) : Color.FromRgb(245, 158, 11));
+        _hub.PublishStatus(text, error ? "error" : live ? "live" : "busy");
     }
 
     private void UpdateValueLabels()
@@ -504,7 +731,10 @@ public partial class MainWindow : Window
         GlobalHotkeys.Unregister(this, EditHotkeyId);
         _hwndSource?.RemoveHook(WndProc);
         _overlay.Close();
+        await _dockServer.DisposeAsync();
         await _chatClient.DisposeAsync();
+        _session.Dispose();
+        _httpClient.Dispose();
         _trayIcon.ContextMenuStrip?.Dispose();
         _trayIcon.Dispose();
         Application.Current.Shutdown();
