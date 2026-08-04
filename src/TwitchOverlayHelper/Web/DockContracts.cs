@@ -48,7 +48,11 @@ internal sealed record DockHello(
     DockAuth Auth,
     string Channel,
     string MentionName,
+    bool SpeechEnabled,
     IReadOnlyList<DockMessage> History);
+
+/// <summary>Whether the speaker button next to every name has anything to call.</summary>
+internal sealed record DockSpeech(bool Enabled);
 
 internal sealed record DockEnvelope<T>(string Type, T Payload);
 

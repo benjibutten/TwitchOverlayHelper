@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using TwitchOverlayHelper.Models;
 using TwitchOverlayHelper.Settings;
+using TwitchOverlayHelper.Speech;
 using TwitchOverlayHelper.Twitch;
 using TwitchOverlayHelper.Web;
 
@@ -49,7 +50,8 @@ public sealed class DockServerTests
             Hub = hub,
             Session = session,
             Api = new TwitchApiClient(new HttpClient(), session),
-            Chat = chat
+            Chat = chat,
+            Speech = SpeechFixture.Service(settings)
         });
 
         Assert.True(await server.StartAsync());
@@ -193,6 +195,40 @@ public sealed class DockServerTests
         WebSocketReceiveResult hello = await socket.ReceiveAsync(buffer, timeout.Token);
         using JsonDocument json = JsonDocument.Parse(Encoding.UTF8.GetString(buffer, 0, hello.Count));
         return json.RootElement.GetProperty("history").GetArrayLength();
+    }
+
+    // The speaker button is hidden when pronunciation is not set up, but hiding a button is not
+    // enforcement – and the endpoint spends money at two APIs.
+    [Fact]
+    public async Task RefusesToReadANameBeforePronunciationIsSetUp()
+    {
+        (DockServer server, AppSettings settings, HttpClient client) = await StartAsync();
+        await using (server)
+        {
+            Assert.Equal(HttpStatusCode.Forbidden,
+                (await client.PostAsJsonAsync("/api/speech/name", new { displayName = "Kajsa" })).StatusCode);
+
+            HttpResponseMessage response = await client.PostAsJsonAsync(
+                $"/api/speech/name?key={settings.DockAccessKey}", new { displayName = "Kajsa" });
+            Assert.Contains("inte påslagen", await ErrorOfAsync(response));
+        }
+        client.Dispose();
+    }
+
+    [Fact]
+    public async Task TellsTheDockWhetherNamesCanBeReadAloud()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            using JsonDocument off = JsonDocument.Parse(await client.GetStringAsync($"/api/state?key={settings.DockAccessKey}"));
+            Assert.False(off.RootElement.GetProperty("speechEnabled").GetBoolean());
+
+            hub.SpeechEnabled = true;
+            using JsonDocument on = JsonDocument.Parse(await client.GetStringAsync($"/api/state?key={settings.DockAccessKey}"));
+            Assert.True(on.RootElement.GetProperty("speechEnabled").GetBoolean());
+        }
+        client.Dispose();
     }
 
     // The IRC socket outlives a logout, so the endpoint has to be what stops sending.

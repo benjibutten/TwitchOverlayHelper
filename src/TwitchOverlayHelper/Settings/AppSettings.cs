@@ -40,12 +40,17 @@ public sealed class AppSettings
     public string DockAccessKey { get; set; } = string.Empty;
     public DockSettings Dock { get; set; } = new();
 
+    /// <summary>Reading a chatter's name out loud. The API keys are stored separately and encrypted.</summary>
+    public SpeechSettings Speech { get; set; } = new();
+
     public void Normalize()
     {
         DockServerPort = DockServerPort is >= 1024 and <= 65535 ? DockServerPort : 4747;
         if (string.IsNullOrWhiteSpace(DockAccessKey)) DockAccessKey = GenerateAccessKey();
         Dock ??= new DockSettings();
         Dock.Normalize();
+        Speech ??= new SpeechSettings();
+        Speech.Normalize();
         OverlayLeft = FiniteOrDefault(OverlayLeft, 42);
         OverlayTop = FiniteOrDefault(OverlayTop, 120);
         OverlayWidth = Math.Clamp(FiniteOrDefault(OverlayWidth, 520), 320, 4000);

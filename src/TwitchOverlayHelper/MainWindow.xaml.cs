@@ -12,6 +12,7 @@ using TwitchOverlayHelper.Models;
 using TwitchOverlayHelper.Overlay;
 using TwitchOverlayHelper.Services;
 using TwitchOverlayHelper.Settings;
+using TwitchOverlayHelper.Speech;
 using TwitchOverlayHelper.Twitch;
 using TwitchOverlayHelper.Web;
 
@@ -27,8 +28,14 @@ public partial class MainWindow : Window
     private readonly TwitchChatClient _chatClient = new();
     private readonly StartupRegistrySyncService _startupRegistrySyncService = new();
     private readonly System.Net.Http.HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(15) };
+    // Its own client: generating a voice clip is slower than any Twitch call, and a name that
+    // takes a few seconds to come back must not push the Twitch timeout up for everything else.
+    private readonly System.Net.Http.HttpClient _speechHttpClient = new() { Timeout = TimeSpan.FromSeconds(30) };
     private readonly TwitchSession _session;
     private readonly TwitchApiClient _apiClient;
+    private readonly SpeechSecretStore _speechSecrets = new();
+    private readonly NameAudioPlayer _namePlayer;
+    private readonly NameSpeechService _nameSpeech;
     private readonly ChatHub _hub;
     private readonly DockServer _dockServer;
     private readonly DockServerContext _dockContext;
@@ -48,6 +55,7 @@ public partial class MainWindow : Window
     private bool _updatingStartWithWindows;
     private bool _reconnecting;
     private DockSettingsWindow? _dockSettingsWindow;
+    private SpeechSettingsWindow? _speechSettingsWindow;
     private string? _lastBadgeRoom;
     private CancellationTokenSource? _badgeLoadCancellation;
     private int _pendingMessageCount;
@@ -61,14 +69,17 @@ public partial class MainWindow : Window
         SyncStartWithWindows();
         _session = new TwitchSession(_httpClient);
         _apiClient = new TwitchApiClient(_httpClient, _session);
-        _hub = new ChatHub(_settings, _badgeCatalog, _session);
+        _namePlayer = new NameAudioPlayer(Dispatcher);
+        _nameSpeech = new NameSpeechService(_speechHttpClient, _settings, _speechSecrets, _namePlayer.PlayAsync);
+        _hub = new ChatHub(_settings, _badgeCatalog, _session) { SpeechEnabled = _nameSpeech.IsConfigured };
         _dockContext = new DockServerContext
         {
             Settings = _settings,
             Hub = _hub,
             Session = _session,
             Api = _apiClient,
-            Chat = _chatClient
+            Chat = _chatClient,
+            Speech = _nameSpeech
         };
         _dockServer = new DockServer(_dockContext);
         _overlay = new OverlayWindow(_settings, _badgeCatalog);
@@ -95,6 +106,7 @@ public partial class MainWindow : Window
 
         UpdateLoginUi();
         UpdateLoginButtonState();
+        ApplySpeechConfiguration();
         // Sample lines so the dock shows what the reading settings look like before anything is connected.
         _hub.ShowSamples();
         _ = StartDockServerAsync();
@@ -222,6 +234,35 @@ public partial class MainWindow : Window
         }) { Owner = this };
         _dockSettingsWindow.Closed += (_, _) => _dockSettingsWindow = null;
         _dockSettingsWindow.Show();
+    }
+
+    private void SpeechSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_speechSettingsWindow is { IsLoaded: true })
+        {
+            _speechSettingsWindow.Activate();
+            return;
+        }
+
+        _speechSettingsWindow = new SpeechSettingsWindow(_settings, _speechSecrets, _nameSpeech, () =>
+        {
+            SaveSettings();
+            ApplySpeechConfiguration();
+        }) { Owner = this };
+        _speechSettingsWindow.Closed += (_, _) => _speechSettingsWindow = null;
+        _speechSettingsWindow.Show();
+    }
+
+    /// <summary>Keeps the dock's speaker button in step with what is actually configured.</summary>
+    private void ApplySpeechConfiguration()
+    {
+        _hub.SpeechEnabled = _nameSpeech.IsConfigured;
+        _hub.PublishSpeech();
+        SpeechStatusText.Text = _hub.SpeechEnabled
+            ? $"Påslaget – högtalarknappen visas i docken. Röst: {(_settings.Speech.VoiceName.Length > 0 ? _settings.Speech.VoiceName : _settings.Speech.VoiceId)}."
+            : _nameSpeech.CanSpeak
+                ? "Nycklar och röst är klara, men knappen är avstängd."
+                : "Inte konfigurerat – ingen knapp visas i docken.";
     }
 
     private void OpenInBrowser(string url)
@@ -731,10 +772,12 @@ public partial class MainWindow : Window
         GlobalHotkeys.Unregister(this, EditHotkeyId);
         _hwndSource?.RemoveHook(WndProc);
         _overlay.Close();
+        _namePlayer.Close();
         await _dockServer.DisposeAsync();
         await _chatClient.DisposeAsync();
         _session.Dispose();
         _httpClient.Dispose();
+        _speechHttpClient.Dispose();
         _trayIcon.ContextMenuStrip?.Dispose();
         _trayIcon.Dispose();
         Application.Current.Shutdown();

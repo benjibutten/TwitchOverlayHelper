@@ -22,6 +22,23 @@ Moderering fungerar i alla kanaler där du är moderator, inte bara i din egen. 
 
 Moderering, raid och skrivfältet kräver inloggning; utan den fungerar docken som en ren läsvy.
 
+## Uppläsning av namn
+
+Twitch-namn är skrivna för att titta på, inte för att säga: dekorativa x, dubblerade bokstäver och versala förkortningar. Med uppläsning påslagen får varje namn i docken en `🔊`-knapp. Ett klick skickar namnet till **DeepSeek** (`deepseek-v4-flash`), som svarar med en rad om hur en människa sannolikt skulle säga det, och den raden läses upp av **ElevenLabs** (`eleven_v3`) på datorn där appen körs – inte i webbläsaren, eftersom en dock i OBS ofta är dämpad eller ligger på en annan ljudenhet.
+
+Ställs in under **6. Uppläsning av namn** i appen:
+
+- Två API-nycklar, en per tjänst. De sparas krypterade med Windows DPAPI (`CurrentUser`) i `%LOCALAPPDATA%\TwitchOverlayHelper\speech.bin` och hamnar aldrig i `settings.json`.
+- Röst hämtas från ElevenLabs-kontot, eller klistras in som röst-ID. Modellnamnen går att byta om kontot saknar den senaste modellen.
+- En testruta som visar den tolkade raden och läser upp den, så hela kedjan kan provas innan knappen släpps in i docken.
+
+Knappen syns bara när nycklar, röst och inställningen är på plats – är något ofyllt finns den inte alls. Båda tjänsterna kostar per anrop, så inget hämtas två gånger i onödan:
+
+- Ljudklippet sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\namecache` och överlever omstart. ElevenLabs-anropet görs alltså en gång per namn och röst.
+- Tolkningen från DeepSeek sparas så länge appen är igång. Efter en omstart frågas DeepSeek en gång till för samma namn – ett kort och billigt anrop, och ljudet återanvänds ändå.
+
+Om DeepSeek inte svarar läses namnet upp som det står, med en notis om varför det kan låta fel. Den tolkningen sparas inte, så nästa klick försöker igen.
+
 ## Funktioner
 
 - Anslut anonymt genom att bara ange kanalnamn eller Twitch-länk.
@@ -36,6 +53,7 @@ Moderering, raid och skrivfältet kräver inloggning; utan den fungerar docken s
 - Twitch-metadata för broadcaster, moderator, VIP, subscriber med lokala markörer.
 - Riktiga Twitch-badge-bilder när Client ID och OAuth-token anges.
 - Automatisk återanslutning, PING/PONG-hantering och tydligt stopp vid nekad inloggning.
+- Uppläsning av chattares namn via DeepSeek och ElevenLabs, för namn som är svåra att läsa högt.
 - Inställningar sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\settings.json`. OAuth-token sparas aldrig.
 - Körs som en enda instans; en ny vanlig start öppnar den redan körande appens inställningsfönster.
 - Valbar **Starta med Windows**-inställning som startar appen minimerad i meddelandefältet utan extra bakgrundstjänst.

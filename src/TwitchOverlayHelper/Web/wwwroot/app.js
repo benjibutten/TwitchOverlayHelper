@@ -17,6 +17,7 @@ const el = {
 const state = {
   settings: null,
   auth: { loggedIn: false, canSend: false, canRaid: false },
+  speech: false,       // the app has DeepSeek + ElevenLabs set up, so names can be read aloud
   mentionName: "",
   queue: [],
   paused: false,
@@ -62,10 +63,20 @@ function connect() {
 function handle(frame) {
   if (frame.type === "hello") {
     state.mentionName = frame.mentionName || "";
+    state.speech = frame.speechEnabled === true;
     applySettings(frame.settings);
     applyAuth(frame.auth);
     setStatus(frame.status.text, frame.status.state);
+
+    // A hello is a fresh start, and after a reconnect the history already contains whatever was
+    // still queued here. Anything left over would be shown a second time.
     el.chat.replaceChildren();
+    el.pinned.replaceChildren();
+    el.pinned.hidden = true;
+    state.queue.length = 0;
+    state.missed = 0;
+    updateJump();
+
     // History is already read; it should appear at once rather than trickle through the pacer.
     frame.history.forEach((message) => append(message, true));
     scrollToEnd();
@@ -77,6 +88,7 @@ function handle(frame) {
   if (frame.type === "status") { setStatus(frame.payload.text, frame.payload.state); return; }
   if (frame.type === "settings") { applySettings(frame.payload); return; }
   if (frame.type === "auth") { applyAuth(frame.payload); return; }
+  if (frame.type === "speech") { applySpeech(frame.payload.enabled); return; }
   if (frame.type === "badgesLoaded") { location.reload(); }
 }
 
@@ -261,6 +273,8 @@ function build(message) {
   name.addEventListener("click", () => openUserSheet(message));
   head.appendChild(name);
 
+  if (state.speech) head.appendChild(speakButton(message));
+
   if (message.isFirstMessage) head.appendChild(tag("ny", "new"));
   if (node.dataset.mention === "true") head.appendChild(tag("till dig", "mention"));
 
@@ -349,6 +363,35 @@ function formatDuration(seconds) {
 function setStatus(text, level) {
   el.statusText.textContent = text;
   el.statusDot.dataset.state = level;
+}
+
+/* ------------------------------------------------------- name pronunciation */
+
+/* Twitch names are written to be looked at, not said: decorative x-es, doubled letters and
+   shouted abbreviations. The app turns the name into speakable text and reads it out loud,
+   so a name never has to be decoded before it can be used. */
+function speakButton(message) {
+  const button = document.createElement("button");
+  button.className = "msg-say";
+  button.type = "button";
+  button.textContent = "🔊";
+  const label = `Hör hur ${message.displayName} uttalas`;
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.addEventListener("click", () => speakName(message, button));
+  return button;
+}
+
+function speakName(message, button) {
+  if (button.dataset.busy === "true") return;
+  button.dataset.busy = "true";
+  api("/api/speech/name", {
+    method: "POST",
+    body: JSON.stringify({ login: message.login, displayName: message.displayName }),
+  })
+    .then((result) => { if (result && result.warning) toast(result.warning, "error"); })
+    .catch((error) => toast(error.message, "error"))
+    .finally(() => { button.dataset.busy = "false"; });
 }
 
 /* ------------------------------------------------------------ user actions */
@@ -556,6 +599,14 @@ function applyAuth(auth) {
   state.auth = auth;
   el.raidBtn.hidden = !auth.canRaid;
   el.composer.hidden = !auth.canSend;
+}
+
+/* The speaker button is baked into each message, so turning pronunciation on or off in the app
+   has to rebuild what is already on screen. */
+function applySpeech(enabled) {
+  if (state.speech === enabled) return;
+  state.speech = enabled;
+  if (state.settings) rerender();
 }
 
 /* ------------------------------------------------------------------ chrome */

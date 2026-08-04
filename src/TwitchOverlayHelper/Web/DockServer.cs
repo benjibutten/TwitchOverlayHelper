@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using TwitchOverlayHelper.Settings;
+using TwitchOverlayHelper.Speech;
 using TwitchOverlayHelper.Twitch;
 
 namespace TwitchOverlayHelper.Web;
@@ -21,6 +22,7 @@ public sealed class DockServerContext
     public required TwitchSession Session { get; init; }
     public required TwitchApiClient Api { get; init; }
     public required TwitchChatClient Chat { get; init; }
+    public required NameSpeechService Speech { get; init; }
 }
 
 /// <summary>
@@ -150,8 +152,28 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
         {
             settings = context.Settings.Dock,
             auth = context.Hub.BuildAuth(context.Chat.CanSend),
-            channel = context.Settings.Channel
+            channel = context.Settings.Channel,
+            speechEnabled = context.Hub.SpeechEnabled
         }, DockJson.Options));
+
+        // Reads a chatter's name out loud on the machine running the app. Deliberately not gated on
+        // being logged in: hearing a name is a reading aid, not a moderation action.
+        app.MapPost("/api/speech/name", async (SpeakNameRequest request) =>
+        {
+            if (!context.Speech.IsConfigured)
+                return Problem("Uppläsning av namn är inte påslagen i appen.");
+
+            string name = Pick(request.DisplayName, request.Login);
+            try
+            {
+                NameSpeechResult result = await context.Speech.SpeakAsync(name).ConfigureAwait(false);
+                return Results.Json(new { spoken = result.Spoken, warning = result.Warning }, DockJson.Options);
+            }
+            catch (Exception ex) when (ex is SpeechException or HttpRequestException)
+            {
+                return Problem(ex.Message);
+            }
+        });
 
         // The IRC socket stays authenticated until it is torn down, so a logout has to be enforced
         // here too – hiding the composer in the dock is not what makes sending stop.
@@ -231,6 +253,10 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
             return Problem(ex.Message);
         }
     }
+
+    /// <summary>The display name is what the reader sees, so it is what should be read back.</summary>
+    private static string Pick(string? displayName, string? login) =>
+        !string.IsNullOrWhiteSpace(displayName) ? displayName : login ?? string.Empty;
 
     private static IResult Problem(string message) =>
         Results.Json(new { error = message }, DockJson.Options, statusCode: StatusCodes.Status400BadRequest);

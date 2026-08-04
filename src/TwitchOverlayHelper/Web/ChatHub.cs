@@ -32,6 +32,12 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
     public string BroadcasterId { get; set; } = string.Empty;
 
     /// <summary>
+    /// Whether name pronunciation is set up. The dock hides the speaker button when it is not, so
+    /// nobody meets a button that only ever answers "fyll i API-nycklar".
+    /// </summary>
+    public bool SpeechEnabled { get; set; }
+
+    /// <summary>
     /// Points the dock at another channel. The previous channel's lines are dropped so a dock that
     /// reconnects – or one that is open right now – never shows chat from a room we have left.
     /// </summary>
@@ -98,6 +104,9 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
     public void PublishAuth(bool canSend) =>
         Send(DockJson.Serialize(new DockEnvelope<DockAuth>("auth", BuildAuth(canSend))));
 
+    public void PublishSpeech() =>
+        Send(DockJson.Serialize(new DockEnvelope<DockSpeech>("speech", new DockSpeech(SpeechEnabled))));
+
     /// <summary>Tells every dock that badge images just became available, so it can re-render.</summary>
     public void PublishBadgesLoaded() =>
         Send(DockJson.Serialize(new DockEnvelope<object?>("badgesLoaded", null)));
@@ -160,6 +169,7 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
             BuildAuth(canSend),
             _channel,
             mentionName,
+            SpeechEnabled,
             history.Select(ToDock).ToArray()));
     }
 

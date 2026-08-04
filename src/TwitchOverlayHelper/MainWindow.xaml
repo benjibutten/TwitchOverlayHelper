@@ -125,6 +125,18 @@
                     </StackPanel>
                 </Border>
 
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="6. Uppläsning av namn (valfritt)" FontSize="19" FontWeight="SemiBold" />
+                        <TextBlock Text="Lägger en högtalarknapp bredvid varje namn i OBS-docken. Ett klick läser upp hur namnet troligen sägs, här på datorn. Kräver en API-nyckel till DeepSeek och en till ElevenLabs – utan dem syns ingen knapp."
+                                   TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" Margin="0,7,0,12" LineHeight="20" />
+                        <Button x:Name="SpeechSettingsButton" Content="Ställ in uppläsning" Background="#343B50" Click="SpeechSettings_Click" />
+                        <Border Background="#10141F" CornerRadius="8" Padding="11" Margin="0,12,0,0">
+                            <TextBlock x:Name="SpeechStatusText" Text="Inte konfigurerat – ingen knapp visas i docken." Foreground="#C8C5D3" TextWrapping="Wrap" />
+                        </Border>
+                    </StackPanel>
+                </Border>
+
                 </StackPanel>
 
                 <Border Grid.Row="2" Grid.Column="2" VerticalAlignment="Top"
