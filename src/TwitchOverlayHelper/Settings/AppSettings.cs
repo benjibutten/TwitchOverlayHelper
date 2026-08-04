@@ -30,8 +30,27 @@ public sealed class AppSettings
     public uint EditHotkeyVk { get; set; } = 0x79;            // VK_F10
     public string EditHotkeyText { get; set; } = "Ctrl + F10";
 
+    /// <summary>Local chat server for the OBS browser dock.</summary>
+    public bool DockServerEnabled { get; set; } = true;
+    public int DockServerPort { get; set; } = 4747;
+    /// <summary>
+    /// Secret carried in the dock URL. The server binds to loopback only, but any page you visit can
+    /// also reach loopback – this key is what stops it from issuing bans on your behalf.
+    /// </summary>
+    public string DockAccessKey { get; set; } = string.Empty;
+    public DockSettings Dock { get; set; } = new();
+
+    /// <summary>Reading a chatter's name out loud. The API keys are stored separately and encrypted.</summary>
+    public SpeechSettings Speech { get; set; } = new();
+
     public void Normalize()
     {
+        DockServerPort = DockServerPort is >= 1024 and <= 65535 ? DockServerPort : 4747;
+        if (string.IsNullOrWhiteSpace(DockAccessKey)) DockAccessKey = GenerateAccessKey();
+        Dock ??= new DockSettings();
+        Dock.Normalize();
+        Speech ??= new SpeechSettings();
+        Speech.Normalize();
         OverlayLeft = FiniteOrDefault(OverlayLeft, 42);
         OverlayTop = FiniteOrDefault(OverlayTop, 120);
         OverlayWidth = Math.Clamp(FiniteOrDefault(OverlayWidth, 520), 320, 4000);
@@ -50,4 +69,7 @@ public sealed class AppSettings
     }
 
     private static double FiniteOrDefault(double value, double fallback) => double.IsFinite(value) ? value : fallback;
+
+    internal static string GenerateAccessKey() =>
+        Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
 }

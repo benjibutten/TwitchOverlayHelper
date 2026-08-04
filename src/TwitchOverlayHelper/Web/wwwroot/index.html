@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chatt</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="bar">
+  <span id="statusDot" class="dot" data-state="idle"></span>
+  <span id="statusText" class="bar-status">Ansluter …</span>
+  <div class="bar-actions">
+    <button id="pauseBtn" class="icon-btn" type="button" title="Pausa chatten" aria-label="Pausa chatten">⏸</button>
+    <button id="raidBtn" class="icon-btn" type="button" title="Raida en kanal" aria-label="Raida en kanal" hidden>📡</button>
+  </div>
+</header>
+
+<section id="pinned" class="pinned" hidden aria-label="Meddelanden till dig"></section>
+
+<main id="chat" class="chat" role="log" aria-live="polite" aria-label="Chatt"></main>
+
+<button id="jumpBtn" class="jump" type="button" hidden>↓ <span id="jumpCount">0</span> nya</button>
+
+<form id="composer" class="composer" hidden>
+  <input id="composerInput" class="composer-input" type="text" maxlength="480" autocomplete="off"
+         autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skriv ett meddelande …">
+  <button id="composerSend" class="composer-send" type="submit" title="Skicka">Skicka</button>
+</form>
+
+<div id="toast" class="toast" hidden>
+  <span id="toastText"></span>
+  <button id="toastAction" class="toast-action" type="button" hidden></button>
+</div>
+
+<!-- Bottom sheet for moderation actions on one chatter. -->
+<div id="userSheet" class="sheet" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheetName">
+    <div class="sheet-head">
+      <span id="sheetName" class="sheet-name"></span>
+      <button class="sheet-close icon-btn" type="button" data-close="userSheet" aria-label="Stäng">✕</button>
+    </div>
+    <p id="sheetQuote" class="sheet-quote"></p>
+    <div id="sheetActions" class="sheet-actions">
+      <button class="action" type="button" data-act="timeout" data-seconds="60">⏱ 1 minut</button>
+      <button class="action" type="button" data-act="timeout" data-seconds="600">⏱ 10 minuter</button>
+      <button class="action" type="button" data-act="timeout" data-seconds="3600">⏱ 1 timme</button>
+      <button class="action" type="button" data-act="delete">🗑 Ta bort meddelandet</button>
+      <button class="action action-danger" type="button" data-act="ban">🚫 Banna för alltid</button>
+      <button class="action action-quiet" type="button" data-act="profile">👤 Öppna profilen</button>
+    </div>
+    <div id="sheetConfirm" class="sheet-confirm" hidden>
+      <p id="sheetConfirmText"></p>
+      <div class="sheet-confirm-row">
+        <button id="sheetConfirmYes" class="action action-danger" type="button">Ja, banna</button>
+        <button id="sheetConfirmNo" class="action action-quiet" type="button">Avbryt</button>
+      </div>
+    </div>
+    <p id="sheetLocked" class="sheet-locked" hidden>Logga in i Twitch Overlay Helper-appen för att kunna moderera.</p>
+  </div>
+</div>
+
+<!-- Raid picker: channels you follow that are live right now. -->
+<div id="raidPanel" class="sheet" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="raidTitle">
+    <div class="sheet-head">
+      <span id="raidTitle" class="sheet-name">Raida en kanal</span>
+      <button class="sheet-close icon-btn" type="button" data-close="raidPanel" aria-label="Stäng">✕</button>
+    </div>
+    <input id="raidSearch" class="field" type="search" placeholder="Sök bland dina följda kanaler …" autocomplete="off">
+    <div id="raidList" class="raid-list"></div>
+    <button id="raidCancel" class="action action-quiet" type="button">Avbryt pågående raid</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

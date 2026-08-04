@@ -1,0 +1,261 @@
+/* Themes lean on off-white backgrounds: full-strength black-on-white glare is a common
+   complaint among dyslexic readers, and a tinted page is the cheapest thing that helps. */
+:root {
+  --bg: #faf3e4;
+  --surface: #fffaf0;
+  --surface-alt: #f3e9d6;
+  --text: #23201a;
+  --muted: #6d6455;
+  --line: #e0d3ba;
+  --accent: #7a4bd0;
+  --danger: #b32626;
+  --mention: #ffe9a8;
+  --mention-line: #d9a400;
+  --font: Verdana, sans-serif;
+  --size: 20px;
+  --lh: 1.6;
+  --ls: 0.02em;
+  --ws: 0.16em;
+  --gap: 10px;
+}
+body[data-theme="peach"] { --bg:#fdeee4; --surface:#fff6ef; --surface-alt:#f7e2d3; --text:#2b201a; --muted:#7a6154; --line:#e8cdba; --mention:#ffe0bd; --mention-line:#d97a2b; }
+body[data-theme="mint"]  { --bg:#e9f4ee; --surface:#f5fbf7; --surface-alt:#dcece2; --text:#1c2a23; --muted:#566b60; --line:#c8ddd1; --mention:#d8f0c9; --mention-line:#4f8f2f; }
+body[data-theme="light"] { --bg:#f2f2f4; --surface:#ffffff; --surface-alt:#ececed; --text:#1a1a1c; --muted:#63636b; --line:#dcdce0; --mention:#fff0bd; --mention-line:#c08a00; }
+body[data-theme="dark"]  { --bg:#14161c; --surface:#1c1f27; --surface-alt:#232733; --text:#ece9f0; --muted:#9b96a8; --line:#333846; --accent:#a97cff; --danger:#ff6b6b; --mention:#4a3a12; --mention-line:#e0a92b; }
+
+* { box-sizing: border-box; }
+
+/* The `hidden` attribute is only a UA-level `display: none`, so any class here that sets
+   `display` would silently beat it and leave sheets and panels stuck on screen. */
+[hidden] { display: none !important; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  overflow: hidden;
+}
+
+body { display: flex; flex-direction: column; }
+
+/* ---------- top bar ---------- */
+.bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+  min-height: 30px;
+}
+.bar-status { font-size: 12px; color: var(--muted); flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-actions { display: flex; gap: 3px; flex: 0 0 auto; }
+
+.dot { width: 9px; height: 9px; border-radius: 50%; background: #9aa0a6; flex: 0 0 auto; }
+.dot[data-state="live"]  { background: #22c55e; }
+.dot[data-state="error"] { background: var(--danger); }
+.dot[data-state="busy"]  { background: #f59e0b; }
+
+.icon-btn {
+  border: 1px solid transparent; background: transparent; color: var(--muted);
+  font-size: 14px; line-height: 1; padding: 6px 7px; border-radius: 7px; cursor: pointer;
+  font-family: inherit; min-width: 30px;
+}
+.icon-btn:hover { background: var(--surface-alt); color: var(--text); }
+.icon-btn[aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+/* ---------- pinned mentions ---------- */
+.pinned {
+  flex: 0 0 auto; max-height: 34vh; overflow-y: auto;
+  background: var(--mention);
+  border-bottom: 2px solid var(--mention-line);
+  padding: 4px 8px;
+}
+.pinned .msg { background: transparent; }
+.pin-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  color: var(--mention-line); text-transform: uppercase; padding: 2px 0;
+}
+
+/* ---------- chat ---------- */
+.chat {
+  flex: 1 1 auto; overflow-y: auto; overflow-x: hidden;
+  padding: 8px;
+  display: flex; flex-direction: column;
+}
+
+/* Keeps a short chat resting against the bottom edge instead of floating at the top,
+   so messages always grow upward from where the eye already is. */
+.chat > :first-child { margin-top: auto; }
+
+/* A slim, low-contrast scrollbar. Styled with the -webkit- pseudo-elements rather than
+   `scrollbar-width`, because setting the standard property makes Chromium ignore these. */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: content-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+.msg {
+  flex: 0 0 auto; /* the chat is a flex column; without this, long messages get squashed */
+  font-size: var(--size);
+  line-height: var(--lh);
+  letter-spacing: var(--ls);
+  word-spacing: var(--ws);
+  padding: 5px 8px;
+  margin-bottom: var(--gap);
+  border-radius: 8px;
+  overflow-wrap: break-word;
+  animation: appear 140ms ease-out;
+}
+@keyframes appear { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .msg { animation: none; } }
+
+body[data-zebra="true"] .chat .msg:nth-child(even) { background: var(--surface-alt); }
+
+.msg[data-mention="true"] {
+  background: var(--mention);
+  border-left: 4px solid var(--mention-line);
+}
+.msg[data-dim="true"] { opacity: 0.55; }
+.msg[data-removed="true"] { opacity: 0.4; }
+.msg[data-removed="true"] .msg-text { text-decoration: line-through; }
+
+.msg-head { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-bottom: 2px; }
+body[data-nameline="false"] .msg-head { display: inline; margin-right: 6px; }
+body[data-nameline="false"] .msg-text { display: inline; }
+
+.msg-name {
+  font-weight: 700; cursor: pointer; border: none; background: none; padding: 0;
+  font-family: inherit; font-size: 0.92em; letter-spacing: inherit; color: var(--accent);
+}
+.msg-name:hover { text-decoration: underline; }
+
+/* Sits right next to the name it reads. Small enough not to compete with the message, big
+   enough to hit in a narrow OBS dock. */
+.msg-say {
+  flex: 0 0 auto; cursor: pointer; font-family: inherit; font-size: 0.6em; line-height: 1;
+  padding: 4px 6px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+}
+.msg-say:hover { background: var(--surface-alt); color: var(--text); }
+.msg-say[data-busy="true"] { opacity: 0.45; cursor: progress; }
+.msg-time { font-size: 0.62em; color: var(--muted); }
+.msg-text[data-action="true"] { font-style: italic; }
+
+.badge { height: 1em; width: auto; vertical-align: -0.12em; }
+.tag {
+  font-size: 0.5em; font-weight: 800; letter-spacing: 0.06em;
+  padding: 2px 5px; border-radius: 4px; color: #fff; text-transform: uppercase;
+}
+.tag[data-kind="broadcaster"] { background: #d13c3c; }
+.tag[data-kind="moderator"] { background: #1f9d55; }
+.tag[data-kind="vip"] { background: #c0287f; }
+.tag[data-kind="subscriber"] { background: #6d43c9; }
+.tag[data-kind="new"] { background: #0f7c8a; }
+.tag[data-kind="mention"] { background: var(--mention-line); }
+.tag[data-kind="other"] { background: #6b7280; }
+
+.emote { height: 1.4em; width: auto; vertical-align: -0.35em; }
+.link-chip {
+  display: inline-block; font-size: 0.8em; padding: 0 6px; border-radius: 5px;
+  background: var(--surface-alt); border: 1px solid var(--line); color: var(--accent);
+  text-decoration: none; word-break: break-all;
+}
+.removed-note { font-size: 0.7em; color: var(--muted); font-style: italic; }
+
+/* ---------- jump-to-latest ---------- */
+.jump {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 58px;
+  background: var(--accent); color: #fff; border: none; border-radius: 999px;
+  padding: 7px 15px; font-size: 13px; font-family: inherit; cursor: pointer; z-index: 5;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.22);
+}
+
+/* ---------- composer ---------- */
+.composer { display: flex; gap: 5px; padding: 6px; border-top: 1px solid var(--line); background: var(--surface); flex: 0 0 auto; }
+.composer-input {
+  flex: 1 1 auto; min-width: 0; font-family: inherit; font-size: 15px;
+  padding: 9px 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--text);
+}
+.composer-send {
+  border: none; background: var(--accent); color: #fff; border-radius: 8px;
+  padding: 9px 13px; font-family: inherit; font-size: 14px; cursor: pointer;
+}
+.composer-send:disabled { opacity: 0.5; cursor: default; }
+
+/* ---------- toast ---------- */
+.toast {
+  position: fixed; left: 8px; right: 8px; bottom: 8px; z-index: 20;
+  background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent);
+  border-radius: 9px; padding: 10px 12px; font-size: 14px;
+  display: flex; align-items: center; gap: 10px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+}
+.toast[data-kind="error"] { border-left-color: var(--danger); }
+.toast span { flex: 1 1 auto; }
+.toast-action {
+  border: 1px solid var(--accent); color: var(--accent); background: transparent;
+  border-radius: 7px; padding: 6px 11px; font-family: inherit; font-size: 13px; cursor: pointer; flex: 0 0 auto;
+}
+
+/* ---------- sheets and panels ---------- */
+.sheet {
+  position: fixed; inset: 0; z-index: 30;
+  background: rgba(0,0,0,0.42);
+  display: flex; align-items: flex-end;
+}
+.sheet-card {
+  width: 100%; max-height: 92%; overflow-y: auto;
+  background: var(--surface); border-top: 1px solid var(--line);
+  border-radius: 14px 14px 0 0; padding: 12px;
+}
+.sheet-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.sheet-name { font-weight: 700; font-size: 17px; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.sheet-quote {
+  margin: 0 0 10px; padding: 8px 10px; background: var(--bg); border-radius: 8px;
+  font-size: 14px; color: var(--muted); max-height: 5.5em; overflow: hidden;
+}
+.sheet-actions { display: flex; flex-direction: column; gap: 7px; }
+.sheet-confirm { margin-top: 10px; }
+.sheet-confirm p { margin: 0 0 8px; font-size: 14px; }
+.sheet-confirm-row { display: flex; gap: 7px; }
+.sheet-confirm-row .action { flex: 1 1 0; }
+.sheet-locked { font-size: 14px; color: var(--muted); }
+
+/* Big targets with icon *and* word: an icon alone is one more thing to decode. */
+.action {
+  display: block; width: 100%; text-align: left;
+  padding: 13px 14px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--text);
+  font-family: inherit; font-size: 16px; cursor: pointer;
+}
+.action:hover { background: var(--surface-alt); }
+.action-danger { border-color: var(--danger); color: var(--danger); font-weight: 700; }
+.action-quiet { color: var(--muted); }
+
+.field {
+  width: 100%; font-family: inherit; font-size: 15px; padding: 8px 9px;
+  border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--text);
+}
+
+.raid-list { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; max-height: 46vh; overflow-y: auto; }
+.raid-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  padding: 8px; border-radius: 9px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--text); font-family: inherit; cursor: pointer;
+}
+.raid-item:hover { background: var(--surface-alt); }
+.raid-item img { width: 64px; height: 36px; object-fit: cover; border-radius: 5px; flex: 0 0 auto; }
+.raid-meta { min-width: 0; }
+.raid-name { font-weight: 700; font-size: 15px; }
+.raid-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.empty { color: var(--muted); font-size: 14px; text-align: center; padding: 18px 10px; }

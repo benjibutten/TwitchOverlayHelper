@@ -1,0 +1,103 @@
+<Window x:Class="TwitchOverlayHelper.DockSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Chattens läsbarhet" Width="560" Height="820" MinWidth="480" MinHeight="600"
+        Icon="pack://application:,,,/Assets/app.ico"
+        Background="{StaticResource PageBrush}" Foreground="{StaticResource TextBrush}"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="24">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+
+        <StackPanel>
+            <TextBlock Text="CHATT I OBS" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" FontSize="12" />
+            <TextBlock Text="Läsbarhet" FontSize="26" FontWeight="SemiBold" Margin="0,3,0,0" />
+            <TextBlock Text="Ändringarna syns direkt i docken – inget behöver sparas eller laddas om."
+                       Foreground="{StaticResource MutedTextBrush}" FontSize="13" Margin="0,6,0,16" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="0,0,14,0">
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20">
+                    <StackPanel>
+                        <TextBlock Text="Text" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14" />
+
+                        <TextBlock Text="Tema" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6" />
+                        <ComboBox x:Name="ThemeBox" SelectionChanged="Setting_Changed" Margin="0,0,0,14">
+                            <ComboBoxItem Tag="cream" Content="Gräddvit (mjukast)" />
+                            <ComboBoxItem Tag="peach" Content="Persika" />
+                            <ComboBoxItem Tag="mint" Content="Mint" />
+                            <ComboBoxItem Tag="light" Content="Ljus" />
+                            <ComboBoxItem Tag="dark" Content="Mörk" />
+                        </ComboBox>
+
+                        <TextBlock Text="Typsnitt" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6" />
+                        <ComboBox x:Name="FontBox" IsEditable="True" SelectionChanged="Setting_Changed" LostKeyboardFocus="Setting_Changed">
+                            <ComboBoxItem Content="Verdana" /><ComboBoxItem Content="Tahoma" /><ComboBoxItem Content="Segoe UI" />
+                            <ComboBoxItem Content="Arial" /><ComboBoxItem Content="Georgia" /><ComboBoxItem Content="Comic Sans MS" />
+                            <ComboBoxItem Content="Atkinson Hyperlegible" /><ComboBoxItem Content="OpenDyslexic" /><ComboBoxItem Content="Lexend" />
+                        </ComboBox>
+                        <TextBlock Text="Du kan skriva vilket typsnitt som helst som är installerat i Windows. Atkinson Hyperlegible, OpenDyslexic och Lexend är gratis och gjorda för läsbarhet."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,7,0,16" />
+
+                        <DockPanel><TextBlock Text="Textstorlek" /><TextBlock x:Name="FontSizeValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="FontSizeSlider" Minimum="12" Maximum="48" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,15" ValueChanged="Setting_Changed" />
+
+                        <DockPanel><TextBlock Text="Radavstånd" /><TextBlock x:Name="LineHeightValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="LineHeightSlider" Minimum="1.2" Maximum="2.4" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,15" ValueChanged="Setting_Changed" />
+
+                        <DockPanel><TextBlock Text="Teckenmellanrum" /><TextBlock x:Name="LetterValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="LetterSlider" Minimum="0" Maximum="0.25" TickFrequency="0.01" IsSnapToTickEnabled="True" Margin="0,4,0,4" ValueChanged="Setting_Changed" />
+                        <TextBlock Text="Extra luft mellan bokstäverna. Hjälper ofta mest av alla inställningar vid dyslexi."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,0,0,13" />
+
+                        <DockPanel><TextBlock Text="Ordmellanrum" /><TextBlock x:Name="WordValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="WordSlider" Minimum="0" Maximum="1" TickFrequency="0.02" IsSnapToTickEnabled="True" Margin="0,4,0,15" ValueChanged="Setting_Changed" />
+
+                        <DockPanel><TextBlock Text="Avstånd mellan meddelanden" /><TextBlock x:Name="GapValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="GapSlider" Minimum="0" Maximum="40" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="Setting_Changed" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Tempo och fokus" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14" />
+
+                        <DockPanel><TextBlock Text="Chattens tempo" /><TextBlock x:Name="PaceValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="PaceSlider" Minimum="0" Maximum="15" TickFrequency="0.5" IsSnapToTickEnabled="True" Margin="0,4,0,4" ValueChanged="Setting_Changed" />
+                        <TextBlock Text="Håller igen hur snabbt nya meddelanden dyker upp så de hinner läsas. Längst till vänster = ingen broms."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,0,0,14" />
+
+                        <CheckBox x:Name="PinMentionsCheck" Content="Fäst meddelanden till mig överst" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <DockPanel Margin="0,8,0,0"><TextBlock Text="Hur länge de sitter kvar" /><TextBlock x:Name="PinSecondsValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="PinSecondsSlider" Minimum="10" Maximum="600" TickFrequency="10" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="Setting_Changed" />
+
+                        <TextBlock Text="Max antal meddelanden" Margin="0,15,0,6" />
+                        <DockPanel><TextBlock Text="I chattlistan" /><TextBlock x:Name="MaxMessagesValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="MaxMessagesSlider" Minimum="20" Maximum="500" TickFrequency="10" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="Setting_Changed" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Vad som visas" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,10" />
+                        <CheckBox x:Name="ZebraCheck" Content="Varannan rad tonad" ToolTip="Gör det lättare att inte glida mellan raderna" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="NameLineCheck" Content="Namnet på egen rad" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="BadgesCheck" Content="Visa badges" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="TimestampsCheck" Content="Visa klockslag" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="NameColorsCheck" Content="Twitch-namnfärger" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EmotesCheck" Content="Visa emotes" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="LinksCheck" Content="Korta ner länkar till en liten knapp" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="ShoutingCheck" Content="Dämpa VERSALER till gemener" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="CommandsCheck" Content="Tona ner !kommandon" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <DockPanel Grid.Row="2" Margin="0,18,0,0">
+            <Button DockPanel.Dock="Right" Content="Stäng" Background="#343B50" Click="Close_Click" />
+            <Button x:Name="ResetButton" DockPanel.Dock="Right" Content="Återställ" Background="#343B50" Margin="0,0,10,0" Click="Reset_Click" />
+            <TextBlock x:Name="HintText" Text="Docken uppdateras direkt medan du drar." Foreground="#858193" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        </DockPanel>
+    </Grid>
+</Window>

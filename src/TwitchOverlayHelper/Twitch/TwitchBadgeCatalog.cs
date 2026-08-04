@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Net.Http;
 using System.IO;
@@ -8,7 +9,10 @@ namespace TwitchOverlayHelper.Twitch;
 public sealed class TwitchBadgeCatalog
 {
     private readonly HttpClient _httpClient = new();
-    private readonly Dictionary<(string Set, string Version), BadgeInfo> _badges = new();
+
+    // Read from the IRC and dock-server threads while the UI thread loads new badges into it,
+    // so a plain Dictionary would occasionally corrupt or throw mid-lookup.
+    private readonly ConcurrentDictionary<(string Set, string Version), BadgeInfo> _badges = new();
 
     public bool TryGet(string set, string version, out BadgeInfo? badge) => _badges.TryGetValue((set, version), out badge);
 

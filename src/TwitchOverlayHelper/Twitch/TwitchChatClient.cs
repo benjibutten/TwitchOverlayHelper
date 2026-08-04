@@ -7,17 +7,47 @@ namespace TwitchOverlayHelper.Twitch;
 
 public sealed class TwitchChatClient : IAsyncDisposable
 {
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
     private CancellationTokenSource? _lifetime;
     private Task? _runTask;
+    private ClientWebSocket? _activeSocket;
+    private string? _joinedChannel;
 
     public event Action<ChatMessage>? MessageReceived;
+    public event Action<ChatModerationEvent>? ModerationReceived;
     public event Action<string>? StatusChanged;
     public event Action<string>? RoomDiscovered;
     public event Action? ConnectionStopped;
 
     public bool IsRunning => _runTask is { IsCompleted: false };
 
-    public Task ConnectAsync(string channel, string? userName = null, string? oauthToken = null)
+    /// <summary>True when the connection was authenticated, which is what sending a message requires.</summary>
+    public bool CanSend { get; private set; }
+
+    /// <summary>Sends a chat line over the live IRC connection. Requires an authenticated connection.</summary>
+    public async Task SendMessageAsync(string text, CancellationToken cancellationToken = default)
+    {
+        ClientWebSocket? socket = _activeSocket;
+        string? channel = _joinedChannel;
+        if (!CanSend || socket is null || channel is null || socket.State != WebSocketState.Open)
+            throw new InvalidOperationException("Chatten är inte inloggad – logga in för att kunna skriva.");
+
+        // IRC treats CR/LF as command separators, so a newline in the text could inject a command.
+        string line = text.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal).Trim();
+        if (line.Length == 0) return;
+        if (line.Length > 480) line = line[..480];
+
+        await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try { await SendAsync(socket, $"PRIVMSG #{channel} :{line}\r\n", cancellationToken).ConfigureAwait(false); }
+        finally { _sendLock.Release(); }
+    }
+
+    /// <summary>
+    /// Connects and keeps reconnecting. The token is asked for per attempt rather than passed once:
+    /// a Twitch access token expires after hours, and a reconnect the next morning with yesterday's
+    /// token is rejected outright – which would end the chat rather than resume it.
+    /// </summary>
+    public Task ConnectAsync(string channel, string? userName = null, Func<CancellationToken, Task<string?>>? tokenProvider = null)
     {
         if (IsRunning) throw new InvalidOperationException("Chatten är redan ansluten.");
         channel = NormalizeChannel(channel);
@@ -25,7 +55,7 @@ public sealed class TwitchChatClient : IAsyncDisposable
 
         _lifetime?.Dispose();
         _lifetime = new CancellationTokenSource();
-        _runTask = RunWithReconnectAsync(channel, userName, oauthToken, _lifetime.Token);
+        _runTask = RunWithReconnectAsync(channel, userName, tokenProvider, _lifetime.Token);
         _ = NotifyWhenStoppedAsync(_runTask);
         return Task.CompletedTask;
     }
@@ -48,7 +78,7 @@ public sealed class TwitchChatClient : IAsyncDisposable
         StatusChanged?.Invoke("Frånkopplad");
     }
 
-    private async Task RunWithReconnectAsync(string channel, string? userName, string? oauthToken, CancellationToken token)
+    private async Task RunWithReconnectAsync(string channel, string? userName, Func<CancellationToken, Task<string?>>? tokenProvider, CancellationToken token)
     {
         int attempt = 0;
         while (!token.IsCancellationRequested)
@@ -56,7 +86,7 @@ public sealed class TwitchChatClient : IAsyncDisposable
             try
             {
                 StatusChanged?.Invoke(attempt == 0 ? "Ansluter …" : "Återansluter …");
-                await RunConnectionAsync(channel, userName, oauthToken, token).ConfigureAwait(false);
+                await RunConnectionAsync(channel, userName, tokenProvider, token).ConfigureAwait(false);
                 attempt = 0;
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
@@ -84,8 +114,11 @@ public sealed class TwitchChatClient : IAsyncDisposable
         finally { ConnectionStopped?.Invoke(); }
     }
 
-    private async Task RunConnectionAsync(string channel, string? userName, string? oauthToken, CancellationToken token)
+    private async Task RunConnectionAsync(string channel, string? userName, Func<CancellationToken, Task<string?>>? tokenProvider, CancellationToken token)
     {
+        // Fetched before the socket opens so a refresh does not run down Twitch's login timeout.
+        string? oauthToken = tokenProvider is null ? null : await tokenProvider(token).ConfigureAwait(false);
+
         using var socket = new ClientWebSocket();
         await socket.ConnectAsync(new Uri("wss://irc-ws.chat.twitch.tv:443"), token).ConfigureAwait(false);
 
@@ -101,8 +134,26 @@ public sealed class TwitchChatClient : IAsyncDisposable
         await SendAsync(socket, $"PASS {password}\r\n", token).ConfigureAwait(false);
         await SendAsync(socket, $"NICK {nick}\r\n", token).ConfigureAwait(false);
         await SendAsync(socket, $"JOIN #{channel}\r\n", token).ConfigureAwait(false);
-        StatusChanged?.Invoke($"Live • #{channel}");
+        _activeSocket = socket;
+        _joinedChannel = channel;
+        CanSend = authenticated;
+        // Reading the chat matters more than sending in it: when a token cannot be had right now,
+        // the connection continues anonymously instead of leaving the reader with nothing.
+        StatusChanged?.Invoke(tokenProvider is not null && !authenticated
+            ? $"Live • #{channel} • utan inloggning"
+            : $"Live • #{channel}");
+        try
+        {
+            await ReadLoopAsync(socket, token).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (ReferenceEquals(_activeSocket, socket)) { _activeSocket = null; CanSend = false; }
+        }
+    }
 
+    private async Task ReadLoopAsync(ClientWebSocket socket, CancellationToken token)
+    {
         byte[] buffer = new byte[16 * 1024];
         var pending = new StringBuilder();
         using var messageBytes = new MemoryStream();
@@ -147,7 +198,8 @@ public sealed class TwitchChatClient : IAsyncDisposable
                         RoomDiscovered?.Invoke(roomId);
                     }
                 }
-                if (IrcMessageParser.TryParseChatMessage(line, out ChatMessage? message)) MessageReceived?.Invoke(message!);
+                if (IrcMessageParser.TryParseChatMessage(line, out ChatMessage? message)) { MessageReceived?.Invoke(message!); continue; }
+                if (IrcMessageParser.TryParseModerationEvent(line, out ChatModerationEvent? moderation)) ModerationReceived?.Invoke(moderation!);
             }
             pending.Clear();
             pending.Append(buffered);
@@ -168,7 +220,11 @@ public sealed class TwitchChatClient : IAsyncDisposable
         return new string(channel.Where(c => char.IsLetterOrDigit(c) || c == '_').ToArray());
     }
 
-    public async ValueTask DisposeAsync() => await DisconnectAsync().ConfigureAwait(false);
+    public async ValueTask DisposeAsync()
+    {
+        await DisconnectAsync().ConfigureAwait(false);
+        _sendLock.Dispose();
+    }
 }
 
 public sealed class TwitchAuthenticationException(string message) : Exception(message);

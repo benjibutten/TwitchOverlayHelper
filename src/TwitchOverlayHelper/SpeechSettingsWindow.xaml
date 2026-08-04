@@ -1,0 +1,94 @@
+<Window x:Class="TwitchOverlayHelper.SpeechSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Uppläsning av namn" Width="600" Height="840" MinWidth="520" MinHeight="600"
+        Icon="pack://application:,,,/Assets/app.ico"
+        Background="{StaticResource PageBrush}" Foreground="{StaticResource TextBrush}"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="24">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+
+        <StackPanel>
+            <TextBlock Text="CHATT I OBS" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" FontSize="12" />
+            <TextBlock Text="Uppläsning av namn" FontSize="26" FontWeight="SemiBold" Margin="0,3,0,0" />
+            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" FontSize="13" Margin="0,6,0,16" LineHeight="20"
+                       Text="Docken får en högtalarknapp bredvid varje namn. DeepSeek tolkar hur namnet troligen sägs och ElevenLabs läser upp det här på datorn. Knappen visas bara när nycklar och röst är ifyllda." />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="0,0,14,0">
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20">
+                    <StackPanel>
+                        <TextBlock Text="API-nycklar" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <TextBlock TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,0,0,14"
+                                   Text="Nycklarna sparas krypterade med Windows DPAPI och hamnar aldrig i settings.json. Båda tjänsterna kostar pengar per anrop – appen sparar därför både tolkningen och ljudet, så samma namn bara betalas en gång." />
+
+                        <TextBlock Text="DeepSeek API-nyckel" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6" />
+                        <PasswordBox x:Name="DeepSeekKeyBox" Background="#10141F" Foreground="{StaticResource TextBrush}"
+                                     BorderBrush="#343B50" BorderThickness="1" Padding="11,9" CaretBrush="White" FontSize="14" />
+                        <TextBlock x:Name="DeepSeekKeyState" Foreground="#8F8B9E" FontSize="12" Margin="0,5,0,14" />
+
+                        <TextBlock Text="ElevenLabs API-nyckel" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6" />
+                        <PasswordBox x:Name="ElevenKeyBox" Background="#10141F" Foreground="{StaticResource TextBrush}"
+                                     BorderBrush="#343B50" BorderThickness="1" Padding="11,9" CaretBrush="White" FontSize="14" />
+                        <TextBlock x:Name="ElevenKeyState" Foreground="#8F8B9E" FontSize="12" Margin="0,5,0,14" />
+
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                            <Button x:Name="SaveKeysButton" Content="Spara nycklar" Click="SaveKeys_Click" />
+                            <Button x:Name="ClearKeysButton" Grid.Column="2" Content="Ta bort nycklar" Background="#343B50" Click="ClearKeys_Click" />
+                        </Grid>
+                        <TextBlock x:Name="KeyStatusText" TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,10,0,0"
+                                   Text="Ett tomt fält lämnar den sparade nyckeln orörd." />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Röst" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14" />
+
+                        <Button x:Name="FetchVoicesButton" Content="Hämta röster från ElevenLabs" Background="#343B50" HorizontalAlignment="Left" Click="FetchVoices_Click" />
+                        <ComboBox x:Name="VoiceBox" DisplayMemberPath="Name" Margin="0,12,0,6" SelectionChanged="Voice_SelectionChanged" />
+                        <TextBlock x:Name="VoiceHint" TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,0,0,14"
+                                   Text="Hämta listan eller klistra in ett röst-ID direkt nedan." />
+
+                        <TextBlock Text="Röst-ID" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6" />
+                        <TextBox x:Name="VoiceIdBox" FontFamily="Consolas" TextChanged="Setting_Changed" />
+
+                        <TextBlock Text="ElevenLabs-modell" Foreground="{StaticResource MutedTextBrush}" Margin="0,14,0,6" />
+                        <TextBox x:Name="ElevenModelBox" FontFamily="Consolas" TextChanged="Setting_Changed" ToolTip="eleven_v3 är den senaste och mest uttrycksfulla modellen" />
+
+                        <TextBlock Text="DeepSeek-modell" Foreground="{StaticResource MutedTextBrush}" Margin="0,14,0,6" />
+                        <TextBox x:Name="DeepSeekModelBox" FontFamily="Consolas" TextChanged="Setting_Changed" ToolTip="deepseek-v4-flash är den snabba och billiga modellen" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Uppläsning" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,10" />
+                        <CheckBox x:Name="EnabledCheck" Content="Visa högtalarknappen i docken" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+
+                        <DockPanel Margin="0,12,0,0"><TextBlock Text="Volym" /><TextBlock x:Name="VolumeValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="VolumeSlider" Minimum="0" Maximum="1" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,16" ValueChanged="Setting_Changed" />
+
+                        <TextBlock Text="Testa ett namn" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6" />
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBox x:Name="TestNameBox" Text="xSwExDRAGONxSwEx" />
+                            <Button x:Name="TestButton" Grid.Column="2" Content="🔊 Testa" Click="Test_Click" />
+                        </Grid>
+                        <TextBlock x:Name="TestResultText" TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,10,0,0"
+                                   Text="Testet använder de sparade nycklarna och rösten ovan." />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <DockPanel Grid.Row="2" Margin="0,18,0,0">
+            <Button DockPanel.Dock="Right" Content="Stäng" Background="#343B50" Click="Close_Click" />
+            <Button x:Name="ForgetButton" DockPanel.Dock="Right" Content="Glöm sparade uttal" Background="#343B50" Margin="0,0,10,0" Click="Forget_Click"
+                    ToolTip="Tvingar en ny tolkning nästa gång ett namn läses upp" />
+            <TextBlock Text="Ändringarna slår igenom direkt i docken." Foreground="#858193" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        </DockPanel>
+    </Grid>
+</Window>

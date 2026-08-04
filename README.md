@@ -1,6 +1,43 @@
 # Twitch Overlay Helper
 
-En Windows-app som läser Twitch-chatten och visar den som en stor, lugn och klickigenom overlay ovanpå ett spel. Gränssnittet prioriterar låg visuell trängsel, tydlig avsändare, generöst radavstånd och få beslut per vy.
+En Windows-app som läser Twitch-chatten och visar den på två ställen: som en stor, lugn och klickigenom overlay ovanpå ett spel, och som en dyslexianpassad chatt i OBS via en Custom Browser Dock. Gränssnittet prioriterar låg visuell trängsel, tydlig avsändare, generöst radavstånd och få beslut per vy.
+
+## Chatt-dock i OBS
+
+Appen kör en lokal webbserver som serverar en chatt byggd för läsbarhet. Adressen klistras in i OBS under **Vy → Dockor → Anpassade webbläsardockor**; den finns färdig att kopiera i appens inställningsfönster.
+
+- Egna reglage för teckenstorlek, radavstånd, **teckenmellanrum och ordmellanrum** – de två sistnämnda hjälper mest vid dyslexi men saknas i Twitchs egen dock.
+- Fem lugna teman med gräddvit grund i stället för hård svartvit kontrast.
+- **Tempobroms** som håller igen hur snabbt nya meddelanden dyker upp, så de hinner läsas när chatten går varmt.
+- **Fastnålade mentions**: meddelanden till dig läggs i en remsa överst så frågor inte scrollar bort.
+- Länkar kortas till en `🔗 länk`-knapp, VERSALER dämpas och `!kommandon` tonas ner.
+- Paus, zebra-rader, namn på egen rad och val av typsnitt.
+- Moderering med stora knappar: klicka på ett namn för timeout, ban eller att ta bort meddelandet. Ban kräver bekräftelse och åtgärder går att ångra direkt i notisen.
+- Raid-väljare som listar de kanaler du följer som är live just nu.
+- Skrivfält för att svara i chatten.
+- Docken innehåller inga inställningar – allt utseende styrs från appen under **Ändra chattens läsbarhet** och slår igenom direkt. Docken visar exempelmeddelanden innan chatten är ansluten, så det går att ställa in läsbarheten i lugn och ro.
+
+Moderering fungerar i alla kanaler där du är moderator, inte bara i din egen. Raid går däremot bara att starta från din egen kanal – Twitch tillåter inget annat – så raid-knappen döljs när du tittar på någon annans chatt.
+- Serverns adress innehåller en hemlig nyckel och är bunden till `127.0.0.1`, så den är varken nåbar från nätverket eller användbar för andra sidor på datorn.
+
+Moderering, raid och skrivfältet kräver inloggning; utan den fungerar docken som en ren läsvy.
+
+## Uppläsning av namn
+
+Twitch-namn är skrivna för att titta på, inte för att säga: dekorativa x, dubblerade bokstäver och versala förkortningar. Med uppläsning påslagen får varje namn i docken en `🔊`-knapp. Ett klick skickar namnet till **DeepSeek** (`deepseek-v4-flash`), som svarar med en rad om hur en människa sannolikt skulle säga det, och den raden läses upp av **ElevenLabs** (`eleven_v3`) på datorn där appen körs – inte i webbläsaren, eftersom en dock i OBS ofta är dämpad eller ligger på en annan ljudenhet.
+
+Ställs in under **6. Uppläsning av namn** i appen:
+
+- Två API-nycklar, en per tjänst. De sparas krypterade med Windows DPAPI (`CurrentUser`) i `%LOCALAPPDATA%\TwitchOverlayHelper\speech.bin` och hamnar aldrig i `settings.json`.
+- Röst hämtas från ElevenLabs-kontot, eller klistras in som röst-ID. Modellnamnen går att byta om kontot saknar den senaste modellen.
+- En testruta som visar den tolkade raden och läser upp den, så hela kedjan kan provas innan knappen släpps in i docken.
+
+Knappen syns bara när nycklar, röst och inställningen är på plats – är något ofyllt finns den inte alls. Båda tjänsterna kostar per anrop, så inget hämtas två gånger i onödan:
+
+- Ljudklippet sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\namecache` och överlever omstart. ElevenLabs-anropet görs alltså en gång per namn och röst.
+- Tolkningen från DeepSeek sparas så länge appen är igång. Efter en omstart frågas DeepSeek en gång till för samma namn – ett kort och billigt anrop, och ljudet återanvänds ändå.
+
+Om DeepSeek inte svarar läses namnet upp som det står, med en notis om varför det kan låta fel. Den tolkningen sparas inte, så nästa klick försöker igen.
 
 ## Funktioner
 
@@ -16,6 +53,7 @@ En Windows-app som läser Twitch-chatten och visar den som en stor, lugn och kli
 - Twitch-metadata för broadcaster, moderator, VIP, subscriber med lokala markörer.
 - Riktiga Twitch-badge-bilder när Client ID och OAuth-token anges.
 - Automatisk återanslutning, PING/PONG-hantering och tydligt stopp vid nekad inloggning.
+- Uppläsning av chattares namn via DeepSeek och ElevenLabs, för namn som är svåra att läsa högt.
 - Inställningar sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\settings.json`. OAuth-token sparas aldrig.
 - Körs som en enda instans; en ny vanlig start öppnar den redan körande appens inställningsfönster.
 - Valbar **Starta med Windows**-inställning som startar appen minimerad i meddelandefältet utan extra bakgrundstjänst.
@@ -30,15 +68,21 @@ Skriv kanalnamnet och välj **Anslut**. Använd **Redigera overlay** för att pl
 
 ## Twitch-inloggning (valfritt)
 
-Anonym anslutning räcker för att läsa chatten och få rollinformation via IRC-taggar. Twitchs badge-API kräver däremot en registrerad apps Client ID och en giltig access token. Fyll i dessa under den valfria sektionen för Twitchs egna badgebilder. Token används bara i minnet under pågående körning.
+Anonym anslutning räcker för att läsa chatten och få rollinformation via IRC-taggar. Inloggning behövs för timeout, ban, raid, för att skriva i chatten och för Twitchs egna badgebilder.
+
+Inloggningen sker med **Device Code Flow**: registrera en egen app på [dev.twitch.tv](https://dev.twitch.tv/console/apps) med klienttypen **Public**, klistra in dess Client ID i appen och välj **Logga in med Twitch**. Du får en kod att skriva in på `twitch.tv/activate` – ingen client secret och ingen redirect-URI behövs.
+
+Refresh-token sparas krypterad med Windows DPAPI (`CurrentUser`) i `%LOCALAPPDATA%\TwitchOverlayHelper\credentials.bin`, så inloggningen överlever omstart utan att ligga i klartext och utan att kunna läsas av ett annat Windows-konto.
 
 ## Teknik
 
-Projektet använder .NET 10, WPF, Twitch IRC över TLS WebSocket och Helix badge-API. Overlay-fönstret bygger vidare på samma beprövade Win32-mönster som MicMixer: `WS_EX_TRANSPARENT`, `WS_EX_NOACTIVATE`, `WS_EX_TOOLWINDOW` och periodisk topmost-återställning.
+Projektet använder .NET 10, WPF, Twitch IRC över TLS WebSocket, Helix och en inbäddad Kestrel-server för OBS-docken. Overlay-fönstret bygger vidare på samma beprövade Win32-mönster som MicMixer: `WS_EX_TRANSPARENT`, `WS_EX_NOACTIVATE`, `WS_EX_TOOLWINDOW` och periodisk topmost-återställning.
+
+Docken serveras från inbäddade resurser eftersom appen publiceras som en enda självständig fil.
 
 ## Nästa produktsteg
 
-- Komplett Device Code OAuth för en enda tydlig “Logga in med Twitch”-knapp.
-- Förhandsgranskning av flera dyslexiprofiler och stöd för OpenDyslexic/Atkinson Hyperlegible som paketerade fonter.
-- Modereringshändelser (`CLEARMSG`/`CLEARCHAT`) och valfri uppläsning/prioritering av mentions.
+- Uppmärksamhetspuff: mods triggar en dämpad kantglöd på streamerns skärm när något behöver kollas, med `WDA_EXCLUDEFROMCAPTURE` så tittarna inte ser den.
+- OpenDyslexic/Atkinson Hyperlegible som paketerade webfonts i docken i stället för att kräva installation i Windows.
+- Uppläsning av mentions.
 - Val av skärm, fästpunkter och OBS Browser Source-läge.
