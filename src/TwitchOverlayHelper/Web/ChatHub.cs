@@ -189,9 +189,12 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
     public async Task RunClientAsync(WebSocket socket, bool canSend, CancellationToken cancellationToken)
     {
         var id = Guid.NewGuid();
+        // Never DropOldest: the queue carries clear and moderation frames as well as chat lines, and
+        // silently dropping one of those leaves a deleted message on screen. When a dock falls this
+        // far behind it is dropped instead, and the reconnect hands it a correct history.
         var outbound = Channel.CreateBounded<string>(new BoundedChannelOptions(256)
         {
-            FullMode = BoundedChannelFullMode.DropOldest,
+            FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true
         });
         _clients[id] = outbound;
