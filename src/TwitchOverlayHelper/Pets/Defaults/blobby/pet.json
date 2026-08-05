@@ -1,0 +1,8 @@
+{
+  "id": "blobby",
+  "displayName": "Blobby",
+  "description": "En lugn liten slime.",
+  "aliases": ["slime", "blob", "droppe"],
+  "emoji": ["💧", "🫧", "🌊"],
+  "bodyPath": "body.svg"
+}

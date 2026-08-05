@@ -1,0 +1,8 @@
+{
+  "id": "boo",
+  "displayName": "Boo",
+  "description": "Ett blygt litet spöke.",
+  "aliases": ["spöke", "spoke", "ghost"],
+  "emoji": ["👻", "✨", "🌙"],
+  "bodyPath": "body.svg"
+}

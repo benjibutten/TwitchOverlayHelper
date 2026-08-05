@@ -21,6 +21,8 @@
     <Resource Include="Assets\app.ico" />
     <!-- The dock is served from inside the assembly; the app ships as a single self-contained file. -->
     <EmbeddedResource Include="Web\wwwroot\**\*" />
+    <!-- The pets that ship with the app, ready to be written to the user's pets folder. -->
+    <EmbeddedResource Include="Pets\Defaults\**\*" />
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

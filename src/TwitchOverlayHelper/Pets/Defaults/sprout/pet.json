@@ -1,0 +1,8 @@
+{
+  "id": "sprout",
+  "displayName": "Sprout",
+  "description": "En nyfiken liten grodd.",
+  "aliases": ["grodd", "planta", "seed"],
+  "emoji": ["🌱", "🌸", "🐛"],
+  "bodyPath": "body.svg"
+}

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+  <!-- Boo. Klassnamnen driver animationerna: .eye blinkar, .glow pulsar,
+       .arm-left/.arm-right svingar och vinkar. Boo svävar och saknar ben. -->
+  <defs>
+    <linearGradient id="ghost" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" /><stop offset="1" stop-color="#D5D2EF" />
+    </linearGradient>
+  </defs>
+  <rect class="arm-left" x="16" y="52" width="9" height="18" rx="4.5" fill="#EFEDF9" stroke="#6D6A8C" stroke-width="2.5" />
+  <rect class="arm-right" x="75" y="52" width="9" height="18" rx="4.5" fill="#EFEDF9" stroke="#6D6A8C" stroke-width="2.5" />
+  <path d="M50 10 C69 10 79 27 79 50 L79 86 L70 79 L61 88 L52 80 L43 88 L34 79 L25 86 L25 50 C25 27 31 10 50 10 Z"
+        fill="url(#ghost)" stroke="#6D6A8C" stroke-width="2.5" opacity="0.96" />
+  <ellipse cx="39" cy="28" rx="7" ry="10" fill="#fff" opacity="0.8" transform="rotate(-12 39 28)" />
+  <ellipse class="eye" cx="42" cy="44" rx="4" ry="5.6" fill="#33305C" />
+  <ellipse class="eye" cx="58" cy="44" rx="4" ry="5.6" fill="#33305C" />
+  <ellipse cx="50" cy="58" rx="4.6" ry="5.6" fill="#33305C" />
+  <circle cx="33" cy="52" r="3" fill="#FFB3C4" opacity="0.8" />
+  <circle cx="67" cy="52" r="3" fill="#FFB3C4" opacity="0.8" />
+  <circle class="glow" cx="50" cy="74" r="3" fill="var(--accent)" opacity="0.8" />
+</svg>

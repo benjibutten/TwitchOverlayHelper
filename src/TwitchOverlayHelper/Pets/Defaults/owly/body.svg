@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+  <!-- Owly. Klassnamnen driver animationerna: .eye blinkar,
+       .arm-left/.arm-right är vingarna som svingar och vinkar, .leg-a/.leg-b tar steg. -->
+  <defs>
+    <linearGradient id="owl" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFB65C" /><stop offset="1" stop-color="#E07E2F" />
+    </linearGradient>
+    <linearGradient id="owl-belly" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFEDCF" /><stop offset="1" stop-color="#F3C489" />
+    </linearGradient>
+  </defs>
+  <path d="M31 20 L38 30 L26 32 Z" fill="#B85F1F" /><path d="M69 20 L62 30 L74 32 Z" fill="#B85F1F" />
+  <ellipse class="arm-left" cx="24" cy="62" rx="8" ry="16" fill="#D97A2E" stroke="#7A4A1F" stroke-width="2.5" />
+  <ellipse class="arm-right" cx="76" cy="62" rx="8" ry="16" fill="#D97A2E" stroke="#7A4A1F" stroke-width="2.5" />
+  <ellipse cx="50" cy="58" rx="27" ry="34" fill="url(#owl)" stroke="#7A4A1F" stroke-width="2.5" />
+  <ellipse cx="50" cy="68" rx="16" ry="18" fill="url(#owl-belly)" />
+  <path d="M39 63 L44 66 M46 70 L52 73 M56 64 L61 67" stroke="#D9A45F" stroke-width="1.6" stroke-linecap="round" />
+  <g class="leg-a"><path d="M40 89 L36 95 M40 89 L40 96 M40 89 L44 95" stroke="#B85F1F" stroke-width="2.6" stroke-linecap="round" /></g>
+  <g class="leg-b"><path d="M60 89 L56 95 M60 89 L60 96 M60 89 L64 95" stroke="#B85F1F" stroke-width="2.6" stroke-linecap="round" /></g>
+  <circle cx="40" cy="40" r="10.5" fill="#fff" stroke="#7A4A1F" stroke-width="2.5" />
+  <circle cx="60" cy="40" r="10.5" fill="#fff" stroke="#7A4A1F" stroke-width="2.5" />
+  <circle class="eye" cx="41" cy="41" r="4.4" fill="#2A1B0E" />
+  <circle class="eye" cx="59" cy="41" r="4.4" fill="#2A1B0E" />
+  <circle cx="42.6" cy="39.4" r="1.4" fill="#fff" /><circle cx="60.6" cy="39.4" r="1.4" fill="#fff" />
+  <path d="M31 30 Q37 26 43 29" stroke="#7A4A1F" stroke-width="2.2" fill="none" stroke-linecap="round" />
+  <path d="M57 29 Q63 26 69 30" stroke="#7A4A1F" stroke-width="2.2" fill="none" stroke-linecap="round" />
+  <path d="M46 50 L50 57 L54 50 Z" fill="#F2A33C" stroke="#B85F1F" stroke-width="1.6" stroke-linejoin="round" />
+</svg>

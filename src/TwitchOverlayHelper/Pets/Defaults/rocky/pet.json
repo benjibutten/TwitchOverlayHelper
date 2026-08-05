@@ -1,0 +1,8 @@
+{
+  "id": "rocky",
+  "displayName": "Rocky",
+  "description": "En trygg sten. Rubbas inte.",
+  "aliases": ["sten", "rock"],
+  "emoji": ["🪨", "😴", "💪"],
+  "bodyPath": "body.svg"
+}

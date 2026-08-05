@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+  <!-- Bitcrush. Klassnamnen driver animationerna: .eye blinkar, .glow pulsar,
+       .glitch flimrar, .arm-left/.arm-right svingar och vinkar, .leg-a/.leg-b tar steg. -->
+  <defs>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F7FAFE" /><stop offset="1" stop-color="#CBD6E4" />
+    </linearGradient>
+    <linearGradient id="metal-dark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E4EAF3" /><stop offset="1" stop-color="#AEBCCF" />
+    </linearGradient>
+    <linearGradient id="bsod" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3D79F2" /><stop offset="1" stop-color="#1735A6" />
+    </linearGradient>
+  </defs>
+  <path d="M50 12 L58 4" stroke="#8B97A8" stroke-width="3" stroke-linecap="round" />
+  <circle class="glow" cx="59" cy="3.5" r="3.6" fill="var(--accent)" />
+  <rect class="arm-left" x="20" y="56" width="8" height="20" rx="4" fill="url(#metal-dark)" stroke="#2A3140" stroke-width="2.5" />
+  <rect class="arm-right" x="72" y="56" width="8" height="20" rx="4" fill="url(#metal-dark)" stroke="#2A3140" stroke-width="2.5" />
+  <g class="leg-a">
+    <rect x="36" y="80" width="9" height="12" rx="4" fill="url(#metal-dark)" stroke="#2A3140" stroke-width="2.5" />
+    <ellipse cx="40.5" cy="93" rx="7.4" ry="3.4" fill="#2A3140" />
+  </g>
+  <g class="leg-b">
+    <rect x="55" y="80" width="9" height="12" rx="4" fill="url(#metal-dark)" stroke="#2A3140" stroke-width="2.5" />
+    <ellipse cx="59.5" cy="93" rx="7.4" ry="3.4" fill="#2A3140" />
+  </g>
+  <rect x="33" y="54" width="34" height="28" rx="9" fill="url(#metal)" stroke="#2A3140" stroke-width="2.5" />
+  <circle cx="50" cy="66" r="4.6" fill="var(--accent)" opacity="0.9" />
+  <rect x="24" y="12" width="52" height="40" rx="7" fill="url(#metal)" stroke="#2A3140" stroke-width="2.5" />
+  <rect x="29" y="17" width="42" height="30" rx="3.5" fill="url(#bsod)" />
+  <rect class="glitch" x="29" y="22" width="42" height="3" fill="#fff" opacity="0.6" />
+  <rect class="glitch" x="29" y="39" width="26" height="2.4" fill="#fff" opacity="0.45" />
+  <rect class="eye" x="39" y="26" width="5" height="5" fill="#fff" />
+  <rect class="eye" x="56" y="26" width="5" height="5" fill="#fff" />
+  <path d="M42 40 Q50 34 58 40" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" />
+</svg>

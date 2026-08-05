@@ -10,6 +10,7 @@ using System.Windows.Threading;
 using TwitchOverlayHelper.Interop;
 using TwitchOverlayHelper.Models;
 using TwitchOverlayHelper.Overlay;
+using TwitchOverlayHelper.Pets;
 using TwitchOverlayHelper.Services;
 using TwitchOverlayHelper.Settings;
 using TwitchOverlayHelper.Speech;
@@ -37,10 +38,14 @@ public partial class MainWindow : Window
     private readonly NameAudioPlayer _namePlayer;
     private readonly NameSpeechService _nameSpeech;
     private readonly ChatHub _hub;
+    private readonly PetRegistry _petRegistry = new();
+    private readonly PetCatalog _petCatalog = new();
+    private readonly PetService _petService;
     private readonly DockServer _dockServer;
     private readonly DockServerContext _dockContext;
     private readonly AppSettings _settings;
     private readonly OverlayWindow _overlay;
+    private readonly System.Collections.ObjectModel.ObservableCollection<PetRewardRule> _petRewards = [];
     private readonly ConcurrentQueue<ChatMessage> _pendingMessages = new();
     private readonly DispatcherTimer _chatFlushTimer;
     private readonly DispatcherTimer _settingsApplyTimer;
@@ -54,9 +59,11 @@ public partial class MainWindow : Window
     private bool _exitRequested;
     private bool _updatingStartWithWindows;
     private bool _reconnecting;
+    private bool _refreshingPetCatalog;
     private DockSettingsWindow? _dockSettingsWindow;
     private SpeechSettingsWindow? _speechSettingsWindow;
     private string? _lastBadgeRoom;
+    private string? _lastSeenRewardId;
     private CancellationTokenSource? _badgeLoadCancellation;
     private int _pendingMessageCount;
     private int _chatTimerRequested;
@@ -71,7 +78,8 @@ public partial class MainWindow : Window
         _apiClient = new TwitchApiClient(_httpClient, _session);
         _namePlayer = new NameAudioPlayer(Dispatcher);
         _nameSpeech = new NameSpeechService(_speechHttpClient, _settings, _speechSecrets, _namePlayer.PlayAsync);
-        _hub = new ChatHub(_settings, _badgeCatalog, _session) { SpeechEnabled = _nameSpeech.IsConfigured };
+        _hub = new ChatHub(_settings, _badgeCatalog, _session, _petRegistry, _petCatalog) { SpeechEnabled = _nameSpeech.IsConfigured };
+        _petService = new PetService(_settings, _petCatalog, _petRegistry, _hub);
         _dockContext = new DockServerContext
         {
             Settings = _settings,
@@ -79,7 +87,8 @@ public partial class MainWindow : Window
             Session = _session,
             Api = _apiClient,
             Chat = _chatClient,
-            Speech = _nameSpeech
+            Speech = _nameSpeech,
+            Pets = _petCatalog
         };
         _dockServer = new DockServer(_dockContext);
         _overlay = new OverlayWindow(_settings, _badgeCatalog);
@@ -98,6 +107,8 @@ public partial class MainWindow : Window
 
         _chatClient.MessageReceived += QueueMessage;
         _chatClient.MessageReceived += _hub.PublishMessage;
+        _chatClient.MessageReceived += _petService.HandleMessage;
+        _chatClient.MessageReceived += TrackLastReward;
         _chatClient.ModerationReceived += _hub.PublishModeration;
         _chatClient.StatusChanged += status => RunOnUi(() => SetStatus(status));
         _chatClient.RoomDiscovered += room => RunOnUi(async () => await OnRoomDiscoveredAsync(room));
@@ -126,6 +137,9 @@ public partial class MainWindow : Window
         DockUrlBox.Text = started ? _dockServer.DockUrl : string.Empty;
         CopyDockUrlButton.IsEnabled = started;
         OpenDockButton.IsEnabled = started;
+        PetsUrlBox.Text = started ? _dockServer.PetsUrl : string.Empty;
+        CopyPetsUrlButton.IsEnabled = started;
+        OpenPetsButton.IsEnabled = started;
         SetDockStatus(started ? "Servern kör – klistra in adressen i OBS." : _dockServer.LastError ?? "Servern kunde inte starta.", started ? "live" : "error");
     }
 
@@ -166,6 +180,185 @@ public partial class MainWindow : Window
         {
             SetDockStatus("Ingen webbläsare kunde öppnas.", "error");
         }
+    }
+
+    private void CopyPetsUrl_Click(object sender, RoutedEventArgs e)
+    {
+        if (PetsUrlBox.Text.Length == 0) return;
+        try { Clipboard.SetText(PetsUrlBox.Text); }
+        catch (System.Runtime.InteropServices.COMException) { /* the address is still selectable */ }
+    }
+
+    private void OpenPets_Click(object sender, RoutedEventArgs e)
+    {
+        if (PetsUrlBox.Text.Length == 0) return;
+        OpenInBrowser(PetsUrlBox.Text);
+    }
+
+    private void PetSetting_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _settings.Pets.Enabled = PetsEnabledCheck.IsChecked == true;
+        _settings.Pets.ShowNames = PetNamesCheck.IsChecked == true;
+        _settings.Pets.Scale = PetScaleSlider.Value;
+        PetScaleValue.Text = $"{PetScaleSlider.Value:P0}";
+        _hub.PublishPetSettings();
+        SaveSettings();
+    }
+
+    private void PetLifetime_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_loading) return;
+        if (!int.TryParse(PetLifetimeInput.Text, out int minutes) || minutes is < 1 or > 60) return;
+        _settings.Pets.LifetimeMinutes = minutes;
+        _hub.PublishPetSettings();
+        SaveSettings();
+    }
+
+    private void PetLifetime_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (!int.TryParse(PetLifetimeInput.Text, out int minutes) || minutes is < 1 or > 60)
+            PetLifetimeInput.Text = _settings.Pets.LifetimeMinutes.ToString();
+    }
+
+    private void PetMax_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_loading) return;
+        if (!int.TryParse(PetMaxInput.Text, out int max) || max is < 1 or > 20) return;
+        _settings.Pets.MaxPets = max;
+        _hub.PublishPetSettings();
+        SaveSettings();
+    }
+
+    private void PetMax_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (!int.TryParse(PetMaxInput.Text, out int max) || max is < 1 or > 20)
+            PetMaxInput.Text = _settings.Pets.MaxPets.ToString();
+    }
+
+    private void PetReward_Changed(object sender, TextChangedEventArgs e)
+    {
+        if (_loading) return;
+        SavePetRewards();
+    }
+
+    /// <summary>Puts back the last accepted value when the box is left holding something unusable.</summary>
+    private void PetRewardMinutes_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is not TextBox box || box.DataContext is not PetRewardRule rule) return;
+        if (!int.TryParse(box.Text, out int minutes) || minutes is < 1 or > 60)
+            box.Text = rule.Minutes.ToString();
+    }
+
+    private void AddPetReward_Click(object sender, RoutedEventArgs e) =>
+        AddPetReward(new PetRewardRule { Minutes = _settings.Pets.LifetimeMinutes });
+
+    private void RemovePetReward_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not PetRewardRule rule) return;
+        _petRewards.Remove(rule);
+        SavePetRewards();
+    }
+
+    /// <summary>
+    /// Adds the reward that was redeemed last, so the streamer can point a row at a reward by
+    /// redeeming it once instead of digging a GUID out of Twitch's dashboard.
+    /// </summary>
+    private void UseLastReward_Click(object sender, RoutedEventArgs e)
+    {
+        if (_lastSeenRewardId is not { Length: > 0 } rewardId) return;
+        if (_petRewards.Any(rule => string.Equals(rule.RewardId, rewardId, StringComparison.OrdinalIgnoreCase)))
+        {
+            LastRewardText.Text = $"{rewardId} finns redan i listan.";
+            return;
+        }
+        AddPetReward(new PetRewardRule { RewardId = rewardId, Minutes = _settings.Pets.LifetimeMinutes });
+    }
+
+    private void AddPetReward(PetRewardRule rule)
+    {
+        _petRewards.Add(rule);
+        SavePetRewards();
+    }
+
+    private void SavePetRewards()
+    {
+        _settings.Pets.Rewards = _petRewards.ToList();
+        PetRewardEmptyText.Visibility = _petRewards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        SaveSettings();
+    }
+
+    private void SpawnTestPet_Click(object sender, RoutedEventArgs e) => _petService.SpawnTest();
+
+    private void PetDefault_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || _refreshingPetCatalog) return;
+        _settings.Pets.DefaultPet = (PetDefaultBox.SelectedItem as ComboBoxItem)?.Tag as string ?? string.Empty;
+        SaveSettings();
+    }
+
+    private void OpenPetsFolder_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(_petCatalog.PetsFolder);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_petCatalog.PetsFolder) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            PetListText.Text = $"Kunde inte öppna mappen: {_petCatalog.PetsFolder}";
+        }
+    }
+
+    private void ReloadPets_Click(object sender, RoutedEventArgs e)
+    {
+        _petCatalog.Reload();
+        RefreshPetCatalogUi();
+        // Overlays that are open right now should learn the new species without a reload in OBS.
+        _hub.PublishPetCatalog();
+    }
+
+    /// <summary>Rebuilds the species list and the default-pet picker from the catalog.</summary>
+    private void RefreshPetCatalogUi()
+    {
+        _refreshingPetCatalog = true;
+        try
+        {
+            var lines = _petCatalog.Pets.Select(pet =>
+            {
+                string names = string.Join(", ", new[] { pet.Id }.Concat(pet.Aliases));
+                return $"• {pet.Name}{(pet.IsDefault ? "" : " (egen)")} – tittare skriver: {names}";
+            });
+            IEnumerable<string> warnings = _petCatalog.Warnings.Select(w => $"⚠ {w}");
+            PetListText.Text = string.Join("\n", lines.Concat(warnings));
+
+            PetDefaultBox.Items.Clear();
+            PetDefaultBox.Items.Add(new ComboBoxItem { Content = "Slumpad – låt texten avgöra", Tag = "" });
+            foreach (PetDefinition pet in _petCatalog.Pets)
+                PetDefaultBox.Items.Add(new ComboBoxItem { Content = pet.Name, Tag = pet.Id });
+
+            string current = _settings.Pets.DefaultPet;
+            PetDefaultBox.SelectedIndex = 0;
+            foreach (ComboBoxItem item in PetDefaultBox.Items)
+                if (string.Equals(item.Tag as string, current, StringComparison.OrdinalIgnoreCase) && current.Length > 0)
+                    PetDefaultBox.SelectedItem = item;
+        }
+        finally { _refreshingPetCatalog = false; }
+    }
+
+    /// <summary>
+    /// Remembers the latest redeemed reward id so the user can pick it from the UI instead of
+    /// digging a GUID out of Twitch's dashboard.
+    /// </summary>
+    private void TrackLastReward(ChatMessage message)
+    {
+        if (message.RewardId is not { Length: > 0 } rewardId) return;
+        RunOnUi(() =>
+        {
+            _lastSeenRewardId = rewardId;
+            LastRewardText.Text = $"Senast inlösta: {rewardId} ({message.DisplayName})";
+            UseLastRewardButton.IsEnabled = true;
+        });
     }
 
     private void ClientId_TextChanged(object sender, TextChangedEventArgs e)
@@ -448,6 +641,16 @@ public partial class MainWindow : Window
         _settings.MaxMessages = Math.Clamp(_settings.MaxMessages, 1, 200);
         MaxMessagesInput.Text = _settings.MaxMessages.ToString();
         VisibilityButton.Content = _settings.OverlayVisible ? "Dölj overlay" : "Visa overlay";
+        PetsEnabledCheck.IsChecked = _settings.Pets.Enabled;
+        PetNamesCheck.IsChecked = _settings.Pets.ShowNames;
+        PetScaleSlider.Value = _settings.Pets.Scale;
+        PetScaleValue.Text = $"{_settings.Pets.Scale:P0}";
+        PetLifetimeInput.Text = _settings.Pets.LifetimeMinutes.ToString();
+        PetMaxInput.Text = _settings.Pets.MaxPets.ToString();
+        foreach (PetRewardRule rule in _settings.Pets.Rewards) _petRewards.Add(rule);
+        PetRewardList.ItemsSource = _petRewards;
+        PetRewardEmptyText.Visibility = _petRewards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        RefreshPetCatalogUi();
         ToggleHotkeyLabel.Text = _settings.ToggleHotkeyText;
         EditHotkeyLabel.Text = _settings.EditHotkeyText;
         UpdateValueLabels();

@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+  <!-- Robo. Rita fritt i rutan 100×100; overlayen skalar den åt dig.
+       Klassnamnen är det som gör peten levande: .eye blinkar, .glow pulsar,
+       .arm-left/.arm-right svingar när den går och vinkar, .leg-a/.leg-b tar steg.
+       En pet utan ben studsar fram i stället. -->
+  <defs>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F7FAFE" /><stop offset="1" stop-color="#CBD6E4" />
+    </linearGradient>
+    <linearGradient id="metal-dark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E4EAF3" /><stop offset="1" stop-color="#AEBCCF" />
+    </linearGradient>
+  </defs>
+  <line x1="50" y1="13" x2="50" y2="5" stroke="#8B97A8" stroke-width="3" stroke-linecap="round" />
+  <circle class="glow" cx="50" cy="4" r="4" fill="var(--accent)" />
+  <rect class="arm-left" x="16" y="52" width="9" height="23" rx="4.5" fill="url(#metal-dark)" stroke="#2A3140" stroke-width="2.5" />
+  <rect class="arm-right" x="75" y="52" width="9" height="23" rx="4.5" fill="url(#metal-dark)" stroke="#2A3140" stroke-width="2.5" />
+  <g class="leg-a">
+    <rect x="34" y="79" width="10" height="13" rx="4.5" fill="url(#metal-dark)" stroke="#2A3140" stroke-width="2.5" />
+    <ellipse cx="39" cy="93" rx="8" ry="3.6" fill="#2A3140" />
+  </g>
+  <g class="leg-b">
+    <rect x="56" y="79" width="10" height="13" rx="4.5" fill="url(#metal-dark)" stroke="#2A3140" stroke-width="2.5" />
+    <ellipse cx="61" cy="93" rx="8" ry="3.6" fill="#2A3140" />
+  </g>
+  <rect x="28" y="50" width="44" height="32" rx="13" fill="url(#metal)" stroke="#2A3140" stroke-width="2.5" />
+  <circle cx="50" cy="64" r="7" fill="var(--accent)" opacity="0.9" />
+  <circle cx="47.5" cy="61.5" r="2" fill="#fff" opacity="0.75" />
+  <rect x="24" y="12" width="52" height="36" rx="14" fill="url(#metal)" stroke="#2A3140" stroke-width="2.5" />
+  <circle cx="30" cy="17" r="1.4" fill="#8B97A8" /><circle cx="70" cy="17" r="1.4" fill="#8B97A8" />
+  <rect x="31" y="19" width="38" height="22" rx="9" fill="#141B26" />
+  <circle class="eye" cx="43" cy="29" r="4" fill="var(--accent)" />
+  <circle class="eye" cx="57" cy="29" r="4" fill="var(--accent)" />
+  <path d="M45 36 Q50 39.5 55 36" stroke="var(--accent)" stroke-width="2" fill="none" stroke-linecap="round" />
+  <circle cx="28.5" cy="42" r="2.6" fill="#FF9FB2" opacity="0.8" />
+  <circle cx="71.5" cy="42" r="2.6" fill="#FF9FB2" opacity="0.8" />
+</svg>

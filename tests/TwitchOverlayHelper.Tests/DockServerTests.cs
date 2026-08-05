@@ -6,6 +6,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using TwitchOverlayHelper.Models;
+using TwitchOverlayHelper.Pets;
 using TwitchOverlayHelper.Settings;
 using TwitchOverlayHelper.Speech;
 using TwitchOverlayHelper.Twitch;
@@ -43,7 +44,9 @@ public sealed class DockServerTests
         using var sessionHttp = new HttpClient();
         var session = new TwitchSession(sessionHttp, store);
         var chat = new TwitchChatClient();
-        var hub = new ChatHub(settings, new TwitchBadgeCatalog(), session);
+        // Shared so the pets that ship with the app are written out once, not once per test.
+        var petCatalog = new PetCatalog(Path.Combine(Path.GetTempPath(), "toh-tests-pets"));
+        var hub = new ChatHub(settings, new TwitchBadgeCatalog(), session, new PetRegistry(), petCatalog);
         var server = new DockServer(new DockServerContext
         {
             Settings = settings,
@@ -51,7 +54,8 @@ public sealed class DockServerTests
             Session = session,
             Api = new TwitchApiClient(new HttpClient(), session),
             Chat = chat,
-            Speech = SpeechFixture.Service(settings)
+            Speech = SpeechFixture.Service(settings),
+            Pets = petCatalog
         });
 
         Assert.True(await server.StartAsync());
@@ -80,6 +84,36 @@ public sealed class DockServerTests
 
             Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/app.js")).StatusCode);
             Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/styles.css")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/pets.html")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/pets.js")).StatusCode);
+        }
+        client.Dispose();
+    }
+
+    [Fact]
+    public async Task PetSpriteEndpointOnlyServesIdsTheCatalogKnows()
+    {
+        (DockServer server, _, HttpClient client) = await StartAsync();
+        await using (server)
+        {
+            Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/pets/sprite/finns-inte")).StatusCode);
+            // The pets that ship with the app are drawn from SVG and have no spritesheet to serve.
+            Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/pets/sprite/robo")).StatusCode);
+        }
+        client.Dispose();
+    }
+
+    [Fact]
+    public async Task PetBodyEndpointServesTheDrawingFromThePetsFolder()
+    {
+        (DockServer server, _, HttpClient client) = await StartAsync();
+        await using (server)
+        {
+            HttpResponseMessage response = await client.GetAsync("/pets/body/robo");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Contains("<svg", await response.Content.ReadAsStringAsync());
+
+            Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/pets/body/finns-inte")).StatusCode);
         }
         client.Dispose();
     }

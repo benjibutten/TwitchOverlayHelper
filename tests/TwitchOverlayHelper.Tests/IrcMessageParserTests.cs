@@ -21,6 +21,24 @@ public sealed class IrcMessageParserTests
         Assert.Equal("42", IrcMessageParser.TryGetRoomId(raw));
     }
 
+    [Fact]
+    public void ParsesChannelPointRewardId()
+    {
+        const string raw = "@custom-reward-id=abc-123-def;display-name=Kajsa;id=m1;user-id=7 :kajsa!kajsa@kajsa.tmi.twitch.tv PRIVMSG #demo :en pet tack!";
+
+        Assert.True(IrcMessageParser.TryParseChatMessage(raw, out var message));
+        Assert.Equal("abc-123-def", message!.RewardId);
+    }
+
+    [Fact]
+    public void LeavesRewardIdNullForOrdinaryMessages()
+    {
+        const string raw = "@display-name=Kajsa;id=m2 :kajsa!kajsa@kajsa.tmi.twitch.tv PRIVMSG #demo :hej";
+
+        Assert.True(IrcMessageParser.TryParseChatMessage(raw, out var message));
+        Assert.Null(message!.RewardId);
+    }
+
     [Theory]
     [InlineData("#Some_Channel", "some_channel")]
     [InlineData("https://www.twitch.tv/Twitch", "twitch")]

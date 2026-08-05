@@ -1,0 +1,8 @@
+{
+  "id": "owly",
+  "displayName": "Owly",
+  "description": "En klok uggla som ser allt.",
+  "aliases": ["uggla", "owl"],
+  "emoji": ["🦉", "👀", "📚"],
+  "bodyPath": "body.svg"
+}

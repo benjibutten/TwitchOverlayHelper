@@ -37,7 +37,8 @@ internal static class IrcMessageParser
         {
             UserId = tags.GetValueOrDefault("user-id") ?? string.Empty,
             UserLogin = login,
-            IsAction = isAction
+            IsAction = isAction,
+            RewardId = EmptyToNull(tags.GetValueOrDefault("custom-reward-id"))
         };
         return true;
     }
