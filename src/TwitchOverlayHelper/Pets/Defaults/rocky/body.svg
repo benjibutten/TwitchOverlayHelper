@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+  <!-- Rocky. Klassnamnen driver animationerna: .eye blinkar,
+       .arm-left/.arm-right svingar och vinkar. Rocky saknar ben och guppar i stället. -->
+  <defs>
+    <linearGradient id="rock" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#CFC8BD" /><stop offset="1" stop-color="#8F887C" />
+    </linearGradient>
+  </defs>
+  <rect class="arm-left" x="15" y="60" width="10" height="16" rx="5" fill="#A39B8D" stroke="#4F4A42" stroke-width="2.5" />
+  <rect class="arm-right" x="75" y="60" width="10" height="16" rx="5" fill="#A39B8D" stroke="#4F4A42" stroke-width="2.5" />
+  <path d="M30 91 C22 88 18 74 22 60 C26 44 34 32 50 30 C68 28 80 42 80 58 C80 76 72 90 58 92 C48 94 38 94 30 91 Z"
+        fill="url(#rock)" stroke="#4F4A42" stroke-width="2.5" />
+  <ellipse cx="42" cy="33" rx="9" ry="4.5" fill="#7FBF6A" opacity="0.85" transform="rotate(-8 42 33)" />
+  <path d="M64 44 L69 52 M67 49 L72 48" stroke="#6B655B" stroke-width="1.8" stroke-linecap="round" />
+  <path d="M28 68 L33 74" stroke="#6B655B" stroke-width="1.8" stroke-linecap="round" />
+  <ellipse class="eye" cx="42" cy="56" rx="3.4" ry="4" fill="#2E2A24" />
+  <ellipse class="eye" cx="58" cy="56" rx="3.4" ry="4" fill="#2E2A24" />
+  <path d="M45 68 Q50 70.5 55 68" stroke="#2E2A24" stroke-width="2.4" fill="none" stroke-linecap="round" />
+  <circle cx="34" cy="62" r="2.8" fill="#D99A8B" opacity="0.6" />
+  <circle cx="66" cy="62" r="2.8" fill="#D99A8B" opacity="0.6" />
+</svg>

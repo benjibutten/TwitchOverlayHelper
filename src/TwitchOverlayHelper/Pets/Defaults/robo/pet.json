@@ -1,0 +1,8 @@
+{
+  "id": "robo",
+  "displayName": "Robo",
+  "description": "Den klassiska roboten.",
+  "aliases": ["robot"],
+  "emoji": ["🤖", "⚙️", "🔋"],
+  "bodyPath": "body.svg"
+}

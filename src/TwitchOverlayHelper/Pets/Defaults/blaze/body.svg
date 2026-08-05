@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+  <!-- Blaze. Klassnamnen driver animationerna: .eye blinkar, .flame vajar,
+       .arm-left/.arm-right svingar och vinkar. Blaze saknar ben och guppar i stället. -->
+  <defs>
+    <linearGradient id="flame-outer" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFCF3F" /><stop offset="0.55" stop-color="#FF8A2A" /><stop offset="1" stop-color="#F4581C" />
+    </linearGradient>
+    <linearGradient id="flame-inner" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFF3B0" /><stop offset="1" stop-color="#FFB020" />
+    </linearGradient>
+  </defs>
+  <rect class="arm-left" x="16" y="56" width="9" height="18" rx="4.5" fill="#FF8C42" stroke="#B33A0E" stroke-width="2.5" />
+  <rect class="arm-right" x="75" y="56" width="9" height="18" rx="4.5" fill="#FF8C42" stroke="#B33A0E" stroke-width="2.5" />
+  <g class="flame">
+    <path d="M50 6 C56 20 74 28 76 48 C78 72 66 92 50 92 C34 92 22 72 24 48 C26 28 44 20 50 6 Z"
+          fill="url(#flame-outer)" stroke="#B33A0E" stroke-width="2.5" />
+    <path d="M50 34 C56 44 64 48 64 62 C64 76 58 86 50 86 C42 86 36 76 36 62 C36 48 44 44 50 34 Z"
+          fill="url(#flame-inner)" />
+  </g>
+  <circle class="eye" cx="43" cy="62" r="3.6" fill="#7A2B08" />
+  <circle class="eye" cx="57" cy="62" r="3.6" fill="#7A2B08" />
+  <path d="M44 72 Q50 77 56 72" stroke="#7A2B08" stroke-width="2.5" fill="none" stroke-linecap="round" />
+  <circle cx="36" cy="69" r="2.8" fill="#FF9FB2" opacity="0.75" />
+  <circle cx="64" cy="69" r="2.8" fill="#FF9FB2" opacity="0.75" />
+</svg>

@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using TwitchOverlayHelper.Pets;
 using TwitchOverlayHelper.Settings;
 using TwitchOverlayHelper.Speech;
 using TwitchOverlayHelper.Twitch;
@@ -23,6 +24,7 @@ public sealed class DockServerContext
     public required TwitchApiClient Api { get; init; }
     public required TwitchChatClient Chat { get; init; }
     public required NameSpeechService Speech { get; init; }
+    public required PetCatalog Pets { get; init; }
 }
 
 /// <summary>
@@ -38,6 +40,9 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
     public int Port { get; private set; }
 
     public string DockUrl => $"http://127.0.0.1:{Port}/?key={context.Settings.DockAccessKey}";
+
+    /// <summary>The transparent pet overlay, meant for an OBS browser source over the game.</summary>
+    public string PetsUrl => $"http://127.0.0.1:{Port}/pets.html?key={context.Settings.DockAccessKey}";
 
     public async Task<bool> StartAsync()
     {
@@ -207,6 +212,25 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
 
         app.MapPost("/api/raid/cancel", async () =>
             await RunAsync(() => context.Api.CancelRaidAsync(RequireOwnChannel())).ConfigureAwait(false));
+
+        // Pet drawings live in the user's pets folder, so an edited pet reaches the overlay after a
+        // reload without the app shipping a new build.
+        app.MapGet("/pets/body/{id}", (string id) =>
+            context.Pets.TryGetBody(id, out string svg) ? Results.Text(svg, "image/svg+xml") : Results.NotFound());
+
+        // Pet spritesheets live on disk too. Only ids the catalog itself resolved are served, so
+        // the URL can never name an arbitrary file.
+        app.MapGet("/pets/sprite/{id}", (string id) =>
+        {
+            if (!context.Pets.TryGetSpriteFile(id, out string path)) return Results.NotFound();
+            string type = Path.GetExtension(path).ToLowerInvariant() switch
+            {
+                ".webp" => "image/webp",
+                ".png" => "image/png",
+                _ => "application/octet-stream"
+            };
+            return Results.File(path, type);
+        });
 
         // An explicit catch-all: the default fallback pattern skips paths that look like files,
         // which would leave app.js and styles.css unreachable.

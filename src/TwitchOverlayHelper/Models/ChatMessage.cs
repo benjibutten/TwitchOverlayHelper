@@ -27,6 +27,12 @@ public sealed record ChatMessage(
     /// <summary>True for a /me action message, which Twitch wraps in ACTION control characters.</summary>
     public bool IsAction { get; init; }
 
+    /// <summary>
+    /// Id of the channel point reward this message redeemed, when it did. Only redemptions that
+    /// require the viewer to type a message ever reach IRC, so this is null for silent rewards.
+    /// </summary>
+    public string? RewardId { get; init; }
+
     public bool IsBroadcaster => HasBadge("broadcaster");
     public bool IsModerator => HasBadge("moderator");
 

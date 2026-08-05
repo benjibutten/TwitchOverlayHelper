@@ -1,0 +1,8 @@
+{
+  "id": "blaze",
+  "displayName": "Blaze",
+  "description": "En pigg eldkula med hett humör.",
+  "aliases": ["eld", "eldkula", "fire", "flame"],
+  "emoji": ["🔥", "✨", "🌶️"],
+  "bodyPath": "body.svg"
+}

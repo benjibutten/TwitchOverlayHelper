@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+  <!-- Blobby. Klassnamnen driver animationerna: .eye blinkar, .glow pulsar,
+       .arm-left/.arm-right svingar och vinkar. Blobby saknar ben och guppar i stället. -->
+  <defs>
+    <linearGradient id="slime" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#A9EBFF" /><stop offset="1" stop-color="#3FA9E8" />
+    </linearGradient>
+  </defs>
+  <rect class="arm-left" x="17" y="58" width="9" height="17" rx="4.5" fill="#3FA9E8" stroke="#1C5E7E" stroke-width="2.5" />
+  <rect class="arm-right" x="74" y="58" width="9" height="17" rx="4.5" fill="#3FA9E8" stroke="#1C5E7E" stroke-width="2.5" />
+  <path d="M50 14 C63 30 78 44 78 62 C78 81 65 92 50 92 C35 92 22 81 22 62 C22 44 37 30 50 14 Z"
+        fill="url(#slime)" stroke="#1C5E7E" stroke-width="2.5" />
+  <ellipse cx="38" cy="42" rx="7" ry="11" fill="#fff" opacity="0.45" transform="rotate(-18 38 42)" />
+  <circle class="glow" cx="62" cy="72" r="4" fill="#fff" opacity="0.5" />
+  <circle cx="41" cy="58" r="7" fill="#fff" /><circle cx="59" cy="58" r="7" fill="#fff" />
+  <circle class="eye" cx="42" cy="59" r="3.4" fill="#143A4E" />
+  <circle class="eye" cx="58" cy="59" r="3.4" fill="#143A4E" />
+  <path d="M45 70 Q50 74 55 70" stroke="#143A4E" stroke-width="2.5" fill="none" stroke-linecap="round" />
+  <circle cx="31" cy="66" r="3" fill="#FF9FB2" opacity="0.7" />
+  <circle cx="69" cy="66" r="3" fill="#FF9FB2" opacity="0.7" />
+</svg>

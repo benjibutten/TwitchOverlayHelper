@@ -1,0 +1,8 @@
+{
+  "id": "bitcrush",
+  "displayName": "Bitcrush",
+  "description": "En liten bluescreen-gremlin.",
+  "aliases": ["bsod", "gremlin", "glitch"],
+  "emoji": ["🖥️", "💾", "🧨"],
+  "bodyPath": "body.svg"
+}

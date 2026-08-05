@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8" />
+<title>Pets</title>
+<style>
+  /* Transparent everywhere: this page sits as an OBS browser source over the game. */
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; width: 100%; height: 100%; }
+  * { box-sizing: border-box; user-select: none; }
+
+  #stage { position: fixed; inset: 0; --pet-scale: 1; }
+  #stage.disabled { display: none; }
+  #stage.hide-names .name { display: none; }
+
+  .pet {
+    position: absolute;
+    bottom: 4px;
+    left: 0;
+    width: calc(90px * var(--pet-scale));
+    will-change: transform;
+    text-align: center;
+    --accent: #7EF0FF;
+  }
+
+  .pet .body-wrap {
+    position: relative;
+    width: calc(90px * var(--pet-scale));
+    height: calc(90px * var(--pet-scale));
+    animation: bob 2.6s ease-in-out infinite;
+  }
+  .pet.face-left .body-wrap svg { transform: scaleX(-1); }
+
+  .pet svg { width: 100%; height: 100%; display: block; overflow: visible; }
+
+  /* SVG part animations need their own origin, not the SVG canvas corner. */
+  .pet svg * { transform-box: fill-box; }
+
+  /* The soft ground shadow lives outside .body-wrap so it stays put when the body jumps. */
+  .pet .shadow {
+    position: absolute;
+    left: 14%;
+    width: 72%;
+    height: calc(10px * var(--pet-scale));
+    top: calc(85px * var(--pet-scale));
+    border-radius: 50%;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0.38) 0%, rgba(0,0,0,0) 68%);
+  }
+
+  .eye { transform-origin: center; animation: blink 4.2s infinite; }
+  .glow { transform-origin: center; animation: glow 2.2s ease-in-out infinite; }
+  .arm-left, .arm-right, .leg-a, .leg-b { transform-origin: top center; }
+  .flame { transform-origin: bottom center; animation: flameSway 0.9s ease-in-out infinite alternate; }
+  .glitch { animation: glitch 1.7s steps(2, jump-none) infinite; }
+
+  /* Pets in the hatch-pet spritesheet format: 8 columns of 192×208 cells, 9 rows in version 1
+     and 11 in version 2 (the two extra rows hold look directions). With the background scaled to
+     800% × rows·100%, percentage steps land exactly on cell edges; pets.js sets the vertical
+     size per species, the 900% here is only the till-then default. */
+  .pet .sprite {
+    width: calc(90px * var(--pet-scale));
+    height: calc(97.5px * var(--pet-scale));
+    background-repeat: no-repeat;
+    background-size: 800% 900%;
+    background-position: 0% 0%;
+  }
+  .pet.is-sprite .body-wrap { height: calc(97.5px * var(--pet-scale)); }
+  .pet.is-sprite .shadow { top: calc(92px * var(--pet-scale)); }
+
+  .name {
+    display: inline-block;
+    margin-top: 2px;
+    max-width: calc(160px * var(--pet-scale));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 600 calc(12px * var(--pet-scale))/1.5 "Segoe UI", Verdana, sans-serif;
+    color: #fff;
+    background: linear-gradient(180deg, rgba(23, 27, 40, 0.78), rgba(10, 12, 20, 0.78));
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
+    padding: 0 calc(9px * var(--pet-scale));
+    text-shadow: 0 1px 2px rgba(0,0,0,.8);
+    box-shadow: 0 2px 6px rgba(0,0,0,.35);
+  }
+  .name::before {
+    content: "";
+    display: inline-block;
+    width: calc(6px * var(--pet-scale));
+    height: calc(6px * var(--pet-scale));
+    border-radius: 50%;
+    background: var(--accent);
+    margin-right: calc(5px * var(--pet-scale));
+    vertical-align: middle;
+  }
+
+  .bubble {
+    position: absolute;
+    left: 50%;
+    top: calc(-26px * var(--pet-scale));
+    transform: translateX(-50%);
+    font-size: calc(20px * var(--pet-scale));
+    opacity: 0;
+    pointer-events: none;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,.6));
+  }
+  .bubble.show { animation: bubblePop 1.6s ease-out forwards; }
+
+  /* ------------------------------------------------------------ behaviors */
+  .pet.walk .body-wrap { animation: walkBob 0.34s ease-in-out infinite; }
+  .pet.walk .leg-a { animation: legSwing 0.34s ease-in-out infinite; }
+  .pet.walk .leg-b { animation: legSwing 0.34s ease-in-out infinite reverse; }
+  .pet.walk .arm-left { animation: armSwing 0.34s ease-in-out infinite reverse; }
+  .pet.walk .arm-right { animation: armSwing 0.34s ease-in-out infinite; }
+
+  .pet.wave .arm-right { animation: wave 0.5s ease-in-out 3; }
+  .pet.jump .body-wrap { animation: jump 0.65s cubic-bezier(.3,0,.2,1); }
+  .pet.jump .shadow { animation: shadowShrink 0.65s cubic-bezier(.3,0,.2,1); }
+  .pet.dance .body-wrap { animation: dance 0.45s ease-in-out 3; }
+
+  .pet.sleep .eye { animation: none; transform: scaleY(0.12); }
+  .pet.sleep .body-wrap { animation: bob 3.8s ease-in-out infinite; }
+
+  .pet.fight .body-wrap { animation: lunge 0.28s ease-in-out infinite alternate; }
+  .pet.cook .body-wrap { animation: stir 0.7s ease-in-out infinite; }
+  .pet.cook .arm-right { animation: armSwing 0.7s ease-in-out infinite; }
+  .pet.lean-right .body-wrap { animation: none; transform: rotate(10deg) translateY(2px); }
+  .pet.lean-left .body-wrap { animation: none; transform: rotate(-10deg) translateY(2px); }
+  /* Losing a fight: sprite pets show their "failed" row, drawn pets slump instead. Declared after
+     .walk on purpose, so the slump wins while the loser trudges away. */
+  .pet.sad .body-wrap { animation: sadSlump 1.9s ease-in-out; }
+
+  .pet.spawn { animation: dropIn 0.9s cubic-bezier(.25,1.4,.45,1); }
+  .pet.despawn { animation: beamOut 0.9s ease-in forwards; }
+
+  .prop {
+    position: absolute;
+    bottom: 2px;
+    font-size: calc(30px * var(--pet-scale));
+    filter: drop-shadow(0 1px 3px rgba(0,0,0,.6));
+    animation: dropIn 0.5s ease-out;
+  }
+
+  .float {
+    position: absolute;
+    font-size: calc(17px * var(--pet-scale));
+    pointer-events: none;
+    animation: floatUp 1.4s ease-out forwards;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,.5));
+  }
+
+  /* ------------------------------------------------------------ keyframes */
+  @keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(calc(-2px * var(--pet-scale))); } }
+  @keyframes walkBob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(calc(-4px * var(--pet-scale))); } }
+  @keyframes blink { 0%, 93%, 100% { transform: scaleY(1); } 95%, 98% { transform: scaleY(0.08); } }
+  @keyframes glow { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  @keyframes flameSway { 0% { transform: skewX(-3deg) scaleY(0.98); } 100% { transform: skewX(3deg) scaleY(1.04); } }
+  @keyframes glitch { 0%, 78% { opacity: 0.75; } 79%, 88% { opacity: 0.15; } 89%, 100% { opacity: 0.55; } }
+  @keyframes legSwing { 0%,100% { transform: rotate(14deg); } 50% { transform: rotate(-14deg); } }
+  @keyframes armSwing { 0%,100% { transform: rotate(10deg); } 50% { transform: rotate(-14deg); } }
+  @keyframes wave { 0%,100% { transform: rotate(0); } 50% { transform: rotate(-130deg); } }
+  @keyframes jump { 0%,100% { transform: translateY(0); } 40% { transform: translateY(calc(-34px * var(--pet-scale))); } 70% { transform: translateY(0); } 85% { transform: translateY(calc(-8px * var(--pet-scale))); } }
+  @keyframes shadowShrink { 0%,100% { transform: scale(1); opacity: 1; } 40% { transform: scale(0.55); opacity: 0.5; } 70% { transform: scale(1); } }
+  @keyframes dance { 0%,100% { transform: rotate(-9deg) translateY(0); } 50% { transform: rotate(9deg) translateY(calc(-5px * var(--pet-scale))); } }
+  @keyframes lunge { 0% { transform: translateX(calc(-3px * var(--pet-scale))) rotate(-7deg); } 100% { transform: translateX(calc(4px * var(--pet-scale))) rotate(7deg); } }
+  @keyframes stir { 0%,100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(calc(-3px * var(--pet-scale))) rotate(3deg); } }
+  @keyframes sadSlump { 0%,100% { transform: translateY(0) rotate(0); } 25%,65% { transform: translateY(calc(4px * var(--pet-scale))) rotate(-5deg); } 45%,85% { transform: translateY(calc(3px * var(--pet-scale))) rotate(3deg); } }
+  @keyframes dropIn { 0% { transform: translateY(calc(-140px * var(--pet-scale))) scale(0.6); opacity: 0; } 60% { opacity: 1; } 80% { transform: translateY(calc(4px * var(--pet-scale))) scale(1.04); } 100% { transform: translateY(0) scale(1); } }
+  @keyframes beamOut { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(calc(-60px * var(--pet-scale))) scale(0.2); opacity: 0; } }
+  @keyframes bubblePop { 0% { opacity: 0; transform: translateX(-50%) translateY(6px) scale(0.6); } 15% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1.1); } 30% { transform: translateX(-50%) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translateX(-50%) translateY(-10px); } }
+  @keyframes floatUp { 0% { opacity: 0; transform: translateY(0) scale(0.7); } 20% { opacity: 1; } 100% { opacity: 0; transform: translateY(calc(-46px * var(--pet-scale))) scale(1.15); } }
+</style>
+</head>
+<body>
+  <!-- Every pet brings its own gradients in its body.svg; nothing about a species is defined here,
+       so a pet can be changed with a text editor without touching the overlay. -->
+  <div id="stage"></div>
+  <script src="pets.js"></script>
+</body>
+</html>

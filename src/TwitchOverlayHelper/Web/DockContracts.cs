@@ -49,7 +49,33 @@ internal sealed record DockHello(
     string Channel,
     string MentionName,
     bool SpeechEnabled,
-    IReadOnlyList<DockMessage> History);
+    IReadOnlyList<DockMessage> History,
+    DockPetSettings PetSettings,
+    IReadOnlyList<DockPetDefinition> PetCatalog,
+    IReadOnlyList<DockPet> Pets);
+
+internal sealed record DockPet(string Id, string Name, string? Color, string Species, long SpawnedAt, long ExpiresAt);
+
+internal sealed record DockPetSettings(bool Enabled, double Scale, int LifetimeMinutes, int MaxPets, bool ShowNames);
+
+/// <summary>
+/// One species the overlay can render: an SVG body fetched from the pets folder, or a spritesheet
+/// for pets in the hatch-pet format. SpriteVersion 2 is the extended sheet whose two extra rows
+/// hold the sixteen look directions; null for SVG pets.
+/// </summary>
+internal sealed record DockPetDefinition(
+    string Id,
+    string Name,
+    string Description,
+    string Kind,
+    string? BodyUrl,
+    string? SpriteUrl,
+    double Fps,
+    IReadOnlyList<string> Emoji,
+    int? SpriteVersion = null);
+
+/// <summary>A spawn can bump the oldest pet out; the overlay despawns it in the same breath.</summary>
+internal sealed record DockPetSpawn(DockPet Pet, string? RemovedId, bool Extended);
 
 /// <summary>Whether the speaker button next to every name has anything to call.</summary>
 internal sealed record DockSpeech(bool Enabled);

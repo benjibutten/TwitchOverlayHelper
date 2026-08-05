@@ -43,6 +43,9 @@ public sealed class AppSettings
     /// <summary>Reading a chatter's name out loud. The API keys are stored separately and encrypted.</summary>
     public SpeechSettings Speech { get; set; } = new();
 
+    /// <summary>Channel point pets in the OBS pet overlay.</summary>
+    public PetSettings Pets { get; set; } = new();
+
     public void Normalize()
     {
         DockServerPort = DockServerPort is >= 1024 and <= 65535 ? DockServerPort : 4747;
@@ -51,6 +54,8 @@ public sealed class AppSettings
         Dock.Normalize();
         Speech ??= new SpeechSettings();
         Speech.Normalize();
+        Pets ??= new PetSettings();
+        Pets.Normalize();
         OverlayLeft = FiniteOrDefault(OverlayLeft, 42);
         OverlayTop = FiniteOrDefault(OverlayTop, 120);
         OverlayWidth = Math.Clamp(FiniteOrDefault(OverlayWidth, 520), 320, 4000);

@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading.Channels;
 using TwitchOverlayHelper.Models;
+using TwitchOverlayHelper.Pets;
 using TwitchOverlayHelper.Settings;
 using TwitchOverlayHelper.Twitch;
 
@@ -13,7 +14,7 @@ namespace TwitchOverlayHelper.Web;
 /// recent history so a dock that reconnects (OBS restart, page reload) is not staring at an
 /// empty column.
 /// </summary>
-public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, TwitchSession session)
+public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, TwitchSession session, PetRegistry pets, PetCatalog petCatalog)
 {
     private const int HistoryLimit = 200;
 
@@ -111,6 +112,29 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
     public void PublishBadgesLoaded() =>
         Send(DockJson.Serialize(new DockEnvelope<object?>("badgesLoaded", null)));
 
+    public void PublishPetSpawn(PetSpawnResult result) =>
+        Send(DockJson.Serialize(new DockEnvelope<DockPetSpawn>("petSpawn",
+            new DockPetSpawn(ToDock(result.Pet), result.RemovedId, result.Extended))));
+
+    /// <summary>Pushes size and limits to the pet overlay so slider changes land without a reload.</summary>
+    public void PublishPetSettings() =>
+        Send(DockJson.Serialize(new DockEnvelope<DockPetSettings>("petSettings", BuildPetSettings())));
+
+    /// <summary>Hands the overlay the species list again, after the user reloads the pets folder.</summary>
+    public void PublishPetCatalog() =>
+        Send(DockJson.Serialize(new DockEnvelope<IReadOnlyList<DockPetDefinition>>("petCatalog", BuildPetCatalog())));
+
+    private DockPetSettings BuildPetSettings() => new(
+        settings.Pets.Enabled, settings.Pets.Scale, settings.Pets.LifetimeMinutes, settings.Pets.MaxPets, settings.Pets.ShowNames);
+
+    private IReadOnlyList<DockPetDefinition> BuildPetCatalog() => petCatalog.Pets
+        .Select(pet => pet.SpriteFile is { Length: > 0 }
+            ? new DockPetDefinition(pet.Id, pet.Name, pet.Description, "sprite", null, $"/pets/sprite/{pet.Id}", pet.Fps, pet.Emoji, pet.SpriteVersion)
+            : new DockPetDefinition(pet.Id, pet.Name, pet.Description, "svg", $"/pets/body/{pet.Id}", null, pet.Fps, pet.Emoji))
+        .ToArray();
+
+    private static DockPet ToDock(PetState pet) => new(pet.Id, pet.Name, pet.Color, pet.Species, pet.SpawnedAt, pet.ExpiresAt);
+
     internal DockAuth BuildAuth(bool canSend)
     {
         SessionState state = session.Snapshot();
@@ -170,7 +194,10 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
             _channel,
             mentionName,
             SpeechEnabled,
-            history.Select(ToDock).ToArray()));
+            history.Select(ToDock).ToArray(),
+            BuildPetSettings(),
+            BuildPetCatalog(),
+            pets.Snapshot().Select(ToDock).ToArray()));
     }
 
     private DockMessage ToDock(ChatMessage message) => DockMapper.ToDock(message, badge =>

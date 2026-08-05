@@ -137,6 +137,100 @@
                     </StackPanel>
                 </Border>
 
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="7. Pets på streamen (channel points)" FontSize="19" FontWeight="SemiBold" />
+                        <TextBlock Text="Små figurer som går omkring längst ned i bild. När en tittare löser in en channel points-belöning skriver de namnet på den pet de vill ha – blaze, uggla, spöke… – och just den dyker upp, busar och interagerar med de andra. Lägg till adressen som en Browser Source i OBS, över spelet."
+                                   TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" Margin="0,7,0,12" LineHeight="20" />
+                        <Border Background="#10141F" BorderBrush="#343B50" BorderThickness="1" CornerRadius="8" Padding="11,9">
+                            <TextBox x:Name="PetsUrlBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                     Foreground="{StaticResource PrimaryBrush}" FontFamily="Consolas" Padding="0" />
+                        </Border>
+                        <Grid Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                            <Button x:Name="CopyPetsUrlButton" Content="Kopiera adress" IsEnabled="False" Click="CopyPetsUrl_Click" />
+                            <Button x:Name="OpenPetsButton" Grid.Column="2" Content="Förhandsgranska" Background="#343B50" IsEnabled="False" Click="OpenPets_Click" />
+                        </Grid>
+
+                        <CheckBox x:Name="PetsEnabledCheck" Content="Aktivera pets" Margin="0,14,0,0" Checked="PetSetting_Changed" Unchecked="PetSetting_Changed" />
+                        <CheckBox x:Name="PetNamesCheck" Content="Visa namnskylt under varje pet" Margin="0,8,0,0" Checked="PetSetting_Changed" Unchecked="PetSetting_Changed"
+                                  ToolTip="Skylten visar namnet på tittaren som löste in peten. Stäng av för en renare overlay." />
+
+                        <DockPanel Margin="0,12,0,0"><TextBlock Text="Storlek" /><TextBlock x:Name="PetScaleValue" Text="100 %" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="PetScaleSlider" Minimum="0.4" Maximum="2.5" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="PetSetting_Changed"
+                                ToolTip="Hur stora robotarna är i overlayen – ändringen syns direkt" />
+
+                        <Grid Margin="0,12,0,0"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="Standardtid (minuter)" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,5" />
+                                <TextBox x:Name="PetLifetimeInput" TextChanged="PetLifetime_TextChanged" LostKeyboardFocus="PetLifetime_LostKeyboardFocus"
+                                         ToolTip="1–60 minuter. Används för !pet och för belöningar utan egen tid i listan nedan." />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Max antal samtidigt" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,5" />
+                                <TextBox x:Name="PetMaxInput" TextChanged="PetMax_TextChanged" LostKeyboardFocus="PetMax_LostKeyboardFocus" ToolTip="1–20. När det är fullt får den äldsta roboten gå hem." />
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBlock Text="Belöningar som ger pets" Foreground="{StaticResource MutedTextBrush}" Margin="0,14,0,5" />
+                        <Grid Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="1.5*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="58" /><ColumnDefinition Width="6" /><ColumnDefinition Width="34" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Namn" Foreground="#8F8B9E" FontSize="11" />
+                            <TextBlock Grid.Column="2" Text="Belönings-ID" Foreground="#8F8B9E" FontSize="11" />
+                            <TextBlock Grid.Column="4" Text="Min" Foreground="#8F8B9E" FontSize="11" />
+                        </Grid>
+                        <ItemsControl x:Name="PetRewardList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="1.5*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="58" /><ColumnDefinition Width="6" /><ColumnDefinition Width="34" /></Grid.ColumnDefinitions>
+                                        <TextBox Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
+                                                 ToolTip="Din egen anteckning, t.ex. Pet 5 min. Syns aldrig på streamen." />
+                                        <TextBox Grid.Column="2" Text="{Binding RewardId, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed" FontFamily="Consolas"
+                                                 ToolTip="Belöningens ID från Twitch. Lämna tomt så gäller raden alla övriga inlösen." />
+                                        <TextBox Grid.Column="4" Text="{Binding Minutes, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
+                                                 LostKeyboardFocus="PetRewardMinutes_LostKeyboardFocus" ToolTip="1–60 minuter" />
+                                        <Button Grid.Column="6" Content="✕" Background="#343B50" Padding="0,7" Click="RemovePetReward_Click"
+                                                ToolTip="Ta bort raden" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock x:Name="PetRewardEmptyText" Text="Inga belöningar tillagda – varje channel points-inlösen med textfält ger en pet på standardtiden."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,0,0,4" />
+                        <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                            <Button x:Name="AddPetRewardButton" Content="+ Lägg till belöning" Background="#343B50" Click="AddPetReward_Click" />
+                            <Button x:Name="UseLastRewardButton" Grid.Column="2" Content="Använd senaste inlösta" Background="#343B50" IsEnabled="False" Click="UseLastReward_Click"
+                                    ToolTip="Lägger till en rad med ID:t från den senaste inlösen i chatten" />
+                        </Grid>
+                        <TextBlock x:Name="LastRewardText" Text="Ingen inlösen har synts i chatten ännu." TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,8,0,0" LineHeight="18" />
+
+                        <TextBlock Text="Standardpet" Foreground="{StaticResource MutedTextBrush}" Margin="0,12,0,5" />
+                        <ComboBox x:Name="PetDefaultBox" SelectionChanged="PetDefault_Changed"
+                                  ToolTip="Vilken pet som ges när tittarens text inte matchar något namn" />
+
+                        <Border Background="#10141F" BorderBrush="#343B50" BorderThickness="1" CornerRadius="8" Padding="11" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Tillgängliga pets" Foreground="#C8C5D3" FontWeight="SemiBold" />
+                                <TextBlock x:Name="PetListText" Text="" TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,6,0,0" LineHeight="19" />
+                            </StackPanel>
+                        </Border>
+
+                        <Grid Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                            <Button x:Name="OpenPetsFolderButton" Content="Öppna pets-mappen" Background="#343B50" Click="OpenPetsFolder_Click"
+                                    ToolTip="Alla pets ligger här: en mapp per pet med pet.json och body.svg" />
+                            <Button x:Name="ReloadPetsButton" Grid.Column="2" Content="Ladda om pets" Background="#343B50" Click="ReloadPets_Click"
+                                    ToolTip="Läser in pets-mappen igen utan att starta om appen" />
+                        </Grid>
+                        <TextBlock Text="Alla pets ligger i pets-mappen, även de som följer med appen – en mapp per pet med pet.json och body.svg. Ändra färg, namn eller rita en helt egen och klicka Ladda om pets. En pet du kläckt med Codex hatch-pet kopieras hit rakt av: har mappen en spritesheet.webp (9 rader × 8 rutor à 192×208) används den i stället."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,8,0,0" LineHeight="18" />
+
+                        <Button x:Name="SpawnTestPetButton" Content="🐣 Spawna testpet" Margin="0,12,0,0" Click="SpawnTestPet_Click"
+                                ToolTip="Varje klick visar nästa pet i listan" />
+                        <TextBlock Text="Viktigt: belöningen i Twitch måste kräva att tittaren skriver ett meddelande – tysta belöningar syns aldrig i chatten. Du och dina moderatorer kan också testa med !pet eller !pet namn, t.ex. !pet boo."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,10,0,0" LineHeight="18" />
+                    </StackPanel>
+                </Border>
+
                 </StackPanel>
 
                 <Border Grid.Row="2" Grid.Column="2" VerticalAlignment="Top"
