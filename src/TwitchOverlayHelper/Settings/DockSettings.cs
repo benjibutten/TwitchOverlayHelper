@@ -21,6 +21,12 @@ public sealed class DockSettings
     public bool ShowTimestamps { get; set; }
     public bool UseTwitchNameColors { get; set; } = true;
     public bool ShowEmotes { get; set; } = true;
+    /// <summary>
+    /// Draws an emote a Gigantify power-up enlarged at its full size, on a row of its own. On by
+    /// default: someone spent bits to make it big, and shrinking it back would throw that away.
+    /// Off leaves the emote at reading size with a "⚡ förstorad" marker, for a calm column.
+    /// </summary>
+    public bool GiantEmotes { get; set; } = true;
 
     /// <summary>Collapses URLs to a short chip so link noise does not break the reading rhythm.</summary>
     public bool CollapseLinks { get; set; } = true;

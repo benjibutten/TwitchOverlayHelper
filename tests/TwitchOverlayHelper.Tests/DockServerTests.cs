@@ -220,15 +220,89 @@ public sealed class DockServerTests
         client.Dispose();
     }
 
+    // A dock that reconnects mid-stream has to get its lines back in the order they happened, or a
+    // resub greeting ends up answering a message that was actually written after it.
+    [Fact]
+    public async Task ReplaysMessagesAndEventsInTheOrderTheyArrived()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            hub.SetChannel("kanal_a");
+            hub.PublishMessage(new ChatMessage("1", "Någon", "hej", null, [], false, false, DateTimeOffset.Now));
+            hub.PublishEvent(new ChatEvent(ChatEventType.Raid, "e1", "Streamern", DateTimeOffset.Now) { ViewerCount = 42 });
+            hub.PublishMessage(new ChatMessage("2", "Någon", "välkomna", null, [], false, false, DateTimeOffset.Now));
+
+            using JsonDocument hello = JsonDocument.Parse(await HelloAsync(settings));
+            JsonElement history = hello.RootElement.GetProperty("history");
+
+            Assert.Equal(["message", "event", "message"],
+                history.EnumerateArray().Select(item => item.GetProperty("type").GetString() ?? string.Empty).ToArray());
+            Assert.Equal("Streamern raidar med 42 tittare",
+                history[1].GetProperty("event").GetProperty("headline").GetString());
+        }
+        client.Dispose();
+    }
+
+    // A timeout takes back what someone said, not the sub they paid for.
+    [Fact]
+    public async Task LeavesEventsStandingWhenAChatterIsPurged()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            hub.SetChannel("kanal_a");
+            hub.PublishMessage(new ChatMessage("1", "Spammer", "spam", null, [], false, false, DateTimeOffset.Now) { UserLogin = "spammer" });
+            hub.PublishEvent(new ChatEvent(ChatEventType.Subscription, "e1", "Spammer", DateTimeOffset.Now));
+            hub.PublishModeration(new ChatModerationEvent(ChatEventKind.UserPurged, null, null, "spammer", 600, DateTimeOffset.Now));
+
+            using JsonDocument hello = JsonDocument.Parse(await HelloAsync(settings));
+            JsonElement history = hello.RootElement.GetProperty("history");
+
+            Assert.Equal(1, history.GetArrayLength());
+            Assert.Equal("event", history[0].GetProperty("type").GetString());
+        }
+        client.Dispose();
+    }
+
+    // A Gigantify power-up can land after the line it belongs to. The history has to be rewritten as
+    // well as the live views, or a dock that reconnects a minute later replays the unmarked version.
+    [Fact]
+    public async Task ReplaysTheMarkedVersionOfALineThatWasUpdated()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            hub.SetChannel("kanal_a");
+            var message = new ChatMessage("1", "Kajsa", "Kappa", null, [], false, false, DateTimeOffset.Now,
+                [new EmoteSpan("25", 0, 5)]);
+            hub.PublishMessage(message);
+            hub.PublishMessageUpdate(message with { GigantifiedEmoteId = "25" });
+
+            using JsonDocument hello = JsonDocument.Parse(await HelloAsync(settings));
+            JsonElement history = hello.RootElement.GetProperty("history");
+
+            // Replaced, not appended: the line happened once and must not read as two.
+            Assert.Equal(1, history.GetArrayLength());
+            Assert.Equal(0, history[0].GetProperty("message").GetProperty("giantEmote").GetInt32());
+        }
+        client.Dispose();
+    }
+
     private static async Task<int> HelloHistoryCountAsync(AppSettings settings)
+    {
+        using JsonDocument json = JsonDocument.Parse(await HelloAsync(settings));
+        return json.RootElement.GetProperty("history").GetArrayLength();
+    }
+
+    private static async Task<string> HelloAsync(AppSettings settings)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         using var socket = new ClientWebSocket();
         await socket.ConnectAsync(new Uri($"ws://127.0.0.1:{settings.DockServerPort}/ws?key={settings.DockAccessKey}"), timeout.Token);
         byte[] buffer = new byte[64 * 1024];
         WebSocketReceiveResult hello = await socket.ReceiveAsync(buffer, timeout.Token);
-        using JsonDocument json = JsonDocument.Parse(Encoding.UTF8.GetString(buffer, 0, hello.Count));
-        return json.RootElement.GetProperty("history").GetArrayLength();
+        return Encoding.UTF8.GetString(buffer, 0, hello.Count);
     }
 
     // The speaker button is hidden when pronunciation is not set up, but hiding a button is not

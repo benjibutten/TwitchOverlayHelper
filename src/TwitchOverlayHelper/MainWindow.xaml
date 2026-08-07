@@ -122,6 +122,10 @@
                             </StackPanel>
                         </Border>
                         <TextBlock x:Name="LoginStatusText" Text="Inte inloggad." TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,10,0,0" LineHeight="18" />
+                        <TextBlock x:Name="EventStatusText" Text="" TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,6,0,0" LineHeight="18" />
+                        <Button x:Name="ReauthorizeButton" Content="Logga in igen för att slå på detta" Background="#343B50" Margin="0,8,0,0"
+                                Visibility="Collapsed" Click="Reauthorize_Click"
+                                ToolTip="En förnyad inloggning ger tillbaka de behörigheter du redan gett – nya måste godkännas på nytt" />
                     </StackPanel>
                 </Border>
 
@@ -258,6 +262,7 @@
                     <CheckBox x:Name="TimestampCheck" Content="Visa klockslag" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
                     <CheckBox x:Name="MentionsCheck" Content="Markera meddelanden till mig" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
                     <CheckBox x:Name="EmotesCheck" Content="Visa emotes som bilder" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                    <CheckBox x:Name="GiantEmotesCheck" Content="Visa förstorade emotes i full storlek" ToolTip="Power-upen “Gigantify an Emote” gör en emote tre gånger så stor. Av: emoten visas i vanlig storlek med en markör i stället." Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
                     <CheckBox x:Name="OutlineCheck" Content="Kantlinje runt texten" ToolTip="Gör texten läsbar även utan bakgrund" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
 
                     <TextBlock Text="Max antal meddelanden" Margin="0,17,0,6" />

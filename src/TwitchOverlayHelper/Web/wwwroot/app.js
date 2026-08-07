@@ -5,7 +5,8 @@ const $ = (id) => document.getElementById(id);
 
 const el = {
   chat: $("chat"), pinned: $("pinned"), statusDot: $("statusDot"), statusText: $("statusText"),
-  jump: $("jumpBtn"), jumpCount: $("jumpCount"), pause: $("pauseBtn"), raidBtn: $("raidBtn"),
+  jump: $("jumpBtn"), jumpCount: $("jumpCount"), pause: $("pauseBtn"), refresh: $("refreshBtn"),
+  raidBtn: $("raidBtn"),
   composer: $("composer"), composerInput: $("composerInput"), composerSend: $("composerSend"),
   toast: $("toast"), toastText: $("toastText"), toastAction: $("toastAction"),
   userSheet: $("userSheet"), sheetName: $("sheetName"), sheetQuote: $("sheetQuote"),
@@ -78,11 +79,13 @@ function handle(frame) {
     updateJump();
 
     // History is already read; it should appear at once rather than trickle through the pacer.
-    frame.history.forEach((message) => append(message, true));
+    frame.history.forEach((item) => appendItem(item.type === "event" ? evt(item.event) : msg(item.message), true));
     scrollToEnd();
     return;
   }
-  if (frame.type === "message") { state.queue.push(frame.payload); return; }
+  if (frame.type === "message") { state.queue.push(msg(frame.payload)); return; }
+  if (frame.type === "event") { state.queue.push(evt(frame.payload)); return; }
+  if (frame.type === "messageUpdate") { applyMessageUpdate(frame.payload); return; }
   if (frame.type === "clear") { el.chat.replaceChildren(); state.queue.length = 0; state.missed = 0; return; }
   if (frame.type === "moderation") { applyModeration(frame.payload); return; }
   if (frame.type === "status") { setStatus(frame.payload.text, frame.payload.state); return; }
@@ -105,14 +108,14 @@ function pump(now) {
 
   const perSecond = state.settings.messagesPerSecond;
   if (!perSecond) {
-    while (state.queue.length) append(state.queue.shift(), false);
+    while (state.queue.length) appendItem(state.queue.shift(), false);
     return updateJump();
   }
 
   const interval = 1000 / perSecond;
   if (now - lastRelease < interval) return updateJump();
   lastRelease = now;
-  if (state.queue.length) append(state.queue.shift(), false);
+  if (state.queue.length) appendItem(state.queue.shift(), false);
   updateJump();
 }
 
@@ -146,24 +149,86 @@ el.chat.addEventListener("scroll", () => {
   updateJump();
 });
 el.jump.addEventListener("click", () => {
-  state.paused = false;
-  el.pause.setAttribute("aria-pressed", "false");
-  while (state.queue.length) append(state.queue.shift(), false);
+  setPaused(false);
+  while (state.queue.length) appendItem(state.queue.shift(), false);
   state.missed = 0;
   scrollToEnd();
   updateJump();
 });
-el.pause.addEventListener("click", () => {
-  state.paused = !state.paused;
-  el.pause.setAttribute("aria-pressed", String(state.paused));
-  el.pause.textContent = state.paused ? "▶" : "⏸";
-  el.pause.title = state.paused ? "Fortsätt" : "Pausa chatten";
+
+/* A pause is for reading one line properly, not for leaving the chat behind. A dock left paused
+   looks exactly like a dock that has gone quiet – same still column, no sign of which of the two it
+   is – so the pause lets go by itself rather than waiting to be noticed. */
+const AUTO_RESUME_MS = 2 * 60 * 1000;
+let resumeTimer = 0;
+
+function setPaused(paused) {
+  clearTimeout(resumeTimer);
+  state.paused = paused;
+  el.pause.setAttribute("aria-pressed", String(paused));
+  el.pause.textContent = paused ? "▶" : "⏸";
+  el.pause.title = paused ? "Fortsätt" : "Pausa chatten";
+  if (paused) {
+    resumeTimer = setTimeout(() => {
+      setPaused(false);
+      // Said out loud: the column starting to move on its own is otherwise a small mystery.
+      toast("Pausen släpptes automatiskt efter två minuter.", "info");
+    }, AUTO_RESUME_MS);
+  }
   updateJump();
-});
+}
+
+el.pause.addEventListener("click", () => setPaused(!state.paused));
+
+/* OBS gives no easy way to reload a dock, and a browser source that has been running for hours is
+   the one place where "start over" is the shortest fix. Reloading replays the history from the app,
+   so nothing is lost by pressing it. */
+el.refresh.addEventListener("click", () => location.reload());
 
 /* --------------------------------------------------------------- rendering */
 
-const URL_PATTERN = /https?:\/\/[^\s]+|www\.[^\s]+/gi;
+/* The chat column holds two kinds of card. Tagging each line as it arrives keeps the pacer, the
+   history replay and the re-render from having to guess which of the two they are holding. */
+const msg = (data) => ({ kind: "message", data });
+const evt = (data) => ({ kind: "event", data });
+
+/* Nobody in chat types "https://". A link is written the way it is read – "linktr.ee/perralinks" –
+   and a pattern that only knows schemes leaves most of them lying there as dead text. So a bare
+   host counts too, but only when its last part is a suffix we recognise: that is what keeps
+   "t.ex", "3.5" and "kl.20" out of the link list. */
+const URL_PATTERN =
+  /(?:https?:\/\/|www\.)[^\s]+|[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)*\.[a-z]{2,24}(?::\d{2,5})?(?:\/[^\s]*)?/gi;
+
+const LINK_SUFFIXES = new Set((
+  "com net org edu gov int mil info biz name pro io gg tv me ly co cc to sh ws am fm " +
+  "se no dk fi is ee lv lt de at ch nl be fr es it pt pl cz sk hu ro gr ie uk eu ru ua " +
+  "us ca mx br ar cl au nz jp kr cn in id tr za il ae " +
+  "app dev art blog chat cloud club design digital email fun games game group host life link " +
+  "live media music news one online page pro shop site social space store stream studio team " +
+  "tech today top tube video wiki work world xyz zone"
+).split(" "));
+
+/* Trailing punctuation belongs to the sentence, not to the address. */
+const LINK_TAIL = /[.,;:!?)\]}'"»…]+$/u;
+
+function linksIn(text) {
+  const found = [];
+  for (const match of text.matchAll(URL_PATTERN)) {
+    const before = match.index > 0 ? text[match.index - 1] : "";
+    // Skip anything glued to a word, which is mostly the domain half of an e-mail address.
+    if (before && /[\w.@/:-]/.test(before)) continue;
+
+    const value = match[0].replace(LINK_TAIL, "");
+    if (!value) continue;
+
+    if (!/^(?:https?:\/\/|www\.)/i.test(value)) {
+      const host = value.split(/[/:?#]/)[0];
+      if (!LINK_SUFFIXES.has(host.slice(host.lastIndexOf(".") + 1).toLowerCase())) continue;
+    }
+    found.push({ start: match.index, length: value.length });
+  }
+  return found;
+}
 
 function isShouting(text) {
   const letters = text.replace(/[^A-Za-zÅÄÖåäö]/g, "");
@@ -172,22 +237,29 @@ function isShouting(text) {
   return upper / letters.length > 0.7;
 }
 
+/* Collapsing is about how much room a link takes, not about whether it is one: an address stays
+   clickable either way, and only the label changes. */
+function appendLink(target, raw) {
+  const collapse = state.settings.collapseLinks;
+  const anchor = document.createElement("a");
+  anchor.className = collapse ? "link-chip" : "link";
+  anchor.textContent = collapse ? "🔗 länk" : raw;
+  anchor.href = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  anchor.target = "_blank";
+  anchor.rel = "noreferrer noopener";
+  anchor.title = raw;
+  target.appendChild(anchor);
+}
+
 function appendText(target, text, calm) {
   const source = calm ? text.toLowerCase() : text;
-  if (!state.settings.collapseLinks) { target.appendChild(document.createTextNode(source)); return; }
 
   let cursor = 0;
-  for (const match of source.matchAll(URL_PATTERN)) {
-    if (match.index > cursor) target.appendChild(document.createTextNode(source.slice(cursor, match.index)));
-    const chip = document.createElement("a");
-    chip.className = "link-chip";
-    chip.textContent = "🔗 länk";
-    chip.href = match[0].startsWith("http") ? match[0] : `https://${match[0]}`;
-    chip.target = "_blank";
-    chip.rel = "noreferrer noopener";
-    chip.title = match[0];
-    target.appendChild(chip);
-    cursor = match.index + match[0].length;
+  for (const link of linksIn(source)) {
+    if (link.start > cursor) target.appendChild(document.createTextNode(source.slice(cursor, link.start)));
+    // Calming a shout must not reach into an address: a path can be case-sensitive.
+    appendLink(target, text.substr(link.start, link.length));
+    cursor = link.start + link.length;
   }
   if (cursor < source.length) target.appendChild(document.createTextNode(source.slice(cursor)));
 }
@@ -200,9 +272,14 @@ function renderBody(message) {
   // Lower-casing preserves length, so emote spans stay valid after calming a shout.
   const calm = state.settings.calmShouting && isShouting(message.text);
   const emotes = state.settings.showEmotes ? message.emotes : [];
+  /* Which span the Gigantify an Emote power-up blew up. The desktop app decides it, so the dock and
+     the overlay enlarge the same emote; showing it big is a reading setting of its own, because a
+     three-line-tall image in a narrow column is exactly the kind of thing this dock exists to tame. */
+  const giant = state.settings.giantEmotes ? message.giantEmote : undefined;
 
   let cursor = 0;
-  for (const emote of emotes) {
+  for (let i = 0; i < emotes.length; i++) {
+    const emote = emotes[i];
     if (emote.start < cursor || emote.start + emote.length > message.text.length) continue;
     if (emote.start > cursor) appendText(body, message.text.slice(cursor, emote.start), calm);
     const image = document.createElement("img");
@@ -210,7 +287,10 @@ function renderBody(message) {
     image.loading = "lazy";
     image.alt = message.text.substr(emote.start, emote.length);
     image.title = image.alt;
-    image.src = `https://static-cdn.jtvnw.net/emoticons/v2/${encodeURIComponent(emote.id)}/default/dark/2.0`;
+    // The 3.0 variant is the only one with the pixels for it; 2.0 scaled up is a blurry mess.
+    const size = i === giant ? "3.0" : "2.0";
+    if (i === giant) image.dataset.giant = "true";
+    image.src = `https://static-cdn.jtvnw.net/emoticons/v2/${encodeURIComponent(emote.id)}/default/dark/${size}`;
     body.appendChild(image);
     cursor = emote.start + emote.length;
   }
@@ -227,8 +307,52 @@ function tag(text, kind) {
 }
 
 function isMention(message) {
-  const name = state.mentionName;
-  return name.length > 0 && message.text.toLowerCase().includes(`@${name.toLowerCase()}`);
+  const name = state.mentionName.toLowerCase();
+  if (!name) return false;
+  // An answer to something you said is aimed at you even though the parser cut the "@you" away.
+  if (message.reply && message.reply.login === name) return true;
+  return message.text.toLowerCase().includes(`@${name}`);
+}
+
+/* One line that says this is an answer rather than a fresh thought. It is context for the sentence
+   below it, so it stays on a single row and gives way with an ellipsis instead of growing: a reply
+   to a wall of text must not be taller than the reply itself. */
+function buildReply(reply) {
+  const line = document.createElement("button");
+  line.className = "msg-reply";
+  line.type = "button";
+  line.title = `${reply.displayName}: ${reply.text}`;
+  line.setAttribute("aria-label", `Svar på ${reply.displayName}: ${reply.text}`);
+
+  const mark = document.createElement("span");
+  mark.className = "msg-reply-mark";
+  mark.setAttribute("aria-hidden", "true");
+  mark.textContent = "↩";
+
+  const name = document.createElement("span");
+  name.className = "msg-reply-name";
+  name.textContent = reply.displayName;
+
+  const quote = document.createElement("span");
+  quote.className = "msg-reply-text";
+  quote.textContent = reply.text;
+
+  line.append(mark, name, quote);
+  line.addEventListener("click", () => revealMessage(reply.messageId));
+  return line;
+}
+
+/* The answered message is usually a few rows up, and finding it by eye means leaving the newest
+   line. Tapping the reply line goes there and marks it, so the way back is the jump button. */
+function revealMessage(messageId) {
+  const target = [...el.chat.children].find((node) => node.dataset.id === messageId);
+  if (!target) { toast("Det meddelandet har redan rullat förbi.", "info"); return; }
+
+  state.stick = false;
+  target.scrollIntoView({ block: "center", behavior: "smooth" });
+  target.dataset.flash = "true";
+  setTimeout(() => { delete target.dataset.flash; }, 1600);
+  updateJump();
 }
 
 function build(message) {
@@ -239,6 +363,8 @@ function build(message) {
   node.dataset.login = message.login || "";
   if (isMention(message)) node.dataset.mention = "true";
   if (state.settings.dimCommands && message.text.trimStart().startsWith("!")) node.dataset.dim = "true";
+
+  if (message.reply) node.appendChild(buildReply(message.reply));
 
   const head = document.createElement("div");
   head.className = "msg-head";
@@ -277,13 +403,71 @@ function build(message) {
 
   if (message.isFirstMessage) head.appendChild(tag("ny", "new"));
   if (node.dataset.mention === "true") head.appendChild(tag("till dig", "mention"));
+  // A cheer is a normal message that came with bits, so it gets a marker rather than its own card.
+  if (message.bits) head.appendChild(tag(`${message.bits} bits`, "bits"));
+  // Same for a redemption that asked the viewer to type something: the words are the message, and
+  // the reward is a marker on it – which is how Twitch's own chat shows it too.
+  if (message.rewardLabel) head.appendChild(tag(`🔮 ${message.rewardLabel}`, "reward"));
+  // Power-ups. A message effect is an animation we do not reproduce, so it is always a marker; a
+  // gigantified emote speaks for itself when it is shown big, and only needs saying when it is not.
+  if (message.messageEffect) head.appendChild(tag("⚡ effekt", "powerup"));
+  if (message.giantEmote != null && !state.settings.giantEmotes) head.appendChild(tag("⚡ förstorad", "powerup"));
 
   node.appendChild(head);
   node.appendChild(renderBody(message));
 
-  // Kept so the node can be rebuilt when the desktop app changes a reading setting.
-  node.chatMessage = message;
   if (state.removed.has(message.id)) markRemoved(node, state.removed.get(message.id));
+  return node;
+}
+
+/* Icons carry the type at a glance, but never alone: the headline says the same thing in words,
+   because an icon is one more thing to decode. */
+const EVENT_ICONS = {
+  subscription: "★", subGift: "🎁", communityGift: "🎁", subUpgrade: "★",
+  raid: "🚚", unraid: "↩", announcement: "📣", bitsBadge: "💎",
+  watchStreak: "🔥", newChatter: "👋", other: "✨",
+  reward: "🔮", shoutoutSent: "📢", shoutoutReceived: "📢",
+  celebration: "🎉",
+};
+
+function buildEvent(chatEvent) {
+  const node = document.createElement("article");
+  node.className = "evt";
+  node.dataset.id = chatEvent.id;
+  node.dataset.kind = chatEvent.kind;
+  if (chatEvent.announcementColor) node.dataset.color = chatEvent.announcementColor.toLowerCase();
+
+  const head = document.createElement("div");
+  head.className = "evt-head";
+
+  if (state.settings.showTimestamps) {
+    const time = document.createElement("span");
+    time.className = "msg-time";
+    time.textContent = new Date(chatEvent.at).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+    head.appendChild(time);
+  }
+
+  const icon = document.createElement("span");
+  icon.className = "evt-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = EVENT_ICONS[chatEvent.kind] || EVENT_ICONS.other;
+  head.appendChild(icon);
+
+  const headline = document.createElement("span");
+  headline.className = "evt-headline";
+  headline.textContent = chatEvent.headline;
+  head.appendChild(headline);
+
+  node.appendChild(head);
+  // Subs and announcements often carry the chatter's own words, which are the part worth reading.
+  if (chatEvent.message) node.appendChild(renderBody({ text: chatEvent.message, emotes: chatEvent.emotes, isAction: false }));
+  return node;
+}
+
+function buildItem(item) {
+  const node = item.kind === "event" ? buildEvent(item.data) : build(item.data);
+  // Kept so the node can be rebuilt when the desktop app changes a reading setting.
+  node.item = item;
   return node;
 }
 
@@ -297,19 +481,20 @@ function markRemoved(node, note) {
 }
 
 function rerender() {
-  const messages = [...el.chat.children].map((node) => node.chatMessage).filter(Boolean);
-  el.chat.replaceChildren(...messages.map(build));
+  const items = [...el.chat.children].map((node) => node.item).filter(Boolean);
+  el.chat.replaceChildren(...items.map(buildItem));
   scrollToEnd();
 }
 
-function append(message, isHistory) {
+function appendItem(item, isHistory) {
   const follow = isHistory || state.stick;
-  const node = build(message);
+  const node = buildItem(item);
   el.chat.appendChild(node);
 
+  // Event cards live in the same column, so they count towards the limit like any other line.
   while (el.chat.childElementCount > state.settings.maxMessages) el.chat.firstElementChild.remove();
 
-  if (!isHistory && node.dataset.mention === "true" && state.settings.pinMentions) pin(message);
+  if (!isHistory && node.dataset.mention === "true" && state.settings.pinMentions) pin(item.data);
   if (follow) scrollToEnd(); else if (!isHistory) state.missed++;
 }
 
@@ -333,6 +518,28 @@ function pin(message) {
       el.pinned.hidden = true;
     }
   }, state.settings.pinnedMentionSeconds * 1000);
+}
+
+/* A line we have already been given, changed: a Gigantify power-up that reached the desktop app
+   after the message it belongs to. It may still be waiting in the pacer or already be a card on
+   screen, so both are checked – and a line that has scrolled past its limit is simply gone, which
+   is the right answer for a marker nobody can see any more. */
+function applyMessageUpdate(payload) {
+  // Still in the pacer, so it has not been built yet: swapping the payload is the whole job.
+  const queued = state.queue.find((item) => item.kind === "message" && item.data.id === payload.id);
+  if (queued) queued.data = payload;
+
+  const node = [...el.chat.children].find((child) => child.dataset.id === payload.id);
+  if (node) {
+    node.item = msg(payload);
+    el.chat.replaceChild(buildItem(node.item), node);
+    if (state.stick) scrollToEnd();
+  }
+
+  // The pinned strip keeps a copy of its own. A marker that landed on only one of the two would
+  // make a single message say different things depending on where in the dock it is read.
+  const pinnedNode = el.pinned.querySelector(`.msg[data-id="${CSS.escape(payload.id)}"]`);
+  if (pinnedNode) pinnedNode.replaceWith(build(payload));
 }
 
 function applyModeration(payload) {

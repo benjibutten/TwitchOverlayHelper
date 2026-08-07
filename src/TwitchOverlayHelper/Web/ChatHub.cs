@@ -19,7 +19,9 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
     private const int HistoryLimit = 200;
 
     private readonly ConcurrentDictionary<Guid, Channel<string>> _clients = new();
-    private readonly Queue<ChatMessage> _history = new();
+    // Messages and events share one queue, so a sub notice keeps its place between the lines it
+    // landed between even after the dock reconnects and replays the history.
+    private readonly Queue<ChatTimelineItem> _history = new();
     private readonly Lock _historyLock = new();
 
     private string _statusText = "Inte ansluten";
@@ -56,7 +58,52 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
 
     public void PublishMessage(ChatMessage message)
     {
-        // The first real message replaces the sample lines that showed what the dock looks like.
+        Remember(ChatTimelineItem.Of(message));
+        Send(DockJson.Serialize(new DockEnvelope<DockMessage>("message", ToDock(message))));
+    }
+
+    public void PublishEvent(ChatEvent chatEvent)
+    {
+        Remember(ChatTimelineItem.Of(chatEvent));
+        Send(DockJson.Serialize(new DockEnvelope<DockEvent>("event", DockMapper.ToDock(chatEvent))));
+    }
+
+    /// <summary>
+    /// Sends a line that is already on screen again, changed. One thing needs this: a Gigantify an
+    /// Emote power-up arrives on a different connection than the message it enlarged, and when it
+    /// arrives second the only alternative would be to hold every chat line back long enough for a
+    /// power-up that almost never comes.
+    ///
+    /// The history is rewritten too, so a dock that reconnects afterwards replays the marked version
+    /// rather than the line as it first went out.
+    /// </summary>
+    public void PublishMessageUpdate(ChatMessage message)
+    {
+        lock (_historyLock)
+        {
+            ChatTimelineItem[] items = _history.ToArray();
+            bool found = false;
+            for (int i = 0; i < items.Length; i++)
+            {
+                if (items[i].Message is not { } existing || !string.Equals(existing.Id, message.Id, StringComparison.Ordinal)) continue;
+                items[i] = ChatTimelineItem.Of(message);
+                found = true;
+                break;
+            }
+            // Already scrolled out of the history: the docks that still show it get the update below,
+            // and there is nothing left to rewrite for the ones that reconnect.
+            if (found)
+            {
+                _history.Clear();
+                foreach (ChatTimelineItem item in items) _history.Enqueue(item);
+            }
+        }
+        Send(DockJson.Serialize(new DockEnvelope<DockMessage>("messageUpdate", ToDock(message))));
+    }
+
+    private void Remember(ChatTimelineItem item)
+    {
+        // The first real line replaces the sample lines that showed what the dock looks like.
         if (_showingSamples)
         {
             _showingSamples = false;
@@ -66,10 +113,9 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
 
         lock (_historyLock)
         {
-            _history.Enqueue(message);
+            _history.Enqueue(item);
             while (_history.Count > HistoryLimit) _history.Dequeue();
         }
-        Send(DockJson.Serialize(new DockEnvelope<DockMessage>("message", ToDock(message))));
     }
 
     public void PublishModeration(ChatModerationEvent moderation)
@@ -77,20 +123,25 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
         lock (_historyLock)
         {
             // Drop the affected messages from history so a reconnecting dock never resurrects them.
-            ChatMessage[] kept = _history.Where(m => !IsAffected(m, moderation)).ToArray();
+            ChatTimelineItem[] kept = _history.Where(item => !IsAffected(item, moderation)).ToArray();
             _history.Clear();
-            foreach (ChatMessage message in kept) _history.Enqueue(message);
+            foreach (ChatTimelineItem item in kept) _history.Enqueue(item);
         }
         Send(DockJson.Serialize(new DockEnvelope<DockModerationPayload>("moderation", DockMapper.ToDock(moderation))));
     }
 
-    private static bool IsAffected(ChatMessage message, ChatModerationEvent moderation) => moderation.Kind switch
-    {
-        ChatEventKind.ChatCleared => true,
-        ChatEventKind.MessageDeleted => string.Equals(message.Id, moderation.TargetMessageId, StringComparison.Ordinal),
-        _ => (moderation.TargetUserId is { Length: > 0 } id && string.Equals(message.UserId, id, StringComparison.Ordinal))
-             || (moderation.TargetLogin is { Length: > 0 } login && string.Equals(message.UserLogin, login, StringComparison.OrdinalIgnoreCase))
-    };
+    /// <summary>
+    /// Moderation reaches messages only. A sub or a raid is not something a timeout takes back, and
+    /// the views leave event cards standing for the same reason.
+    /// </summary>
+    private static bool IsAffected(ChatTimelineItem item, ChatModerationEvent moderation) =>
+        item.Message is { } message && moderation.Kind switch
+        {
+            ChatEventKind.ChatCleared => true,
+            ChatEventKind.MessageDeleted => string.Equals(message.Id, moderation.TargetMessageId, StringComparison.Ordinal),
+            _ => (moderation.TargetUserId is { Length: > 0 } id && string.Equals(message.UserId, id, StringComparison.Ordinal))
+                 || (moderation.TargetLogin is { Length: > 0 } login && string.Equals(message.UserLogin, login, StringComparison.OrdinalIgnoreCase))
+        };
 
     public void PublishStatus(string text, string state)
     {
@@ -167,14 +218,24 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
             Sample("sample-6", "Lisa", "klicka på ett namn för att testa timeout och ban", "#0F7C8A", [new ChatBadge("vip", "1")], now)
         ];
 
+        var sampleEvent = new ChatEvent(ChatEventType.Subscription, "sample-7", "Kajsa_92", now)
+        {
+            UserLogin = "kajsa_92",
+            Months = 8,
+            Tier = "1000",
+            Message = "tack för alla mysiga kvällar!"
+        };
+
         _showingSamples = true;
         lock (_historyLock)
         {
             _history.Clear();
-            foreach (ChatMessage sample in samples) _history.Enqueue(sample);
+            foreach (ChatMessage sample in samples) _history.Enqueue(ChatTimelineItem.Of(sample));
+            _history.Enqueue(ChatTimelineItem.Of(sampleEvent));
         }
         foreach (ChatMessage sample in samples)
             Send(DockJson.Serialize(new DockEnvelope<DockMessage>("message", ToDock(sample))));
+        Send(DockJson.Serialize(new DockEnvelope<DockEvent>("event", DockMapper.ToDock(sampleEvent))));
     }
 
     private static ChatMessage Sample(string id, string name, string text, string color, ChatBadge[] badges, DateTimeOffset at) =>
@@ -182,7 +243,7 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
 
     private string BuildHello(bool canSend)
     {
-        ChatMessage[] history;
+        ChatTimelineItem[] history;
         lock (_historyLock) history = _history.ToArray();
 
         string mentionName = settings.UserName.Length > 0 ? settings.UserName : settings.Channel;
@@ -202,6 +263,12 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
 
     private DockMessage ToDock(ChatMessage message) => DockMapper.ToDock(message, badge =>
         badges.TryGet(badge.SetId, badge.Version, out BadgeInfo? info) ? (info!.ImageUrl, info.Title) : (null, null));
+
+    /// <summary>History travels as tagged items so the dock can replay it through the same code
+    /// that handles live frames, and in the order the lines actually arrived.</summary>
+    private DockHistoryItem ToDock(ChatTimelineItem item) => item.Event is { } chatEvent
+        ? new DockHistoryItem("event", null, DockMapper.ToDock(chatEvent))
+        : new DockHistoryItem("message", ToDock(item.Message!), null);
 
     private void Send(string payload)
     {
