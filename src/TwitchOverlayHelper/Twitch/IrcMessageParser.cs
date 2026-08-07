@@ -24,6 +24,12 @@ internal static class IrcMessageParser
         string displayName = tags.GetValueOrDefault("display-name") ?? (login.Length > 0 ? login : "Okänd");
         var badges = ParseBadges(tags.GetValueOrDefault("badges"));
 
+        // Emote positions are counted against the text as Twitch sent it, so they have to be read
+        // before the reply mention is cut away – and moved along with it.
+        IReadOnlyList<EmoteSpan> emotes = ParseEmotes(tags.GetValueOrDefault("emotes"), text);
+        ChatReply? reply = ParseReply(tags);
+        if (reply is not null) StripReplyMention(ref text, ref emotes, reply);
+
         message = new ChatMessage(
             tags.GetValueOrDefault("id") ?? Guid.NewGuid().ToString("N"),
             displayName,
@@ -33,14 +39,73 @@ internal static class IrcMessageParser
             tags.GetValueOrDefault("first-msg") == "1",
             tags.GetValueOrDefault("msg-id") == "highlighted-message",
             ParseTimestamp(tags.GetValueOrDefault("tmi-sent-ts")),
-            ParseEmotes(tags.GetValueOrDefault("emotes"), text))
+            emotes)
         {
             UserId = tags.GetValueOrDefault("user-id") ?? string.Empty,
             UserLogin = login,
             IsAction = isAction,
-            RewardId = EmptyToNull(tags.GetValueOrDefault("custom-reward-id"))
+            Reply = reply,
+            RewardId = EmptyToNull(tags.GetValueOrDefault("custom-reward-id")),
+            // A cheer is an ordinary message that happens to carry bits; Twitch sends no notice for it.
+            Bits = ParseCount(tags.GetValueOrDefault("bits")),
+            // The one power-up IRC does tell us about. Undocumented but sent in practice, and worth
+            // reading here rather than over EventSub: this way a message effect shows for a viewer
+            // who is logged out, in someone else's channel, exactly as it does for the broadcaster.
+            MessageEffectId = EmptyToNull(tags.GetValueOrDefault("animation-id"))
         };
         return true;
+    }
+
+    /// <summary>
+    /// Reads the reply-parent-* tags. Twitch sends them on every message written through the reply
+    /// button, and only then, so their absence is what says "this is a fresh line".
+    /// </summary>
+    internal static ChatReply? ParseReply(Dictionary<string, string> tags)
+    {
+        if (EmptyToNull(tags.GetValueOrDefault("reply-parent-msg-id")) is not { } parentId) return null;
+
+        string login = (EmptyToNull(tags.GetValueOrDefault("reply-parent-user-login")) ?? string.Empty).ToLowerInvariant();
+        return new ChatReply(
+            parentId,
+            tags.GetValueOrDefault("reply-parent-user-id") ?? string.Empty,
+            login,
+            EmptyToNull(tags.GetValueOrDefault("reply-parent-display-name")) ?? (login.Length > 0 ? login : "Okänd"),
+            tags.GetValueOrDefault("reply-parent-msg-body") ?? string.Empty);
+    }
+
+    /// <summary>
+    /// Cuts the "@name " that Twitch pastes onto the front of every reply. The tags already say who
+    /// is being answered and the views show it on a line of their own, so leaving the copy in place
+    /// would say the same thing twice – and would make "@name !pet" miss the command it starts with.
+    /// The name is matched against both the display name and the login, because Twitch writes
+    /// whichever of the two the sender's client used.
+    /// </summary>
+    internal static bool StripReplyMention(ref string text, ref IReadOnlyList<EmoteSpan> emotes, ChatReply reply)
+    {
+        foreach (string name in new[] { reply.ParentDisplayName, reply.ParentLogin })
+        {
+            if (name.Length == 0) continue;
+            string mention = $"@{name} ";
+            if (!text.StartsWith(mention, StringComparison.OrdinalIgnoreCase)) continue;
+
+            text = text[mention.Length..];
+            emotes = ShiftEmotes(emotes, mention.Length);
+            return true;
+        }
+        return false;
+    }
+
+    private static IReadOnlyList<EmoteSpan> ShiftEmotes(IReadOnlyList<EmoteSpan> emotes, int offset)
+    {
+        if (emotes.Count == 0) return emotes;
+        var result = new List<EmoteSpan>(emotes.Count);
+        foreach (EmoteSpan emote in emotes)
+        {
+            // A span inside the cut-away mention has nothing left to point at.
+            if (emote.Start < offset) continue;
+            result.Add(emote with { Start = emote.Start - offset });
+        }
+        return result;
     }
 
     /// <summary>Twitch wraps /me in SOH control characters; they must not reach the reader.</summary>
@@ -108,6 +173,87 @@ internal static class IrcMessageParser
             at);
         return true;
     }
+
+    /// <summary>
+    /// Parses USERNOTICE, which is how subs, raids and announcements reach IRC. Anything with a
+    /// msg-id we do not recognise still comes back as an event carrying Twitch's own system-msg,
+    /// so a new notice type shows up as a readable line rather than being dropped on the floor.
+    /// </summary>
+    public static bool TryParseUserNotice(string line, out ChatEvent? chatEvent)
+    {
+        chatEvent = null;
+        if (!line.StartsWith('@')) return false;
+
+        int tagEnd = line.IndexOf(' ');
+        if (tagEnd < 0) return false;
+
+        const string command = " USERNOTICE #";
+        int commandAt = line.IndexOf(command, tagEnd, StringComparison.Ordinal);
+        if (commandAt < 0) return false;
+
+        var tags = ParseTags(line[1..tagEnd]);
+        string msgId = tags.GetValueOrDefault("msg-id") ?? string.Empty;
+
+        // The trailing " :text" is the chatter's own words and is absent for most notice types.
+        int messageAt = line.IndexOf(" :", commandAt + command.Length, StringComparison.Ordinal);
+        string? message = null;
+        if (messageAt >= 0 && EmptyToNull(line[(messageAt + 2)..]) is { } raw)
+        {
+            TryUnwrapAction(ref raw);
+            message = raw;
+        }
+
+        string login = (EmptyToNull(tags.GetValueOrDefault("login")) ?? ParseLogin(line[tagEnd..commandAt])).ToLowerInvariant();
+        string displayName = tags.GetValueOrDefault("display-name") ?? (login.Length > 0 ? login : "Okänd");
+
+        chatEvent = new ChatEvent(
+            MapType(msgId, tags),
+            tags.GetValueOrDefault("id") ?? Guid.NewGuid().ToString("N"),
+            displayName,
+            ParseTimestamp(tags.GetValueOrDefault("tmi-sent-ts")))
+        {
+            UserLogin = login,
+            UserId = tags.GetValueOrDefault("user-id") ?? string.Empty,
+            NameColor = EmptyToNull(tags.GetValueOrDefault("color")),
+            Badges = ParseBadges(tags.GetValueOrDefault("badges")),
+            SystemMessage = EmptyToNull(tags.GetValueOrDefault("system-msg")),
+            Message = message,
+            Emotes = message is null ? Array.Empty<EmoteSpan>() : ParseEmotes(tags.GetValueOrDefault("emotes"), message),
+            Tier = EmptyToNull(tags.GetValueOrDefault("msg-param-sub-plan")),
+            // Legacy msg-param-months is often 0 on a resub, so the cumulative count comes first.
+            Months = ParseCount(tags.GetValueOrDefault("msg-param-cumulative-months"))
+                     ?? ParseCount(tags.GetValueOrDefault("msg-param-months")),
+            // A streak is only true when the viewer chose to share it.
+            StreakMonths = tags.GetValueOrDefault("msg-param-should-share-streak") == "1"
+                ? ParseCount(tags.GetValueOrDefault("msg-param-streak-months"))
+                : null,
+            GiftCount = ParseCount(tags.GetValueOrDefault("msg-param-mass-gift-count")),
+            RecipientDisplayName = EmptyToNull(tags.GetValueOrDefault("msg-param-recipient-display-name"))
+                                   ?? EmptyToNull(tags.GetValueOrDefault("msg-param-recipient-user-name")),
+            ViewerCount = ParseCount(tags.GetValueOrDefault("msg-param-viewerCount")),
+            Bits = ParseCount(tags.GetValueOrDefault("msg-param-threshold")),
+            StreakValue = ParseCount(tags.GetValueOrDefault("msg-param-value")),
+            AnnouncementColor = EmptyToNull(tags.GetValueOrDefault("msg-param-color"))
+        };
+        return true;
+    }
+
+    private static ChatEventType MapType(string msgId, Dictionary<string, string> tags) => msgId switch
+    {
+        "sub" or "resub" => ChatEventType.Subscription,
+        "subgift" => ChatEventType.SubGift,
+        "submysterygift" => ChatEventType.CommunityGift,
+        "giftpaidupgrade" or "anongiftpaidupgrade" or "primepaidupgrade" => ChatEventType.SubUpgrade,
+        "raid" => ChatEventType.Raid,
+        "unraid" => ChatEventType.Unraid,
+        // Announcements are sent in practice but are missing from Twitch's IRC documentation, so
+        // this msg-id rests on observation rather than on a contract.
+        "announcement" => ChatEventType.Announcement,
+        "bitsbadgetier" => ChatEventType.BitsBadge,
+        "viewermilestone" when tags.GetValueOrDefault("msg-param-category") == "watch-streak" => ChatEventType.WatchStreak,
+        "ritual" when tags.GetValueOrDefault("msg-param-ritual-name") == "new_chatter" => ChatEventType.NewChatter,
+        _ => ChatEventType.Other
+    };
 
     // Tag format: "25:0-4,12-16/1902:6-10". Ranges are inclusive and counted in
     // Unicode code points, so they must be mapped to UTF-16 indices before use.
@@ -193,4 +339,8 @@ internal static class IrcMessageParser
             : DateTimeOffset.Now;
 
     private static string? EmptyToNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    /// <summary>Reads a counting tag. Twitch writes 0 where it means "not applicable", so 0 is null too.</summary>
+    private static int? ParseCount(string? value) =>
+        int.TryParse(value, out int count) && count > 0 ? count : null;
 }
