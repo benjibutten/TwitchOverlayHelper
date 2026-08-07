@@ -34,6 +34,16 @@ public partial class MainWindow : Window
     private readonly System.Net.Http.HttpClient _speechHttpClient = new() { Timeout = TimeSpan.FromSeconds(30) };
     private readonly TwitchSession _session;
     private readonly TwitchApiClient _apiClient;
+    private readonly TwitchEventSubClient _eventSubClient;
+    private readonly RewardCatalog _rewards = new();
+    private readonly PowerUpTracker _powerUps = new();
+    /// <summary>
+    /// Keeps a chat line and the power-up marker for it in that order. The two are raised on
+    /// different threads – IRC and EventSub – and the moment the tracker knows about a line, the
+    /// marked copy can go out. If it overtook the line itself, the views would be asked to update a
+    /// message they had never been given.
+    /// </summary>
+    private readonly System.Threading.Lock _publishGate = new();
     private readonly SpeechSecretStore _speechSecrets = new();
     private readonly NameAudioPlayer _namePlayer;
     private readonly NameSpeechService _nameSpeech;
@@ -46,7 +56,7 @@ public partial class MainWindow : Window
     private readonly AppSettings _settings;
     private readonly OverlayWindow _overlay;
     private readonly System.Collections.ObjectModel.ObservableCollection<PetRewardRule> _petRewards = [];
-    private readonly ConcurrentQueue<ChatMessage> _pendingMessages = new();
+    private readonly ConcurrentQueue<ChatTimelineItem> _pendingMessages = new();
     private readonly DispatcherTimer _chatFlushTimer;
     private readonly DispatcherTimer _settingsApplyTimer;
     private readonly DispatcherTimer _settingsSaveTimer;
@@ -64,9 +74,11 @@ public partial class MainWindow : Window
     private SpeechSettingsWindow? _speechSettingsWindow;
     private string? _lastBadgeRoom;
     private string? _lastSeenRewardId;
+    private string? _lastSeenRewardName;
     private CancellationTokenSource? _badgeLoadCancellation;
     private int _pendingMessageCount;
     private int _chatTimerRequested;
+    private int _eventSubGeneration;
 
     public MainWindow()
     {
@@ -76,6 +88,7 @@ public partial class MainWindow : Window
         SyncStartWithWindows();
         _session = new TwitchSession(_httpClient);
         _apiClient = new TwitchApiClient(_httpClient, _session);
+        _eventSubClient = new TwitchEventSubClient(_session, _apiClient);
         _namePlayer = new NameAudioPlayer(Dispatcher);
         _nameSpeech = new NameSpeechService(_speechHttpClient, _settings, _speechSecrets, _namePlayer.PlayAsync);
         _hub = new ChatHub(_settings, _badgeCatalog, _session, _petRegistry, _petCatalog) { SpeechEnabled = _nameSpeech.IsConfigured };
@@ -105,11 +118,16 @@ public partial class MainWindow : Window
         _loading = false;
         if (_settings.OverlayVisible) _overlay.Show();
 
-        _chatClient.MessageReceived += QueueMessage;
-        _chatClient.MessageReceived += _hub.PublishMessage;
-        _chatClient.MessageReceived += _petService.HandleMessage;
-        _chatClient.MessageReceived += TrackLastReward;
+        // One entry point rather than four handlers: the reward name has to be filled in before the
+        // message reaches the views, and that only holds if enrichment happens ahead of the fan-out.
+        _chatClient.MessageReceived += OnChatMessage;
         _chatClient.ModerationReceived += _hub.PublishModeration;
+        _chatClient.EventReceived += OnChatEvent;
+        _eventSubClient.EventReceived += OnChatEvent;
+        _eventSubClient.RedemptionReceived += OnRedemption;
+        _eventSubClient.GigantifyReceived += OnGigantify;
+        _eventSubClient.StatusChanged += status => RunOnUi(() => SetEventStatus(status));
+        _eventSubClient.CoverageChanged += coverage => RunOnUi(() => ApplyEventCoverage(coverage));
         _chatClient.StatusChanged += status => RunOnUi(() => SetStatus(status));
         _chatClient.RoomDiscovered += room => RunOnUi(async () => await OnRoomDiscoveredAsync(room));
         _chatClient.ConnectionStopped += () => RunOnUi(() => SetConnectionButtons(false));
@@ -267,12 +285,21 @@ public partial class MainWindow : Window
     private void UseLastReward_Click(object sender, RoutedEventArgs e)
     {
         if (_lastSeenRewardId is not { Length: > 0 } rewardId) return;
-        if (_petRewards.Any(rule => string.Equals(rule.RewardId, rewardId, StringComparison.OrdinalIgnoreCase)))
+        string shown = _lastSeenRewardName ?? rewardId;
+        if (_petRewards.Any(rule => rule.Matches(rewardId, _lastSeenRewardName)))
         {
-            LastRewardText.Text = $"{rewardId} finns redan i listan.";
+            LastRewardText.Text = $"{shown} finns redan i listan.";
             return;
         }
-        AddPetReward(new PetRewardRule { RewardId = rewardId, Minutes = _settings.Pets.LifetimeMinutes });
+        // Both are written down: the name is what the streamer reads, the id is what still matches
+        // in a channel where the names are not readable.
+        AddPetReward(new PetRewardRule
+        {
+            Label = _lastSeenRewardName ?? string.Empty,
+            RewardId = rewardId,
+            RewardName = _lastSeenRewardName ?? string.Empty,
+            Minutes = _settings.Pets.LifetimeMinutes
+        });
     }
 
     private void AddPetReward(PetRewardRule rule)
@@ -353,12 +380,19 @@ public partial class MainWindow : Window
     private void TrackLastReward(ChatMessage message)
     {
         if (message.RewardId is not { Length: > 0 } rewardId) return;
-        RunOnUi(() =>
-        {
-            _lastSeenRewardId = rewardId;
-            LastRewardText.Text = $"Senast inlösta: {rewardId} ({message.DisplayName})";
-            UseLastRewardButton.IsEnabled = true;
-        });
+        RunOnUi(() => ShowLastReward(rewardId, message.RewardTitle, message.DisplayName));
+    }
+
+    /// <summary>
+    /// Shows the reward by name when we have one. A GUID is not something anyone recognises, so a
+    /// name is the difference between a list the streamer can read and one they have to decode.
+    /// </summary>
+    private void ShowLastReward(string rewardId, string? rewardTitle, string displayName)
+    {
+        _lastSeenRewardId = rewardId;
+        _lastSeenRewardName = string.IsNullOrWhiteSpace(rewardTitle) ? null : rewardTitle.Trim();
+        LastRewardText.Text = $"Senast inlösta: {_lastSeenRewardName ?? rewardId} ({displayName})";
+        UseLastRewardButton.IsEnabled = true;
     }
 
     private void ClientId_TextChanged(object sender, TextChangedEventArgs e)
@@ -530,7 +564,101 @@ public partial class MainWindow : Window
     {
         _hub.BroadcasterId = roomId;
         _hub.PublishAuth(_chatClient.CanSend);
+        // Which channel we are in decides what EventSub can carry, so it can only start once the
+        // room id is known – not at login, and not when the socket opens.
+        await RestartEventSubAsync(roomId);
         await LoadBadgesAsync(roomId);
+    }
+
+    /// <summary>
+    /// Points EventSub at a channel. Everything here is allowed to come up empty: logged out, a
+    /// login from before these scopes existed, or simply someone else's channel all end with the
+    /// extra events switched off and the chat reading exactly as it did before.
+    /// </summary>
+    private async Task RestartEventSubAsync(string broadcasterId)
+    {
+        // A reconnect or a channel switch can start this again while an earlier run is still waiting
+        // on Twitch. Only the newest run may finish: two of them reaching StartAsync would throw
+        // from an async void callback, which takes the whole app with it. Read and written on the
+        // UI thread only, so a plain counter is enough.
+        int generation = ++_eventSubGeneration;
+
+        await _eventSubClient.StopAsync();
+        // Another channel's reward names would be wrong here, and a stale name is worse than none.
+        _rewards.Clear();
+        _powerUps.Clear();
+        _petService.RedemptionsFromEventSub = false;
+        if (generation != _eventSubGeneration) return;
+
+        EventSubPlan plan = _eventSubClient.Plan(broadcasterId);
+        if (plan.WorthConnecting) SetEventStatus("Slår på extra händelser …");
+        // Fetched before the socket opens so the very first redemption already reads as a name
+        // rather than teaching us the name only after it has scrolled past.
+        if (plan.Redemptions) await LoadRewardNamesAsync(broadcasterId);
+        if (generation != _eventSubGeneration) return;
+
+        // Belt and braces: the guard above is the real fix, but a crash here would cost the user
+        // their whole session over an optional feature.
+        try { await _eventSubClient.StartAsync(broadcasterId); }
+        catch (InvalidOperationException) { }
+    }
+
+    private async Task LoadRewardNamesAsync(string broadcasterId)
+    {
+        try { _rewards.RememberAll(await _apiClient.GetCustomRewardsAsync(broadcasterId)); }
+        catch (Exception ex) when (ex is TwitchApiException or TwitchAuthException or System.Net.Http.HttpRequestException)
+        {
+            // Not worth surfacing: without the list the names are learned from the redemptions
+            // themselves, one reward at a time.
+        }
+    }
+
+    private void SetEventStatus(string text) => EventStatusText.Text = text;
+
+    /// <summary>
+    /// Says what the extra events are doing and, when something is off because the stored login
+    /// predates a scope, offers the one thing that fixes it. A missing permission is never an error
+    /// here – it is a sentence explaining why a card is not showing up.
+    /// </summary>
+    private void ApplyEventCoverage(EventSubCoverage coverage)
+    {
+        _petService.RedemptionsFromEventSub = coverage.Redemptions;
+
+        var on = new List<string>();
+        if (coverage.Redemptions) on.Add("inlösta belöningar visas med namn och kostnad");
+        if (coverage.Shoutouts) on.Add("shoutouts visas");
+        if (coverage.PowerUps) on.Add("power-ups visas");
+
+        // A stored login only misses a scope when it was granted before we started asking for it.
+        bool offerLogin = _session.IsLoggedIn && coverage.MissingScopes.Count > 0;
+
+        // The reason has to be the real one. Blaming the channel role when the actual cause is a
+        // permission we never asked for would send the user looking in the wrong place.
+        string headline =
+            on.Count > 0 ? "Extra händelser: " + string.Join(", ", on) + "."
+            : !_session.IsLoggedIn ? "Inte inloggad, så subs och raids visas men inte belöningar, shoutouts eller power-ups."
+            : offerLogin ? "Inga extra händelser än."
+            : "Inga extra händelser i den här kanalen – belöningar och power-ups kräver din egen kanal, shoutouts att du är moderator.";
+
+        EventStatusText.Text = offerLogin
+            ? $"{headline} Logga in igen för att slå på {string.Join(" och ", coverage.MissingScopes.Select(TwitchAuth.DescribeScope))}."
+            : headline;
+        ReauthorizeButton.Visibility = offerLogin ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// New scopes only arrive through a fresh approval: refreshing a token hands back the scopes it
+    /// was granted, never the ones we have started asking for since.
+    /// </summary>
+    private async void Reauthorize_Click(object sender, RoutedEventArgs e)
+    {
+        ReauthorizeButton.Visibility = Visibility.Collapsed;
+        string clientId = _session.ClientId.Length > 0 ? _session.ClientId : ClientIdBox.Text.Trim();
+        await _session.LogoutAsync();
+        _hub.PublishAuth(_chatClient.CanSend);
+        if (clientId.Length == 0) return;
+        ClientIdBox.Text = clientId;
+        Login_Click(sender, e);
     }
 
     private System.Windows.Forms.NotifyIcon CreateTrayIcon()
@@ -594,9 +722,71 @@ public partial class MainWindow : Window
         Close();
     }
 
-    private void QueueMessage(ChatMessage message)
+    /// <summary>
+    /// Everything one chat line sets off. The reward name is put on first, so the overlay, the dock
+    /// and the pet rules all see the same message rather than three versions of it.
+    /// </summary>
+    private void OnChatMessage(ChatMessage message)
     {
-        _pendingMessages.Enqueue(message);
+        message = _rewards.Enrich(message);
+        // Marking and publishing are one step, see _publishGate.
+        lock (_publishGate)
+        {
+            message = _powerUps.Enrich(message);
+            Queue(ChatTimelineItem.Of(message));
+            _hub.PublishMessage(message);
+        }
+        _petService.HandleMessage(message);
+        TrackLastReward(message);
+    }
+
+    private void OnChatEvent(ChatEvent chatEvent)
+    {
+        Queue(ChatTimelineItem.Of(chatEvent));
+        _hub.PublishEvent(chatEvent);
+    }
+
+    /// <summary>
+    /// A redemption from EventSub. It carries the name and price IRC never sends, so it teaches the
+    /// catalogue before it reaches the pets – and a reward with no text field gets here even though
+    /// it never produces a chat line at all.
+    /// </summary>
+    private void OnRedemption(RewardRedemption redemption)
+    {
+        if (redemption.RewardId.Length > 0)
+            _rewards.Remember(new CustomReward(redemption.RewardId, redemption.RewardTitle, redemption.RewardCost ?? 0));
+        _petService.HandleRedemption(redemption);
+        RunOnUi(() => ShowLastReward(redemption.RewardId, redemption.RewardTitle, redemption.DisplayName));
+    }
+
+    /// <summary>
+    /// A Gigantify an Emote power-up. It carries no message id, so the tracker pairs it with the
+    /// chat line it belongs to – and when the line got here first, that line has to be sent again
+    /// with the marker on it. A power-up whose message has not arrived yet answers null and waits
+    /// inside the tracker instead, where <see cref="OnChatMessage"/> picks it up.
+    /// </summary>
+    private void OnGigantify(GigantifiedEmote powerUp)
+    {
+        ChatMessage marked;
+        lock (_publishGate)
+        {
+            if (_powerUps.Match(powerUp) is not { } matched) return;
+            marked = matched;
+            _hub.PublishMessageUpdate(marked);
+        }
+        RunOnUi(() =>
+        {
+            // The line may still be sitting in the pending queue, and there is no card to update
+            // until it has been drawn. Emptied rather than flushed once: a flush takes fifty at a
+            // time, and the line we are after can be further back than that.
+            DrainPendingMessages();
+            _overlay.UpdateMessage(marked);
+        });
+    }
+
+    private void Queue(ChatTimelineItem item)
+    {
+        _pendingMessages.Enqueue(item);
         int count = Interlocked.Increment(ref _pendingMessageCount);
         while (count > 500 && _pendingMessages.TryDequeue(out _))
             count = Interlocked.Decrement(ref _pendingMessageCount);
@@ -605,15 +795,26 @@ public partial class MainWindow : Window
             RunOnUi(() => _chatFlushTimer.Start());
     }
 
+    /// <summary>
+    /// Empties the pending queue instead of taking the usual batch off it. Bounded all the same:
+    /// the queue itself is capped at 500, so twenty passes is twice what it can ever hold – and a
+    /// chat writing faster than this drains must not be able to hold the UI thread here.
+    /// </summary>
+    private void DrainPendingMessages()
+    {
+        for (int pass = 0; pass < 20 && !_pendingMessages.IsEmpty; pass++)
+            FlushPendingMessages(null, EventArgs.Empty);
+    }
+
     private void FlushPendingMessages(object? sender, EventArgs e)
     {
-        var batch = new List<ChatMessage>(50);
-        while (batch.Count < 50 && _pendingMessages.TryDequeue(out ChatMessage? message))
+        var batch = new List<ChatTimelineItem>(50);
+        while (batch.Count < 50 && _pendingMessages.TryDequeue(out ChatTimelineItem item))
         {
             Interlocked.Decrement(ref _pendingMessageCount);
-            batch.Add(message);
+            batch.Add(item);
         }
-        if (batch.Count > 0) _overlay.AddMessages(batch);
+        if (batch.Count > 0) _overlay.AddItems(batch);
 
         if (!_pendingMessages.IsEmpty) return;
         _chatFlushTimer.Stop();
@@ -635,6 +836,7 @@ public partial class MainWindow : Window
         TimestampCheck.IsChecked = _settings.ShowTimestamps;
         MentionsCheck.IsChecked = _settings.EmphasizeMentions;
         EmotesCheck.IsChecked = _settings.ShowEmotes;
+        GiantEmotesCheck.IsChecked = _settings.GiantEmotes;
         OutlineCheck.IsChecked = _settings.TextOutline;
         StartWithWindowsCheck.IsChecked = _settings.StartWithWindows;
         SelectComboByText(FontFamilyBox, _settings.FontFamily);
@@ -770,6 +972,16 @@ public partial class MainWindow : Window
         _settings.ClientId = ClientIdBox.Text.Trim();
         _lastBadgeRoom = null;
         _badgeLoadCancellation?.Cancel();
+        // The previous streamer's subscriber icons go with them. Dropped here rather than when the
+        // new set arrives, because the new set may never arrive at all: logged out, Twitch hands out
+        // no badges, and the alternative to a plain "SUB" would be someone else's picture.
+        _badgeCatalog.ForgetChannel();
+        _overlay.RefreshMessages();
+        _hub.PublishBadgesLoaded();
+        // The old channel's subscriptions and reward names have nothing to do with the new one;
+        // room discovery on the new connection starts them again.
+        await _eventSubClient.StopAsync();
+        _rewards.Clear();
         _hub.SetChannel(channel);
         ScheduleOverlayApply();
         SaveSettings();
@@ -789,6 +1001,7 @@ public partial class MainWindow : Window
     private async void DisconnectButton_Click(object sender, RoutedEventArgs e)
     {
         await _chatClient.DisconnectAsync();
+        await _eventSubClient.StopAsync();
         SetConnectionButtons(false);
     }
 
@@ -830,6 +1043,7 @@ public partial class MainWindow : Window
         _settings.ShowTimestamps = TimestampCheck.IsChecked == true;
         _settings.EmphasizeMentions = MentionsCheck.IsChecked == true;
         _settings.ShowEmotes = EmotesCheck.IsChecked == true;
+        _settings.GiantEmotes = GiantEmotesCheck.IsChecked == true;
         _settings.TextOutline = OutlineCheck.IsChecked == true;
         _settings.FontFamily = SelectedText(FontFamilyBox) ?? "Verdana";
         UpdateValueLabels();
@@ -985,6 +1199,7 @@ public partial class MainWindow : Window
         _namePlayer.Close();
         await _dockServer.DisposeAsync();
         await _chatClient.DisposeAsync();
+        await _eventSubClient.DisposeAsync();
         _session.Dispose();
         _httpClient.Dispose();
         _speechHttpClient.Dispose();

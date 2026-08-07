@@ -43,6 +43,7 @@ public partial class DockSettingsWindow : Window
         TimestampsCheck.IsChecked = dock.ShowTimestamps;
         NameColorsCheck.IsChecked = dock.UseTwitchNameColors;
         EmotesCheck.IsChecked = dock.ShowEmotes;
+        GiantEmotesCheck.IsChecked = dock.GiantEmotes;
         LinksCheck.IsChecked = dock.CollapseLinks;
         ShoutingCheck.IsChecked = dock.CalmShouting;
         CommandsCheck.IsChecked = dock.DimCommands;
@@ -71,6 +72,7 @@ public partial class DockSettingsWindow : Window
         dock.ShowTimestamps = TimestampsCheck.IsChecked == true;
         dock.UseTwitchNameColors = NameColorsCheck.IsChecked == true;
         dock.ShowEmotes = EmotesCheck.IsChecked == true;
+        dock.GiantEmotes = GiantEmotesCheck.IsChecked == true;
         dock.CollapseLinks = LinksCheck.IsChecked == true;
         dock.CalmShouting = ShoutingCheck.IsChecked == true;
         dock.DimCommands = CommandsCheck.IsChecked == true;

@@ -25,7 +25,21 @@ public sealed class TwitchAuthTransientException(string message) : TwitchAuthExc
 /// </summary>
 public sealed class TwitchAuth(HttpClient httpClient)
 {
-    /// <summary>Read and write chat, moderate, and list the followed channels the raid picker offers.</summary>
+    /// <summary>Channel point redemptions, in your own channel only.</summary>
+    public const string RedemptionsScope = "channel:read:redemptions";
+
+    /// <summary>Shoutouts, in channels you moderate. The read scope is enough; we never send one.</summary>
+    public const string ShoutoutsScope = "moderator:read:shoutouts";
+
+    /// <summary>Power-ups and cheers through channel.bits.use, in your own channel only.</summary>
+    public const string BitsScope = "bits:read";
+
+    /// <summary>
+    /// What the app asks Twitch for at login. "Required" is about the request, not about running:
+    /// every one of these is optional at run time. A login granted before a scope existed keeps
+    /// working and the feature behind the missing scope simply stays off, so nothing here can lock
+    /// a reader out of a chat they could already watch.
+    /// </summary>
     public static readonly string[] RequiredScopes =
     [
         "chat:read",
@@ -33,10 +47,40 @@ public sealed class TwitchAuth(HttpClient httpClient)
         "moderator:manage:banned_users",
         "moderator:manage:chat_messages",
         "channel:manage:raids",
-        "user:read:follows"
+        "user:read:follows",
+        RedemptionsScope,
+        ShoutoutsScope,
+        BitsScope
     ];
 
     public static string ScopeString => string.Join(' ', RequiredScopes);
+
+    /// <summary>
+    /// Which of the scopes we ask for a stored login does not have. A refresh hands back the scopes
+    /// the token was granted, never the ones we have started asking for since, so this is the only
+    /// way to notice – and the app says "log in again to switch X on" instead of letting the user
+    /// meet a silent 403 from Twitch weeks later.
+    /// </summary>
+    public static IReadOnlyList<string> MissingScopes(IEnumerable<string>? granted)
+    {
+        var have = new HashSet<string>(granted ?? [], StringComparer.OrdinalIgnoreCase);
+        return RequiredScopes.Where(scope => !have.Contains(scope)).ToArray();
+    }
+
+    /// <summary>The feature behind a scope, worded for someone deciding whether to log in again.</summary>
+    public static string DescribeScope(string scope) => scope switch
+    {
+        RedemptionsScope => "inlösta belöningar",
+        ShoutoutsScope => "shoutouts",
+        BitsScope => "power-ups och förstorade emotes",
+        "chat:read" => "läsa chatten",
+        "chat:edit" => "skriva i chatten",
+        "moderator:manage:banned_users" => "timeout och ban",
+        "moderator:manage:chat_messages" => "ta bort meddelanden",
+        "channel:manage:raids" => "starta raid",
+        "user:read:follows" => "kanallistan i raid-väljaren",
+        _ => scope
+    };
 
     public async Task<DeviceCodePrompt> StartDeviceFlowAsync(string clientId, CancellationToken cancellationToken = default)
     {

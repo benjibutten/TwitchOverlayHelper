@@ -1,5 +1,6 @@
 using TwitchOverlayHelper.Models;
 using TwitchOverlayHelper.Settings;
+using TwitchOverlayHelper.Twitch;
 using TwitchOverlayHelper.Web;
 
 namespace TwitchOverlayHelper.Pets;
@@ -13,6 +14,31 @@ public sealed class PetService(AppSettings settings, PetCatalog catalog, PetRegi
 {
     private int _testCounter;
 
+    /// <summary>
+    /// True once EventSub is delivering this channel's redemptions. The same redemption then also
+    /// arrives over IRC whenever the reward asked the viewer to type something, and acting on both
+    /// would spawn two pets for one purchase – so while this is on, IRC's copy is left alone.
+    /// </summary>
+    public bool RedemptionsFromEventSub { get; set; }
+
+    /// <summary>
+    /// A redemption straight from EventSub. This is the only path that sees rewards with no text
+    /// field, which never reach IRC at all and were invisible to the pets before.
+    /// </summary>
+    public void HandleRedemption(RewardRedemption redemption)
+    {
+        PetSettings pets = settings.Pets;
+        if (!pets.Enabled) return;
+
+        if (pets.LifetimeMinutesFor(redemption.RewardId, redemption.RewardTitle) is not int minutes) return;
+
+        string id = redemption.UserId.Length > 0 ? redemption.UserId : redemption.UserLogin;
+        if (id.Length == 0) return;
+
+        // What the viewer typed is what names a species; a silent reward simply gets the default.
+        Spawn(id, redemption.DisplayName, null, redemption.UserInput, minutes);
+    }
+
     public void HandleMessage(ChatMessage message)
     {
         PetSettings pets = settings.Pets;
@@ -20,7 +46,9 @@ public sealed class PetService(AppSettings settings, PetCatalog catalog, PetRegi
 
         // Which reward was redeemed decides how long the pet stays, so a channel can sell five and
         // ten minutes as separate rewards.
-        int? minutes = message.RewardId is { Length: > 0 } ? pets.LifetimeMinutesFor(message.RewardId) : null;
+        int? minutes = message.RewardId is { Length: > 0 } && !RedemptionsFromEventSub
+            ? pets.LifetimeMinutesFor(message.RewardId, message.RewardTitle)
+            : null;
 
         string trimmed = message.Text.Trim();
         bool testCommand = pets.AllowModTestCommand

@@ -18,6 +18,9 @@ namespace TwitchOverlayHelper.Overlay;
 
 public partial class OverlayWindow : Window
 {
+    /// <summary>How much bigger a gigantified emote is drawn. Twitch shows it at roughly triple.</summary>
+    private const double GiantEmoteScale = 3;
+
     private static readonly System.Windows.Media.Effects.DropShadowEffect TextOutlineEffect = CreateTextOutline();
     private static readonly HttpClient EmoteHttpClient = new()
     {
@@ -62,23 +65,52 @@ public partial class OverlayWindow : Window
         if (!forceRefresh && _renderSettings == current) return;
         _renderSettings = current;
 
-        ChatMessage[] messages = MessagePanel.Children.OfType<Border>().Select(card => card.Tag).OfType<ChatMessage>()
-            .TakeLast(_settings.MaxMessages).ToArray();
+        // Rebuilt from the tags, so a settings change keeps events in the reading order they landed in.
+        ChatTimelineItem[] items = MessagePanel.Children.OfType<Border>().Select(card => card.Tag)
+            .OfType<ChatTimelineItem>().TakeLast(_settings.MaxMessages).ToArray();
         ClearMessages();
-        foreach (ChatMessage message in messages) MessagePanel.Children.Add(CreateMessageCard(message));
-        if (messages.Length > 0) ChatScroller.ScrollToEnd();
+        foreach (ChatTimelineItem item in items) MessagePanel.Children.Add(CreateCard(item));
+        if (items.Length > 0) ChatScroller.ScrollToEnd();
     }
 
     public void AddMessage(ChatMessage message)
-        => AddMessages([message]);
+        => AddItems([ChatTimelineItem.Of(message)]);
 
-    public void AddMessages(IReadOnlyList<ChatMessage> messages)
+    public void AddEvent(ChatEvent chatEvent)
+        => AddItems([ChatTimelineItem.Of(chatEvent)]);
+
+    public void AddItems(IReadOnlyList<ChatTimelineItem> items)
     {
-        foreach (ChatMessage message in messages)
-            MessagePanel.Children.Add(CreateMessageCard(message));
+        foreach (ChatTimelineItem item in items)
+            MessagePanel.Children.Add(CreateCard(item));
+        // Event cards share the column with the chat lines, so they count towards the limit too.
         while (MessagePanel.Children.Count > _settings.MaxMessages) RemoveOldestMessage();
-        if (messages.Count > 0) ChatScroller.ScrollToEnd();
+        if (items.Count > 0) ChatScroller.ScrollToEnd();
     }
+
+    /// <summary>
+    /// Replaces a line already on screen with a changed version of itself. Only one thing needs it:
+    /// a Gigantify an Emote power-up that reached the app after the message it belongs to. A line
+    /// that has already scrolled off the top is simply not found, which is the right answer for a
+    /// marker there is no longer anywhere to put.
+    /// </summary>
+    public void UpdateMessage(ChatMessage message)
+    {
+        for (int i = MessagePanel.Children.Count - 1; i >= 0; i--)
+        {
+            if (MessagePanel.Children[i] is not Border card) continue;
+            if (card.Tag is not ChatTimelineItem { Message: { } existing }) continue;
+            if (!string.Equals(existing.Id, message.Id, StringComparison.Ordinal)) continue;
+
+            MessagePanel.Children[i] = CreateMessageCard(message);
+            // The card just grew by a couple of lines; the newest message must stay the visible one.
+            if (i == MessagePanel.Children.Count - 1) ChatScroller.ScrollToEnd();
+            return;
+        }
+    }
+
+    private Border CreateCard(ChatTimelineItem item) =>
+        item.Event is { } chatEvent ? CreateEventCard(chatEvent) : CreateMessageCard(item.Message!);
 
     public void AddWelcomeMessages()
     {
@@ -87,6 +119,13 @@ public partial class OverlayWindow : Window
         const string emoteDemoPrefix = "Emotes visas som bilder ";
         AddMessage(new ChatMessage("welcome-3", "Emotes", emoteDemoPrefix + "Kappa", "#F59E0B", [], false, false, DateTimeOffset.Now,
             [new EmoteSpan("25", emoteDemoPrefix.Length, 5)]));
+        AddEvent(new ChatEvent(ChatEventType.Subscription, "welcome-4", "Kajsa_92", DateTimeOffset.Now)
+        {
+            UserLogin = "kajsa_92",
+            Months = 8,
+            Tier = "1000",
+            Message = "så här ser subs, raids och meddelanden ut"
+        });
     }
 
     public void SetEditMode(bool enabled)
@@ -103,9 +142,12 @@ public partial class OverlayWindow : Window
 
     private Border CreateMessageCard(ChatMessage message)
     {
-        var card = new Border { CornerRadius = new CornerRadius(10), Margin = new Thickness(0, 0, 0, 8), Padding = new Thickness(11, 8, 11, 9), Tag = message };
+        var card = new Border { CornerRadius = new CornerRadius(10), Margin = new Thickness(0, 0, 0, 8), Padding = new Thickness(11, 8, 11, 9), Tag = ChatTimelineItem.Of(message) };
         string mentionName = string.IsNullOrWhiteSpace(_settings.UserName) ? _settings.Channel : _settings.UserName;
-        bool isMention = _settings.EmphasizeMentions && mentionName.Length > 0 && message.Text.Contains("@" + mentionName, StringComparison.OrdinalIgnoreCase);
+        // An answer to something you said is aimed at you too, even though the "@you" was cut away.
+        bool isMention = _settings.EmphasizeMentions && mentionName.Length > 0
+            && (message.Text.Contains("@" + mentionName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(message.Reply?.ParentLogin, mentionName, StringComparison.OrdinalIgnoreCase));
         byte messageAlpha = (byte)Math.Round(Math.Clamp(_settings.MessageBackgroundOpacity, 0, 0.9) * 255);
         card.Background = new SolidColorBrush(isMention
             ? Color.FromArgb(112, 245, 158, 11)
@@ -116,6 +158,7 @@ public partial class OverlayWindow : Window
             card.BorderThickness = new Thickness(2);
         }
         var stack = new StackPanel();
+        if (message.Reply is { } reply) stack.Children.Add(CreateReplyLine(reply));
         var identity = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 3) };
 
         if (_settings.ShowBadges)
@@ -135,6 +178,21 @@ public partial class OverlayWindow : Window
             identity.Children.Add(CreateLabel("NY", Color.FromRgb(95, 214, 200)));
         if (isMention)
             identity.Children.Add(CreateLabel("TILL DIG", Color.FromRgb(217, 119, 6)));
+        // A cheer is a normal message carrying bits; the marker says so without a card of its own.
+        if (message.Bits is > 0)
+            identity.Children.Add(CreateLabel($"{message.Bits} BITS", Color.FromRgb(139, 92, 246)));
+        // A redemption that asked for text is the same shape: the words are the message, the reward
+        // is a marker. Named when we are allowed to read the channel's rewards, neutral when not.
+        if (message.RewardId is { Length: > 0 })
+            identity.Children.Add(CreateLabel(
+                message.RewardTitle is { Length: > 0 } title ? title.ToUpperInvariant() : "BELÖNING",
+                Color.FromRgb(15, 124, 138)));
+        // Power-ups. A message effect is an animation the overlay does not reproduce, so it stays a
+        // label; a gigantified emote speaks for itself and only needs saying when it is shown small.
+        if (message.MessageEffectId is { Length: > 0 })
+            identity.Children.Add(CreateLabel("⚡ EFFEKT", Color.FromRgb(139, 92, 246)));
+        if (message.GigantifiedEmoteIndex >= 0 && !_settings.GiantEmotes)
+            identity.Children.Add(CreateLabel("⚡ FÖRSTORAD", Color.FromRgb(139, 92, 246)));
 
         TextBlock body = CreateMessageBody(message);
         stack.Children.Add(identity);
@@ -152,32 +210,128 @@ public partial class OverlayWindow : Window
         return card;
     }
 
-    private TextBlock CreateMessageBody(ChatMessage message)
+    /// <summary>
+    /// A sub, raid or announcement. Built like a message card so the reading rhythm holds, and set
+    /// apart by a coloured band down the side rather than by shouting louder than the chat.
+    /// </summary>
+    private Border CreateEventCard(ChatEvent chatEvent)
+    {
+        (string label, Color accent) = EventLook(chatEvent);
+        var card = new Border
+        {
+            CornerRadius = new CornerRadius(10),
+            Margin = new Thickness(0, 0, 0, 8),
+            Padding = new Thickness(11, 8, 11, 9),
+            Tag = ChatTimelineItem.Of(chatEvent),
+            Background = new SolidColorBrush(Color.FromArgb(78, accent.R, accent.G, accent.B)),
+            BorderBrush = new SolidColorBrush(accent),
+            BorderThickness = new Thickness(4, 0, 0, 0)
+        };
+
+        var stack = new StackPanel();
+        var identity = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 3) };
+        if (_settings.ShowTimestamps)
+            identity.Children.Add(new TextBlock { Text = chatEvent.At.LocalDateTime.ToString("HH:mm") + "  ", Foreground = new SolidColorBrush(Color.FromRgb(183, 180, 194)), FontSize = Math.Max(12, _settings.FontSize * 0.62), VerticalAlignment = VerticalAlignment.Center });
+        identity.Children.Add(CreateLabel(label, accent));
+        identity.Children.Add(new TextBlock
+        {
+            Text = ChatEventText.Describe(chatEvent),
+            Foreground = Brushes.White,
+            FontWeight = FontWeights.Bold,
+            FontSize = _settings.FontSize * 0.78,
+            FontFamily = new FontFamily(_settings.FontFamily),
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        stack.Children.Add(identity);
+
+        // Only some notices carry the chatter's own words, and those words are what people read.
+        if (!string.IsNullOrWhiteSpace(chatEvent.Message))
+            stack.Children.Add(CreateBody(chatEvent.Message, chatEvent.Emotes));
+
+        card.Child = stack;
+        ApplyMessageTypography(card);
+        if (_settings.TextOutline) identity.Effect = TextOutlineEffect;
+        return card;
+    }
+
+    /// <summary>The short label and the band colour that tell one kind of event from another.</summary>
+    private static (string Label, Color Accent) EventLook(ChatEvent chatEvent) => chatEvent.Type switch
+    {
+        ChatEventType.Subscription => ("SUB", Color.FromRgb(169, 112, 255)),
+        ChatEventType.SubGift => ("GÅVA", Color.FromRgb(169, 112, 255)),
+        ChatEventType.CommunityGift => ("GÅVOR", Color.FromRgb(169, 112, 255)),
+        ChatEventType.SubUpgrade => ("SUB", Color.FromRgb(169, 112, 255)),
+        ChatEventType.Raid => ("RAID", Color.FromRgb(239, 68, 68)),
+        ChatEventType.Unraid => ("RAID", Color.FromRgb(239, 68, 68)),
+        ChatEventType.Announcement => ("MEDDELANDE", AnnouncementAccent(chatEvent.AnnouncementColor)),
+        ChatEventType.BitsBadge => ("BITS", Color.FromRgb(139, 92, 246)),
+        ChatEventType.WatchStreak => ("STREAK", Color.FromRgb(95, 214, 200)),
+        ChatEventType.NewChatter => ("NY", Color.FromRgb(95, 214, 200)),
+        ChatEventType.RewardRedemption => ("BELÖNING", Color.FromRgb(15, 124, 138)),
+        ChatEventType.ShoutoutSent or ChatEventType.ShoutoutReceived => ("SHOUTOUT", Color.FromRgb(192, 40, 127)),
+        ChatEventType.Celebration => ("FIRANDE", Color.FromRgb(139, 92, 246)),
+        _ => ("HÄNDELSE", Color.FromRgb(150, 150, 170))
+    };
+
+    /// <summary>Twitch lets the streamer colour an announcement; PRIMARY means no choice was made.</summary>
+    private static Color AnnouncementAccent(string? color) => color?.ToUpperInvariant() switch
+    {
+        "BLUE" => Color.FromRgb(59, 130, 246),
+        "GREEN" => Color.FromRgb(31, 157, 85),
+        "ORANGE" => Color.FromRgb(217, 122, 43),
+        "PURPLE" => Color.FromRgb(122, 75, 208),
+        _ => Color.FromRgb(251, 191, 36)
+    };
+
+    /// <summary>
+    /// The one line that says this is an answer rather than a fresh thought. Small, grey and cut off
+    /// at one row: it is context for the sentence below it and must never outweigh what was written.
+    /// </summary>
+    private TextBlock CreateReplyLine(ChatReply reply) => new()
+    {
+        Text = $"↩ {reply.ParentDisplayName}: {reply.ParentText}",
+        Foreground = new SolidColorBrush(Color.FromRgb(183, 180, 194)),
+        FontFamily = new FontFamily(_settings.FontFamily),
+        FontSize = Math.Max(11, _settings.FontSize * 0.56),
+        TextTrimming = TextTrimming.CharacterEllipsis,
+        TextWrapping = TextWrapping.NoWrap,
+        Margin = new Thickness(0, 0, 0, 2)
+    };
+
+    private TextBlock CreateMessageBody(ChatMessage message) =>
+        CreateBody(message.Text, message.Emotes, _settings.GiantEmotes ? message.GigantifiedEmoteIndex : -1);
+
+    private TextBlock CreateBody(string text, IReadOnlyList<EmoteSpan> emotes, int giantIndex = -1)
     {
         var body = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.White };
         if (!_settings.ShowEmotes)
         {
-            body.Text = message.Text;
+            body.Text = text;
             return body;
         }
 
-        if (message.Emotes.Count == 0)
+        if (emotes.Count == 0)
         {
-            AddTextAndEmojiInlines(body, message.Text);
+            AddTextAndEmojiInlines(body, text);
             return body;
         }
 
         // Cap emote height to the fixed block line height so images never clip.
         double emoteSize = Math.Round(_settings.FontSize * Math.Min(1.35, _settings.LineSpacing * 0.95));
         int cursor = 0;
-        foreach (EmoteSpan emote in message.Emotes)
+        for (int i = 0; i < emotes.Count; i++)
         {
-            if (emote.Start < cursor || emote.Start + emote.Length > message.Text.Length) continue;
-            if (emote.Start > cursor) AddTextAndEmojiInlines(body, message.Text[cursor..emote.Start]);
-            body.Inlines.Add(CreateEmoteInline(emote, message.Text.Substring(emote.Start, emote.Length), emoteSize));
+            EmoteSpan emote = emotes[i];
+            if (emote.Start < cursor || emote.Start + emote.Length > text.Length) continue;
+            if (emote.Start > cursor) AddTextAndEmojiInlines(body, text[cursor..emote.Start]);
+            // A gigantified emote is the one image allowed to break out of the line box; the card
+            // lets its lines grow for it, see ApplyMessageTypography.
+            double size = i == giantIndex ? emoteSize * GiantEmoteScale : emoteSize;
+            body.Inlines.Add(CreateEmoteInline(emote, text.Substring(emote.Start, emote.Length), size, i == giantIndex));
             cursor = emote.Start + emote.Length;
         }
-        if (cursor < message.Text.Length) AddTextAndEmojiInlines(body, message.Text[cursor..]);
+        if (cursor < text.Length) AddTextAndEmojiInlines(body, text[cursor..]);
         return body;
     }
 
@@ -205,7 +359,7 @@ public partial class OverlayWindow : Window
         }
     }
 
-    private Inline CreateEmoteInline(EmoteSpan emote, string emoteName, double size)
+    private Inline CreateEmoteInline(EmoteSpan emote, string emoteName, double size, bool giant = false)
     {
         // Emote images are served from Twitch's open CDN – no authentication needed.
         var image = new Image
@@ -219,8 +373,10 @@ public partial class OverlayWindow : Window
         {
             // WPF renders Twitch's static PNG reliably. The "default" format may
             // select an animated format whose first frame can be decoded incorrectly.
-            string url = $"https://static-cdn.jtvnw.net/emoticons/v2/{Uri.EscapeDataString(emote.EmoteId)}/static/dark/2.0";
-            BitmapImage staticImage = GetImage(url, 64);
+            // A gigantified emote is drawn three times as large, and only the 3.0 variant has the
+            // pixels for it – 2.0 stretched to that size is visibly soft.
+            string url = $"https://static-cdn.jtvnw.net/emoticons/v2/{Uri.EscapeDataString(emote.EmoteId)}/static/dark/{(giant ? "3.0" : "2.0")}";
+            BitmapImage staticImage = GetImage(url, giant ? 128 : 64);
             image.Source = staticImage;
             EnableAnimation(image, emote.EmoteId, staticImage);
         }
@@ -353,11 +509,30 @@ public partial class OverlayWindow : Window
         Child = new TextBlock { Text = text, Foreground = Brushes.White, FontSize = 10, FontWeight = FontWeights.ExtraBold, VerticalAlignment = VerticalAlignment.Center }
     };
 
+    /// <summary>
+    /// The body is the last thing in the card – a reply line can sit above the name row, and an
+    /// event card may have no body at all, so it is found from the end rather than by index.
+    /// </summary>
     private void ApplyMessageTypography(Border card)
     {
-        if (card.Child is not StackPanel stack || stack.Children.Count < 2 || stack.Children[1] is not TextBlock body) return;
+        if (card.Child is not StackPanel stack || stack.Children.Count < 2) return;
+        if (stack.Children[^1] is not TextBlock body) return;
         body.FontFamily = new FontFamily(_settings.FontFamily);
         body.FontSize = _settings.FontSize;
+
+        // Every line is normally locked to the same height, which is what makes a column of messages
+        // scannable. A gigantified emote is three times that, and BlockLineHeight would crop it to
+        // the line box instead of showing it – so the one card carrying one is allowed to let its
+        // lines grow to whatever is in them.
+        bool giant = _settings.GiantEmotes
+            && card.Tag is ChatTimelineItem { Message: { } message }
+            && message.GigantifiedEmoteIndex >= 0;
+        if (giant)
+        {
+            body.ClearValue(TextBlock.LineHeightProperty);
+            body.LineStackingStrategy = LineStackingStrategy.MaxHeight;
+            return;
+        }
         body.LineHeight = _settings.FontSize * _settings.LineSpacing;
         body.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
     }
@@ -425,6 +600,7 @@ public partial class OverlayWindow : Window
         bool UseTwitchNameColors,
         bool EmphasizeMentions,
         bool ShowEmotes,
+        bool GiantEmotes,
         bool TextOutline,
         string MentionName)
     {
@@ -438,6 +614,7 @@ public partial class OverlayWindow : Window
             settings.UseTwitchNameColors,
             settings.EmphasizeMentions,
             settings.ShowEmotes,
+            settings.GiantEmotes,
             settings.TextOutline,
             string.IsNullOrWhiteSpace(settings.UserName) ? settings.Channel : settings.UserName);
     }

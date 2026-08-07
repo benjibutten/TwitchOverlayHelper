@@ -8,7 +8,19 @@ namespace TwitchOverlayHelper.Twitch;
 
 public sealed record RaidCandidate(string UserId, string Login, string DisplayName, string GameName, int ViewerCount, string ThumbnailUrl);
 
-public sealed class TwitchApiException(string message) : Exception(message);
+public class TwitchApiException(string message) : Exception(message);
+
+/// <summary>
+/// Twitch understood the call and said no: the token lacks the scope, or the user does not hold the
+/// role the call needs in that channel. A subclass rather than a sibling, so every caller that
+/// already treats a Twitch refusal as a readable error keeps doing so; only the code that can
+/// degrade – subscribing to events we may not be allowed to see – catches the narrower type and
+/// quietly turns that feature off.
+/// </summary>
+public sealed class TwitchNotPermittedException(string message) : TwitchApiException(message);
+
+/// <summary>One channel point reward as the channel has it configured.</summary>
+public sealed record CustomReward(string Id, string Title, int Cost);
 
 /// <summary>Helix calls behind the dock's moderation buttons. Every call needs the moderator's own user id.</summary>
 public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session)
@@ -91,6 +103,61 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
         return result;
     }
 
+    /// <summary>
+    /// Subscribes to an EventSub topic over an open WebSocket session. The condition differs per
+    /// topic, so it is handed in already shaped rather than guessed at here.
+    /// </summary>
+    public async Task CreateEventSubSubscriptionAsync(
+        string type,
+        string version,
+        IReadOnlyDictionary<string, string> condition,
+        string sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = new StringBuilder("{\"type\":").Append(JsonSerializer.Serialize(type))
+            .Append(",\"version\":").Append(JsonSerializer.Serialize(version))
+            .Append(",\"condition\":{");
+        bool first = true;
+        foreach ((string key, string value) in condition)
+        {
+            if (!first) payload.Append(',');
+            payload.Append(JsonSerializer.Serialize(key)).Append(':').Append(JsonSerializer.Serialize(value));
+            first = false;
+        }
+        payload.Append("},\"transport\":{\"method\":\"websocket\",\"session_id\":")
+            .Append(JsonSerializer.Serialize(sessionId)).Append("}}");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.twitch.tv/helix/eventsub/subscriptions")
+        {
+            Content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json")
+        };
+        await SendAsync(request, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The channel's rewards, so a redemption can be shown by name from the very first one instead
+    /// of waiting to learn the name from a redemption that has already gone past.
+    /// </summary>
+    public async Task<IReadOnlyList<CustomReward>> GetCustomRewardsAsync(string broadcasterId, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            $"https://api.twitch.tv/helix/channel_points/custom_rewards?broadcaster_id={Uri.EscapeDataString(broadcasterId)}");
+        JsonElement json = await SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        var result = new List<CustomReward>();
+        if (!json.TryGetProperty("data", out JsonElement data) || data.ValueKind != JsonValueKind.Array) return result;
+        foreach (JsonElement reward in data.EnumerateArray())
+        {
+            string id = ReadString(reward, "id");
+            if (id.Length == 0) continue;
+            result.Add(new CustomReward(
+                id,
+                ReadString(reward, "title"),
+                reward.TryGetProperty("cost", out JsonElement cost) && cost.ValueKind == JsonValueKind.Number ? cost.GetInt32() : 0));
+        }
+        return result;
+    }
+
     private async Task<JsonElement> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         string accessToken = await session.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
@@ -99,6 +166,10 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
 
         using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        // 401 is in here too: a token that is missing a scope is rejected as unauthorised, and that
+        // is a permission answer rather than a fault – the caller turns the feature off and moves on.
+        if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized)
+            throw new TwitchNotPermittedException(DescribeError(response.StatusCode, body));
         if (!response.IsSuccessStatusCode) throw new TwitchApiException(DescribeError(response.StatusCode, body));
 
         if (body.Length == 0) return default;

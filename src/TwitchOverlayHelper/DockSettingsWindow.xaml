@@ -86,6 +86,7 @@
                         <CheckBox x:Name="TimestampsCheck" Content="Visa klockslag" Checked="Setting_Changed" Unchecked="Setting_Changed" />
                         <CheckBox x:Name="NameColorsCheck" Content="Twitch-namnfärger" Checked="Setting_Changed" Unchecked="Setting_Changed" />
                         <CheckBox x:Name="EmotesCheck" Content="Visa emotes" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="GiantEmotesCheck" Content="Förstorade emotes i full storlek" ToolTip="Power-upen “Gigantify an Emote” gör en emote tre gånger så stor och lägger den på en egen rad. Av: vanlig storlek med en markör i stället." Checked="Setting_Changed" Unchecked="Setting_Changed" />
                         <CheckBox x:Name="LinksCheck" Content="Korta ner länkar till en liten knapp" Checked="Setting_Changed" Unchecked="Setting_Changed" />
                         <CheckBox x:Name="ShoutingCheck" Content="Dämpa VERSALER till gemener" Checked="Setting_Changed" Unchecked="Setting_Changed" />
                         <CheckBox x:Name="CommandsCheck" Content="Tona ner !kommandon" Checked="Setting_Changed" Unchecked="Setting_Changed" />

@@ -127,6 +127,26 @@ body[data-zebra="true"] .chat .msg:nth-child(even) { background: var(--surface-a
 .msg[data-removed="true"] { opacity: 0.4; }
 .msg[data-removed="true"] .msg-text { text-decoration: line-through; }
 
+/* An answer needs its question, but the question was already read once. It gets one quiet row that
+   never wraps: a reply to a wall of text must not be taller than the reply itself. It stays a full
+   row even when names run inline, because it belongs to the whole message and not to the name. */
+.msg-reply {
+  display: flex; align-items: baseline; gap: 4px; width: 100%;
+  font-family: inherit; font-size: 0.62em; line-height: 1.4;
+  letter-spacing: inherit; text-align: left;
+  color: var(--muted); background: none; border: none; padding: 0 0 1px;
+  cursor: pointer;
+}
+.msg-reply-mark { flex: 0 0 auto; }
+.msg-reply-name { flex: 0 0 auto; font-weight: 700; }
+.msg-reply-name::after { content: ":"; }
+.msg-reply-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-reply:hover { color: var(--text); }
+.msg-reply:hover .msg-reply-name { text-decoration: underline; }
+
+/* Jumping to the answered message lands it mid-column, where nothing else says which one it was. */
+.msg[data-flash="true"] { outline: 2px solid var(--accent); outline-offset: -1px; }
+
 .msg-head { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-bottom: 2px; }
 body[data-nameline="false"] .msg-head { display: inline; margin-right: 6px; }
 body[data-nameline="false"] .msg-text { display: inline; }
@@ -160,14 +180,66 @@ body[data-nameline="false"] .msg-text { display: inline; }
 .tag[data-kind="subscriber"] { background: #6d43c9; }
 .tag[data-kind="new"] { background: #0f7c8a; }
 .tag[data-kind="mention"] { background: var(--mention-line); }
+.tag[data-kind="bits"] { background: #8b5cf6; }
+.tag[data-kind="reward"] { background: #0f7c8a; text-transform: none; letter-spacing: 0.02em; }
 .tag[data-kind="other"] { background: #6b7280; }
+.tag[data-kind="powerup"] { background: #8b5cf6; text-transform: none; letter-spacing: 0.02em; }
+
+/* ---------- events ---------- */
+/* Subs, raids and announcements read in the same type and rhythm as the chat lines around them.
+   What sets them apart is a quiet band down the side, not a louder card – a run of gift subs must
+   not be able to take over the column. */
+.evt {
+  flex: 0 0 auto;
+  font-size: var(--size);
+  line-height: var(--lh);
+  letter-spacing: var(--ls);
+  word-spacing: var(--ws);
+  padding: 5px 8px;
+  margin-bottom: var(--gap);
+  border-radius: 8px;
+  overflow-wrap: break-word;
+  background: var(--surface-alt);
+  border-left: 4px solid var(--accent);
+  animation: appear 140ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) { .evt { animation: none; } }
+
+.evt-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px; }
+.evt-icon { font-size: 0.85em; flex: 0 0 auto; }
+.evt-headline { font-weight: 700; font-size: 0.92em; }
+.evt .msg-text { display: block; margin-top: 2px; }
+
+.evt[data-kind="raid"], .evt[data-kind="unraid"] { border-left-color: #d13c3c; }
+.evt[data-kind="announcement"] { background: var(--mention); border-left-color: var(--mention-line); }
+.evt[data-kind="bitsBadge"] { border-left-color: #8b5cf6; }
+.evt[data-kind="watchStreak"], .evt[data-kind="newChatter"] { border-left-color: #0f7c8a; }
+.evt[data-kind="reward"] { border-left-color: #0f7c8a; }
+.evt[data-kind="shoutoutSent"], .evt[data-kind="shoutoutReceived"] { border-left-color: #c0287f; }
+.evt[data-kind="celebration"] { border-left-color: #8b5cf6; }
+
+/* Twitch lets the streamer colour an announcement; honouring it keeps the dock in step with what
+   the viewers are looking at. PRIMARY means "no choice made" and keeps the default band. */
+.evt[data-color="blue"] { border-left-color: #3b82f6; }
+.evt[data-color="green"] { border-left-color: #1f9d55; }
+.evt[data-color="orange"] { border-left-color: #d97a2b; }
+.evt[data-color="purple"] { border-left-color: #7a4bd0; }
 
 .emote { height: 1.4em; width: auto; vertical-align: -0.35em; }
+/* A gigantified emote is three times the height of a line. Left inline it would stretch the one row
+   it sits on and leave the rest of the message drifting around it, so it takes a row of its own
+   instead: the words above and below keep the reading rhythm the whole column is set to, and the
+   pacer still releases the message as a single line whatever it costs in pixels. */
+.emote[data-giant="true"] {
+  display: block; height: 3.2em; margin: 3px 0; vertical-align: baseline;
+}
 .link-chip {
   display: inline-block; font-size: 0.8em; padding: 0 6px; border-radius: 5px;
   background: var(--surface-alt); border: 1px solid var(--line); color: var(--accent);
   text-decoration: none; word-break: break-all;
 }
+/* The address shown in full when link collapsing is off – still a link, just not folded away. */
+.link { color: var(--accent); word-break: break-all; text-underline-offset: 2px; }
 .removed-note { font-size: 0.7em; color: var(--muted); font-style: italic; }
 
 /* ---------- jump-to-latest ---------- */

@@ -12,12 +12,27 @@ public sealed class PetRewardRule
     /// <summary>Twitch reward id. Empty means every redemption that no other rule claimed.</summary>
     public string RewardId { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The reward's name on stream. Only EventSub knows it, so it is matched alongside the id
+    /// rather than instead of it: in a channel where we cannot read the rewards, the id is still
+    /// the only thing a redemption carries.
+    /// </summary>
+    public string RewardName { get; set; } = string.Empty;
+
     public int Minutes { get; set; } = 5;
+
+    /// <summary>True when this rule claims every redemption no other rule named.</summary>
+    public bool IsCatchAll => RewardId.Length == 0 && RewardName.Length == 0;
+
+    public bool Matches(string? rewardId, string? rewardTitle) =>
+        (RewardId.Length > 0 && string.Equals(RewardId, rewardId, StringComparison.OrdinalIgnoreCase))
+        || (RewardName.Length > 0 && string.Equals(RewardName, rewardTitle, StringComparison.OrdinalIgnoreCase));
 
     public void Normalize()
     {
         Label = Label?.Trim() ?? string.Empty;
         RewardId = RewardId?.Trim() ?? string.Empty;
+        RewardName = RewardName?.Trim() ?? string.Empty;
         Minutes = Math.Clamp(Minutes, 1, 60);
     }
 }
@@ -70,18 +85,18 @@ public sealed class PetSettings
     /// How many minutes a redemption of this reward is worth, or null when it should not spawn a
     /// pet at all. With no rules configured every redemption counts, at the default length.
     /// </summary>
-    public int? LifetimeMinutesFor(string? rewardId)
+    public int? LifetimeMinutesFor(string? rewardId, string? rewardTitle = null)
     {
         if (Rewards.Count == 0) return LifetimeMinutes;
 
         foreach (PetRewardRule rule in Rewards)
-            if (rule.RewardId.Length > 0 && string.Equals(rule.RewardId, rewardId, StringComparison.OrdinalIgnoreCase))
+            if (rule.Matches(rewardId, rewardTitle))
                 return rule.Minutes;
 
-        // A rule with no id is the catch-all, so "every other redemption" can still be worth
-        // something without pasting every reward id in the channel.
+        // A rule that names nothing is the catch-all, so "every other redemption" can still be
+        // worth something without pasting every reward in the channel.
         foreach (PetRewardRule rule in Rewards)
-            if (rule.RewardId.Length == 0) return rule.Minutes;
+            if (rule.IsCatchAll) return rule.Minutes;
 
         return null;
     }
@@ -106,8 +121,17 @@ public sealed class PetSettings
         RewardId = string.Empty;
 
         // Two rules for the same reward would make the second one dead weight, and two catch-alls
-        // are the same trap; the first one written wins.
+        // are the same trap; the first one written wins. The key joins id and name with a separator
+        // neither can contain, so id "ab" with no name cannot collide with id "a" and name "b".
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        Rewards = Rewards.Where(rule => seen.Add(rule.RewardId)).ToList();
+        Rewards = Rewards.Where(rule => seen.Add(RuleKey(rule))).ToList();
     }
+
+    /// <summary>
+    /// Identity of a rule, for dropping duplicates. The halves are joined by a unit separator –
+    /// spelled as a character code rather than written into the string, because an invisible
+    /// control character in source is a trap for whoever reads this next.
+    /// </summary>
+    private static string RuleKey(PetRewardRule rule) =>
+        rule.RewardId + (char)0x1F + rule.RewardName;
 }

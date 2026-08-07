@@ -20,6 +20,12 @@ public sealed class AppSettings
     public bool UseTwitchNameColors { get; set; } = true;
     public bool EmphasizeMentions { get; set; } = true;
     public bool ShowEmotes { get; set; } = true;
+    /// <summary>
+    /// Draws an emote a Gigantify power-up enlarged at its full size. On by default – someone spent
+    /// bits to make it big – but the overlay sits over a game, so it is worth being able to turn
+    /// off: the emote then stays at reading size with a "⚡ förstorad" marker.
+    /// </summary>
+    public bool GiantEmotes { get; set; } = true;
     public bool TextOutline { get; set; }
     public bool OverlayVisible { get; set; } = true;
     public bool StartWithWindows { get; set; }

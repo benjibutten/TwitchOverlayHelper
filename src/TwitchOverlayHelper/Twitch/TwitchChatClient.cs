@@ -15,6 +15,7 @@ public sealed class TwitchChatClient : IAsyncDisposable
 
     public event Action<ChatMessage>? MessageReceived;
     public event Action<ChatModerationEvent>? ModerationReceived;
+    public event Action<ChatEvent>? EventReceived;
     public event Action<string>? StatusChanged;
     public event Action<string>? RoomDiscovered;
     public event Action? ConnectionStopped;
@@ -199,7 +200,8 @@ public sealed class TwitchChatClient : IAsyncDisposable
                     }
                 }
                 if (IrcMessageParser.TryParseChatMessage(line, out ChatMessage? message)) { MessageReceived?.Invoke(message!); continue; }
-                if (IrcMessageParser.TryParseModerationEvent(line, out ChatModerationEvent? moderation)) ModerationReceived?.Invoke(moderation!);
+                if (IrcMessageParser.TryParseModerationEvent(line, out ChatModerationEvent? moderation)) { ModerationReceived?.Invoke(moderation!); continue; }
+                if (IrcMessageParser.TryParseUserNotice(line, out ChatEvent? chatEvent)) EventReceived?.Invoke(chatEvent!);
             }
             pending.Clear();
             pending.Append(buffered);

@@ -42,6 +42,20 @@ public sealed class TwitchSession : IDisposable
     public string UserId => _credentials?.UserId ?? string.Empty;
     public string ClientId => _credentials?.ClientId ?? string.Empty;
 
+    /// <summary>What Twitch actually granted this login, which is not the same as what we asked for.</summary>
+    public IReadOnlyList<string> Scopes => _credentials?.Scopes ?? [];
+
+    /// <summary>
+    /// Asked before subscribing to anything, so a missing permission turns a feature off quietly
+    /// rather than sending a request Twitch will answer with 403.
+    /// </summary>
+    public bool HasScope(string scope) =>
+        _credentials is { } credentials && credentials.Scopes.Contains(scope, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The scopes a stored login predates; empty when there is nothing to re-authorise.</summary>
+    public IReadOnlyList<string> MissingScopes() =>
+        _credentials is null ? [] : TwitchAuth.MissingScopes(_credentials.Scopes);
+
     public SessionState Snapshot() => new(
         IsLoggedIn,
         Login,

@@ -80,6 +80,59 @@ public sealed class IrcMessageParserTests
     }
 
     [Fact]
+    public void ParsesReplyTagsAndCutsTheRepeatedMention()
+    {
+        const string raw = "@display-name=lov3t;id=m9;reply-parent-display-name=adaaam1891;reply-parent-msg-body=han\\sska\\sbyta\\sname;"
+                           + "reply-parent-msg-id=p1;reply-parent-user-id=99;reply-parent-user-login=adaaam1891"
+                           + " :lov3t!lov3t@lov3t.tmi.twitch.tv PRIVMSG #demo :@adaaam1891 ah okej, tack för svar!";
+
+        Assert.True(IrcMessageParser.TryParseChatMessage(raw, out var message));
+        Assert.Equal("ah okej, tack för svar!", message!.Text);
+        Assert.NotNull(message.Reply);
+        Assert.Equal("p1", message.Reply!.ParentMessageId);
+        Assert.Equal("99", message.Reply.ParentUserId);
+        Assert.Equal("adaaam1891", message.Reply.ParentLogin);
+        Assert.Equal("adaaam1891", message.Reply.ParentDisplayName);
+        Assert.Equal("han ska byta name", message.Reply.ParentText);
+    }
+
+    [Fact]
+    public void MovesEmotesAlongWithTheCutReplyMention()
+    {
+        // The emote range is counted against the text Twitch sent, mention and all.
+        const string raw = "@display-name=Benji;emotes=25:7-11;id=m10;reply-parent-display-name=Kajsa;reply-parent-msg-body=hej;"
+                           + "reply-parent-msg-id=p2;reply-parent-user-login=kajsa"
+                           + " :benji!benji@benji.tmi.twitch.tv PRIVMSG #demo :@Kajsa Kappa hej";
+
+        Assert.True(IrcMessageParser.TryParseChatMessage(raw, out var message));
+        Assert.Equal("Kappa hej", message!.Text);
+        var emote = Assert.Single(message.Emotes);
+        Assert.Equal("Kappa", message.Text.Substring(emote.Start, emote.Length));
+    }
+
+    [Fact]
+    public void KeepsAPlainMentionThatIsNotAReply()
+    {
+        const string raw = "@display-name=mickemal;id=m11 :mickemal!mickemal@mickemal.tmi.twitch.tv PRIVMSG #demo :@aerplejn_ Alo";
+
+        Assert.True(IrcMessageParser.TryParseChatMessage(raw, out var message));
+        Assert.Null(message!.Reply);
+        Assert.Equal("@aerplejn_ Alo", message.Text);
+    }
+
+    [Fact]
+    public void CutsTheReplyMentionWhenTheSenderUsedTheLogin()
+    {
+        // Twitch writes whichever of the two the sending client used, so both have to be recognised.
+        const string raw = "@display-name=Benji;id=m12;reply-parent-display-name=Kajsa_92;reply-parent-msg-body=hej;"
+                           + "reply-parent-msg-id=p3;reply-parent-user-login=kajsa_92"
+                           + " :benji!benji@benji.tmi.twitch.tv PRIVMSG #demo :@kajsa_92 !pet katt";
+
+        Assert.True(IrcMessageParser.TryParseChatMessage(raw, out var message));
+        Assert.Equal("!pet katt", message!.Text);
+    }
+
+    [Fact]
     public void ParsesEmotesFromChatMessageLine()
     {
         const string raw = "@badges=;color=;display-name=Benji;emotes=25:0-4;id=abc;tmi-sent-ts=1700000000000 :benji!benji@benji.tmi.twitch.tv PRIVMSG #demo :Kappa hej";
