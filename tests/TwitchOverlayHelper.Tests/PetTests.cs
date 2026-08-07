@@ -407,6 +407,9 @@ public sealed class PetServiceTests
         new("m1", "Kajsa", text, "#9146FF", badges ?? [], false, false, DateTimeOffset.Now)
         { UserId = "7", UserLogin = "kajsa", RewardId = rewardId };
 
+    private static RewardRedemption Redemption(string rewardId, string title, string? userInput) =>
+        new("r1", rewardId, title, 500, "7", "kajsa", "Kajsa", userInput, DateTimeOffset.Now);
+
     [Fact]
     public void SpawnsAPetForAnyRedemptionWhenNoRewardIsPinned()
     {
@@ -414,6 +417,85 @@ public sealed class PetServiceTests
 
         service.HandleMessage(Message("en robot tack", rewardId: "abc"));
 
+        Assert.Single(registry.Snapshot());
+    }
+
+    // The whole reason EventSub was worth building: a reward with no text field never reaches IRC,
+    // so before this it could not spawn anything at all.
+    [Fact]
+    public void SpawnsAPetForARedemptionThatCarriesNoText()
+    {
+        (PetService service, PetRegistry registry, _) = Build();
+
+        service.HandleRedemption(Redemption("abc", "Pet i 5 minuter", userInput: null));
+
+        Assert.Single(registry.Snapshot());
+    }
+
+    [Fact]
+    public void LetsARuleNameTheRewardInsteadOfPastingItsId()
+    {
+        (PetService service, PetRegistry registry, AppSettings settings) = Build();
+        settings.Pets.Rewards = [new PetRewardRule { RewardName = "Pet i 5 minuter", Minutes = 5 }];
+
+        service.HandleRedemption(Redemption("vilket-guid-som-helst", "pet i 5 MINUTER", userInput: null));
+        Assert.Single(registry.Snapshot());
+
+        service.HandleRedemption(Redemption("annat-guid", "Något helt annat", userInput: null));
+        Assert.Single(registry.Snapshot());
+    }
+
+    [Fact]
+    public void ReadsTheSpeciesOutOfWhatTheViewerTyped()
+    {
+        (PetService service, PetRegistry registry, _) = Build();
+
+        service.HandleRedemption(Redemption("abc", "Pet", userInput: "en BLAZE tack"));
+
+        Assert.Equal("blaze", Assert.Single(registry.Snapshot()).Species);
+    }
+
+    // A redemption that asked for text arrives twice: once over EventSub and once as the chat line
+    // it produced. Acting on both would give one purchase two pets.
+    [Fact]
+    public void SpawnsOnlyOnePetWhenTheSameRedemptionArrivesOverBothRoutes()
+    {
+        (PetService service, PetRegistry registry, _) = Build();
+        service.RedemptionsFromEventSub = true;
+
+        service.HandleRedemption(Redemption("abc", "Pet", userInput: "en robot tack"));
+        service.HandleMessage(Message("en robot tack", rewardId: "abc"));
+
+        Assert.Single(registry.Snapshot());
+    }
+
+    // Without EventSub – someone else's channel, or a login that predates the scope – IRC is the
+    // only route there is, and it has to keep working exactly as it did.
+    [Fact]
+    public void StillSpawnsFromIrcAloneWhenEventSubIsNotRunning()
+    {
+        (PetService service, PetRegistry registry, _) = Build();
+        service.RedemptionsFromEventSub = false;
+
+        service.HandleMessage(Message("en robot tack", rewardId: "abc"));
+
+        Assert.Single(registry.Snapshot());
+    }
+
+    // The failure the flag could cause if it were ever left switched on: EventSub drops, its events
+    // reach nobody, and IRC has been told to keep quiet – so a redemption spawns nothing at all.
+    // Dropping coverage is what hands the job back to IRC.
+    [Fact]
+    public void GoesBackToIrcWhenEventSubStopsCovering()
+    {
+        (PetService service, PetRegistry registry, _) = Build();
+
+        service.RedemptionsFromEventSub = true;
+        service.HandleMessage(Message("under avbrottet", rewardId: "abc"));
+        Assert.Empty(registry.Snapshot());
+
+        service.RedemptionsFromEventSub = false;
+        service.HandleMessage(Message("efter avbrottet", rewardId: "abc"));
         Assert.Single(registry.Snapshot());
     }
 
