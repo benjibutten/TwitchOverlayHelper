@@ -189,6 +189,10 @@ body[data-zebra="true"] .chat .msg:nth-child(even) { background: var(--surface-a
 .msg-reply-name { flex: 0 0 auto; font-weight: 700; }
 .msg-reply-name::after { content: ":"; }
 .msg-reply-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Inside the name so the colon still lands after both halves. No pill here – the reply line is one
+   quiet row, and a second chip on it would weigh more than the message it belongs to. */
+.msg-reply-nick { font-weight: 400; }
+.msg-reply-nick::before { content: " · "; }
 .msg-reply:hover { color: var(--text); }
 .msg-reply:hover .msg-reply-name { text-decoration: underline; }
 
@@ -204,6 +208,21 @@ body[data-nameline="false"] .msg-text { display: inline; }
   font-family: inherit; font-size: 0.92em; letter-spacing: inherit; color: var(--accent);
 }
 .msg-name:hover { text-decoration: underline; }
+
+/* The name you gave someone, next to the one Twitch gave them – never instead of it: the whole
+   point is to recognise a chatter whose Twitch name says nothing, and replacing it would make the
+   two names impossible to connect. Quiet and pill-shaped so it reads as a note about the sender
+   rather than as part of what they said, and clickable because the place you want to change a
+   nickname is the place you just read it. */
+.msg-nick {
+  flex: 0 0 auto; cursor: pointer; font-family: inherit;
+  font-size: 0.6em; font-weight: 700; line-height: 1; letter-spacing: 0.01em;
+  padding: 3px 7px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface-alt); color: var(--muted);
+  max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.msg-nick:hover { background: var(--surface); color: var(--text); border-color: var(--accent); }
+.msg-nick::before { content: "🏷 "; }
 
 /* Sits right next to the name it reads. Small enough not to compete with the message, big
    enough to hit in a narrow OBS dock. */
@@ -345,8 +364,11 @@ body[data-nameline="false"] .msg-text { display: inline; }
 }
 .sheet-actions { display: flex; flex-direction: column; gap: 7px; }
 /* What the sheet offers without a login. Separated from the moderation row by a rule rather than by
-   a heading: it is one button, and a heading over one button says less than the gap does. */
-.sheet-reading { padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
+   a heading: these are reading aids, and a heading saying so would take more room than it earns. */
+.sheet-reading {
+  display: flex; flex-direction: column; gap: 7px;
+  padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--line);
+}
 .sheet-confirm { margin-top: 10px; }
 .sheet-confirm p { margin: 0 0 8px; font-size: 14px; }
 .sheet-confirm-row { display: flex; gap: 7px; }
@@ -380,5 +402,24 @@ body[data-nameline="false"] .msg-text { display: inline; }
 .raid-meta { min-width: 0; }
 .raid-name { font-weight: 700; font-size: 15px; }
 .raid-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- nicknames ---------- */
+.nick-label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+/* Right under the field, where the eye already is when the limit starts to matter. */
+.nick-count { font-size: 12px; color: var(--muted); text-align: right; margin: 4px 0 10px; }
+.nick-count[data-full="true"] { color: var(--mention-line); font-weight: 700; }
+.nick-note { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+
+.nick-list { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; max-height: 46vh; overflow-y: auto; }
+.nick-item {
+  display: flex; align-items: baseline; gap: 9px; width: 100%; text-align: left;
+  padding: 10px; border-radius: 9px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--text); font-family: inherit; cursor: pointer;
+}
+.nick-item:hover { background: var(--surface-alt); }
+/* The nickname leads, because it is the one you are scanning for; the Twitch name follows so the
+   row still says who it belongs to. */
+.nick-item-name { font-weight: 700; font-size: 15px; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nick-item-sub { font-size: 12px; color: var(--muted); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 18px 10px; }

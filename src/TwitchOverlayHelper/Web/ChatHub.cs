@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading.Channels;
 using TwitchOverlayHelper.Models;
+using TwitchOverlayHelper.Nicknames;
 using TwitchOverlayHelper.Pets;
 using TwitchOverlayHelper.Settings;
 using TwitchOverlayHelper.Twitch;
@@ -14,7 +15,13 @@ namespace TwitchOverlayHelper.Web;
 /// recent history so a dock that reconnects (OBS restart, page reload) is not staring at an
 /// empty column.
 /// </summary>
-public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, TwitchSession session, PetRegistry pets, PetCatalog petCatalog)
+public sealed class ChatHub(
+    AppSettings settings,
+    TwitchBadgeCatalog badges,
+    TwitchSession session,
+    PetRegistry pets,
+    PetCatalog petCatalog,
+    NicknameBook nicknames)
 {
     private const int HistoryLimit = 200;
 
@@ -201,6 +208,15 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
     public void PublishSpeech() =>
         Send(DockJson.Serialize(new DockEnvelope<DockSpeech>("speech", new DockSpeech(SpeechEnabled))));
 
+    /// <summary>
+    /// A nickname was given, changed or taken away. Every dock gets it, including the one that made
+    /// the change: the name has to land on the lines already on screen, and rendering it from a
+    /// lookup rather than from the message means one frame is enough to update the whole column.
+    /// </summary>
+    public void PublishNickname(Nickname entry) =>
+        Send(DockJson.Serialize(new DockEnvelope<DockNickname>("nickname",
+            new DockNickname(entry.UserId, entry.Login, entry.IsRemoval ? null : entry.Text))));
+
     /// <summary>Tells every dock that badge images just became available, so it can re-render.</summary>
     public void PublishBadgesLoaded() =>
         Send(DockJson.Serialize(new DockEnvelope<object?>("badgesLoaded", null)));
@@ -305,7 +321,10 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
             pets.Snapshot().Select(ToDock).ToArray(),
             // A train that has already run out is not news to a dock opening now, and replaying it
             // would put a strip on screen for something that finished before the page existed.
-            hypeTrain is { } train && train.IsWorthShowing(DateTimeOffset.Now) ? DockMapper.ToDock(train) : null));
+            hypeTrain is { } train && train.IsWorthShowing(DateTimeOffset.Now) ? DockMapper.ToDock(train) : null,
+            // The whole book, not the names in the history: a dock that scrolls back to a line from
+            // an hour ago should still see the nickname on it.
+            nicknames.Snapshot().Select(entry => new DockNickname(entry.UserId, entry.Login, entry.Text)).ToArray()));
     }
 
     private DockMessage ToDock(ChatMessage message) => DockMapper.ToDock(message, badge =>

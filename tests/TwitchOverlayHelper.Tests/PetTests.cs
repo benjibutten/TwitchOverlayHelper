@@ -399,7 +399,8 @@ public sealed class PetServiceTests
         settings.Normalize();
         var registry = new PetRegistry();
         var catalog = new PetCatalog(PetsFolder);
-        var hub = new ChatHub(settings, new TwitchBadgeCatalog(), new TwitchSession(new System.Net.Http.HttpClient()), registry, catalog);
+        var hub = new ChatHub(settings, new TwitchBadgeCatalog(), new TwitchSession(new System.Net.Http.HttpClient()), registry, catalog,
+            new TwitchOverlayHelper.Nicknames.NicknameBook());
         return (new PetService(settings, catalog, registry, hub), registry, settings);
     }
 

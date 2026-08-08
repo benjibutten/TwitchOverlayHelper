@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using TwitchOverlayHelper.Nicknames;
 using TwitchOverlayHelper.Pets;
 using TwitchOverlayHelper.Settings;
 using TwitchOverlayHelper.Speech;
@@ -25,6 +26,7 @@ public sealed class DockServerContext
     public required TwitchChatClient Chat { get; init; }
     public required NameSpeechService Speech { get; init; }
     public required PetCatalog Pets { get; init; }
+    public required NicknameBook Nicknames { get; init; }
 }
 
 /// <summary>
@@ -178,6 +180,31 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
             {
                 return Problem(ex.Message);
             }
+        });
+
+        // Naming a chatter is a reading aid on this machine: it changes nothing on Twitch, nobody
+        // but this reader ever sees it, and it works in any channel. So it sits outside everything a
+        // logout takes away, next to the local pin rather than next to the moderation buttons.
+        // The app saves and fans the change out from the book's own change event, which is what
+        // keeps the overlay and every open dock saying the same name.
+        app.MapPost("/api/nickname", (SetNicknameRequest request) =>
+        {
+            string userId = request.UserId?.Trim() ?? string.Empty;
+            string login = request.Login?.Trim().ToLowerInvariant() ?? string.Empty;
+            if (userId.Length == 0 && login.Length == 0)
+                return Problem("Vet inte vem smeknamnet gäller.");
+
+            // Blank text is the way a nickname is taken back, so it is an answer rather than an error.
+            if (NicknameBook.Clean(request.Text).Length == 0)
+            {
+                context.Nicknames.Remove(userId, login);
+                return Results.Json(new { userId, login, text = (string?)null }, DockJson.Options);
+            }
+
+            Nickname? saved = context.Nicknames.Set(userId, login, request.Text);
+            return saved is null
+                ? Problem("Smeknamnet kunde inte sparas.")
+                : Results.Json(saved, DockJson.Options);
         });
 
         // The IRC socket stays authenticated until it is torn down, so a logout has to be enforced

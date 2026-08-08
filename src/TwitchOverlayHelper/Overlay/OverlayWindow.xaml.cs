@@ -10,6 +10,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using TwitchOverlayHelper.Models;
+using TwitchOverlayHelper.Nicknames;
 using TwitchOverlayHelper.Settings;
 using TwitchOverlayHelper.Twitch;
 using XamlAnimatedGif;
@@ -28,6 +29,13 @@ public partial class OverlayWindow : Window
     };
     private readonly AppSettings _settings;
     private readonly TwitchBadgeCatalog _badges;
+    /// <summary>
+    /// The names given to chatters. Read here as well as in the dock: the overlay is where the chat
+    /// is actually watched during a stream, and a name that only helped in one of the two views
+    /// would be worth half as much. Only read – the overlay stays click-through, so nothing here is
+    /// ever set from this window.
+    /// </summary>
+    private readonly NicknameBook _nicknames;
     private readonly AnimatedEmoteLoader _animatedEmotes = new(EmoteHttpClient);
     private readonly DispatcherTimer _topmostTimer;
     private readonly Dictionary<string, BitmapImage> _imageCache = new(StringComparer.Ordinal);
@@ -36,11 +44,12 @@ public partial class OverlayWindow : Window
 
     public event Action? PlacementChanged;
 
-    public OverlayWindow(AppSettings settings, TwitchBadgeCatalog badges)
+    public OverlayWindow(AppSettings settings, TwitchBadgeCatalog badges, NicknameBook nicknames)
     {
         InitializeComponent();
         _settings = settings;
         _badges = badges;
+        _nicknames = nicknames;
         Width = Math.Max(320, settings.OverlayWidth);
         Height = Math.Max(260, settings.OverlayHeight);
         Left = Math.Clamp(settings.OverlayLeft, SystemParameters.VirtualScreenLeft - Width + 80, SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth - 80);
@@ -188,6 +197,10 @@ public partial class OverlayWindow : Window
         if (_settings.UseTwitchNameColors && !string.IsNullOrWhiteSpace(message.NameColor))
             try { nameColor = (Color)ColorConverter.ConvertFromString(message.NameColor)!; } catch (FormatException) { }
         identity.Children.Add(new TextBlock { Text = message.DisplayName, Foreground = new SolidColorBrush(EnsureReadable(nameColor)), FontWeight = FontWeights.Bold, FontSize = _settings.FontSize * 0.78, FontFamily = new FontFamily(_settings.FontFamily), VerticalAlignment = VerticalAlignment.Center });
+        // Beside the Twitch name, never instead of it, and in the quiet grey the timestamps use: it
+        // is a note about who is writing, not a second thing shouting for the same attention.
+        if (_nicknames.For(message.UserId, message.UserLogin) is { Length: > 0 } nickname)
+            identity.Children.Add(new TextBlock { Text = $"  {nickname}", Foreground = new SolidColorBrush(Color.FromRgb(183, 180, 194)), FontSize = _settings.FontSize * 0.7, FontFamily = new FontFamily(_settings.FontFamily), VerticalAlignment = VerticalAlignment.Center });
         if (message.IsFirstMessage)
             identity.Children.Add(CreateLabel("NY", Color.FromRgb(95, 214, 200)));
         if (isMention)
@@ -257,6 +270,15 @@ public partial class OverlayWindow : Window
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center
         });
+        if (_nicknames.For(chatEvent.UserId, chatEvent.UserLogin) is { Length: > 0 } nickname)
+            identity.Children.Add(new TextBlock
+            {
+                Text = $"  {nickname}",
+                Foreground = new SolidColorBrush(Color.FromRgb(183, 180, 194)),
+                FontSize = _settings.FontSize * 0.7,
+                FontFamily = new FontFamily(_settings.FontFamily),
+                VerticalAlignment = VerticalAlignment.Center
+            });
         stack.Children.Add(identity);
 
         // Only some notices carry the chatter's own words, and those words are what people read.

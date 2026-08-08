@@ -14,6 +14,10 @@ const el = {
   sheetPin: $("sheetPin"), sheetPinChat: $("sheetPinChat"),
   sheetConfirm: $("sheetConfirm"), sheetConfirmText: $("sheetConfirmText"),
   raidPanel: $("raidPanel"), raidList: $("raidList"), raidSearch: $("raidSearch"),
+  nickBtn: $("nickBtn"), sheetNick: $("sheetNick"),
+  nickSheet: $("nickSheet"), nickTitle: $("nickTitle"), nickFor: $("nickFor"), nickForm: $("nickForm"),
+  nickInput: $("nickInput"), nickCount: $("nickCount"), nickRemove: $("nickRemove"),
+  nickPanel: $("nickPanel"), nickList: $("nickList"), nickSearch: $("nickSearch"),
   hype: $("hype"), hypeHeadline: $("hypeHeadline"), hypeDetail: $("hypeDetail"),
   hypeBar: $("hypeBar"), hypeFill: $("hypeFill"), hypeTop: $("hypeTop"),
 };
@@ -27,6 +31,7 @@ const state = {
   paused: false,
   missed: 0,
   target: null,        // chatter the bottom sheet is acting on
+  nickTarget: null,    // chatter the nickname sheet is naming
   raidCandidates: [],
   toastTimer: 0,
   removed: new Map(),  // message id -> note, so deletions survive a re-render
@@ -80,6 +85,9 @@ function handle(frame) {
   if (frame.type === "hello") {
     state.mentionName = frame.mentionName || "";
     state.speech = frame.speechEnabled === true;
+    // Before the history is drawn: the names have to be on the lines the moment they appear, not
+    // one repaint later.
+    applyNicknameBook(frame.nicknames);
     applySettings(frame.settings);
     applyAuth(frame.auth);
     setStatus(frame.status.text, frame.status.state);
@@ -132,6 +140,9 @@ function handle(frame) {
   if (frame.type === "settings") { applySettings(frame.payload); return; }
   if (frame.type === "auth") { applyAuth(frame.payload); return; }
   if (frame.type === "speech") { applySpeech(frame.payload.enabled); return; }
+  // Every dock hears it, including the one that made the change: a nickname belongs to the chatter
+  // rather than to a message, so it has to reach the lines that are already on screen.
+  if (frame.type === "nickname") { rememberNickname(frame.payload); redrawNicknames(); return; }
   if (frame.type === "badgesLoaded") { location.reload(); }
 }
 
@@ -373,6 +384,16 @@ function buildReply(reply) {
   name.className = "msg-reply-name";
   name.textContent = reply.displayName;
 
+  // The answered message is often from someone whose Twitch name says nothing, and the reply line
+  // is exactly where you are trying to remember who that was.
+  const nickname = nicknameOf(null, reply.login);
+  if (nickname) {
+    const nickNode = document.createElement("span");
+    nickNode.className = "msg-reply-nick";
+    nickNode.textContent = nickname;
+    name.appendChild(nickNode);
+  }
+
   const quote = document.createElement("span");
   quote.className = "msg-reply-text";
   quote.textContent = reply.text;
@@ -439,6 +460,9 @@ function build(message) {
   name.addEventListener("click", () => openUserSheet(message));
   head.appendChild(name);
 
+  const nickname = nicknameOf(message.userId, message.login);
+  if (nickname) head.appendChild(nickChip(message, nickname));
+
   if (state.speech) head.appendChild(speakButton(message));
 
   if (message.isFirstMessage) head.appendChild(tag("ny", "new"));
@@ -498,6 +522,12 @@ function buildEvent(chatEvent) {
   headline.textContent = chatEvent.headline;
   head.appendChild(headline);
 
+  // "NyTittare prenumererar" says nothing about who that is; the name you gave them does. The
+  // headline is worded in the app and names the chatter, so the chip goes after it rather than
+  // inside it.
+  const nickname = nicknameOf(chatEvent.userId, chatEvent.login);
+  if (nickname) head.appendChild(nickChip(chatEvent, nickname));
+
   node.appendChild(head);
   // Subs and announcements often carry the chatter's own words, which are the part worth reading.
   if (chatEvent.message) node.appendChild(renderBody({ text: chatEvent.message, emotes: chatEvent.emotes, isAction: false }));
@@ -520,14 +550,20 @@ function markRemoved(node, note) {
   node.appendChild(label);
 }
 
-function rerender() {
+function rerender(preserveReadingPosition = false) {
   // Switching a kind of event off takes the cards that are up down with it – leaving them would say
   // the switch only applies to a chat that has not happened yet. Switching it back on cannot put
   // them back, so the promise is the honest half of that: off now, on from here.
+  const wasFollowing = state.stick && !state.paused;
+  const previousScrollTop = el.chat.scrollTop;
   const items = [...el.chat.children].map((node) => node.item)
     .filter((item) => item && (item.kind !== "event" || showsEvent(item.data)));
   el.chat.replaceChildren(...items.map(buildItem));
-  scrollToEnd();
+  if (!preserveReadingPosition || wasFollowing) scrollToEnd();
+  else {
+    state.stick = false;
+    el.chat.scrollTop = previousScrollTop;
+  }
 }
 
 function appendItem(item, isHistory) {
@@ -767,9 +803,201 @@ function speakName(message, button) {
     .finally(() => { button.dataset.busy = "false"; });
 }
 
+/* ---------------------------------------------------------------- nicknames */
+
+/* A Twitch name is chosen to look a certain way, not to be recognised: xXx-padding, deliberate
+   misspellings, three regulars whose names all start the same. So a chatter can be given a name of
+   your own, shown next to theirs and nowhere else – it never leaves this machine and no viewer ever
+   sees it.
+
+   Held as a book of its own rather than as a field on each message: the name belongs to the person,
+   so giving one has to reach every line they have already written, including the ones replayed from
+   the history. The app owns the book and saves it; this is a copy for drawing. */
+const nick = { entries: [], byId: new Map(), byLogin: new Map() };
+
+function applyNicknameBook(list) {
+  nick.entries = (list || []).filter((entry) => entry && entry.text);
+  reindexNicknames();
+}
+
+/* One nickname given, changed or taken away. An entry without text is a removal. */
+function rememberNickname(entry) {
+  if (!entry) return;
+  const index = nick.entries.findIndex((existing) => sameChatter(existing, entry));
+  if (!entry.text) { if (index >= 0) nick.entries.splice(index, 1); }
+  else if (index >= 0) nick.entries[index] = entry;
+  else nick.entries.push(entry);
+  reindexNicknames();
+}
+
+/* The numeric id decides when both sides have one: a login can be changed, and later be taken by
+   somebody else entirely. A line that arrived without an id – the sample chat – has only the login. */
+function sameChatter(a, b) {
+  if (a.userId && b.userId) return a.userId === b.userId;
+  return Boolean(a.login) && a.login.toLowerCase() === (b.login || "").toLowerCase();
+}
+
+function reindexNicknames() {
+  nick.byId.clear();
+  nick.byLogin.clear();
+  for (const entry of nick.entries) {
+    if (entry.userId) nick.byId.set(entry.userId, entry.text);
+    if (entry.login) nick.byLogin.set(entry.login.toLowerCase(), entry.text);
+  }
+}
+
+function nicknameOf(userId, login) {
+  // A known id is authoritative. A login may later be reused by a different Twitch account.
+  if (userId) return nick.byId.get(userId) || "";
+  if (login && nick.byLogin.has(login.toLowerCase())) return nick.byLogin.get(login.toLowerCase());
+  return "";
+}
+
+/* Names are baked into the markup next to the one Twitch gave, so a change has to rebuild what is
+   already on screen – the pinned strip included, or one line would keep saying the old name. */
+function redrawNicknames() {
+  if (!state.settings) return;
+  rerender(true);
+  renderPins();
+  if (!el.nickPanel.hidden) renderNickList();
+}
+
+function nickChip(message, nickname) {
+  const chip = document.createElement("button");
+  chip.className = "msg-nick";
+  chip.type = "button";
+  chip.textContent = nickname;
+  const label = `Smeknamn för ${message.displayName} – klicka för att ändra`;
+  chip.title = label;
+  chip.setAttribute("aria-label", label);
+  chip.addEventListener("click", () => openNickSheet(message));
+  return chip;
+}
+
+/* Takes anything carrying a login and a name: a chat message, or a row in the list of every
+   nickname – where the Twitch name is all that was written down. */
+function openNickSheet(target) {
+  state.nickTarget = { userId: target.userId || "", login: target.login || "", displayName: target.displayName || target.login || "" };
+  const current = nicknameOf(state.nickTarget.userId, state.nickTarget.login);
+
+  el.nickTitle.textContent = current ? "Ändra smeknamn" : "Sätt smeknamn";
+  el.nickFor.textContent = state.nickTarget.login && state.nickTarget.login !== state.nickTarget.displayName.toLowerCase()
+    ? `${state.nickTarget.displayName} (@${state.nickTarget.login})`
+    : state.nickTarget.displayName;
+  el.nickInput.value = current;
+  el.nickRemove.hidden = !current;
+  updateNickCount();
+  openSheet("nickSheet");
+  // The sheet exists only to type in, so it opens with the caret already there and the old name
+  // selected: replacing it is then one keystroke rather than a hunt for the end of the field.
+  el.nickInput.focus();
+  el.nickInput.select();
+}
+
+function updateNickCount() {
+  const length = el.nickInput.value.trim().length;
+  el.nickCount.textContent = String(length);
+  el.nickCount.parentElement.dataset.full = String(length >= 24);
+}
+
+el.nickInput.addEventListener("input", updateNickCount);
+
+el.nickForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveNickname(el.nickInput.value);
+});
+
+el.nickRemove.addEventListener("click", () => saveNickname(""));
+
+el.sheetNick.addEventListener("click", () => {
+  if (state.target) openNickSheet(state.target);
+});
+
+/* Blank text is how a nickname is taken back – the same call, so there is one thing that can fail
+   and one place it is answered. The undo in the notice is the reason the previous name is read
+   before the call rather than after it. */
+function saveNickname(text) {
+  const target = state.nickTarget;
+  if (!target) return;
+  const previous = nicknameOf(target.userId, target.login);
+  el.nickSheet.hidden = true;
+
+  api("/api/nickname", {
+    method: "POST",
+    body: JSON.stringify({ userId: target.userId, login: target.login, text }),
+  })
+    .then((saved) => {
+      // The app tells every dock, this one included. Applying the answer here as well means the
+      // name still lands if the socket happens to be reconnecting at this exact moment.
+      rememberNickname(saved || { userId: target.userId, login: target.login, text: "" });
+      redrawNicknames();
+
+      const undo = previous === (saved && saved.text ? saved.text : "")
+        ? undefined
+        : { label: "Ångra", action: () => restoreNickname(target, previous) };
+      toast(saved && saved.text
+        ? `${target.displayName} visas nu som “${saved.text}”.`
+        : `Smeknamnet för ${target.displayName} är borttaget.`, "info", undo);
+    })
+    .catch((error) => toast(error.message, "error"));
+}
+
+function restoreNickname(target, text) {
+  api("/api/nickname", {
+    method: "POST",
+    body: JSON.stringify({ userId: target.userId, login: target.login, text }),
+  })
+    .then((saved) => {
+      rememberNickname(saved || { userId: target.userId, login: target.login, text: "" });
+      redrawNicknames();
+    })
+    .catch((error) => toast(error.message, "error"));
+}
+
+/* Every nickname in one list. Without it, a name given months ago can only be found again by
+   waiting for its owner to say something. */
+el.nickBtn.addEventListener("click", () => {
+  openSheet("nickPanel");
+  renderNickList();
+});
+
+el.nickSearch.addEventListener("input", renderNickList);
+
+function renderNickList() {
+  const term = el.nickSearch.value.trim().toLowerCase();
+  const matches = nick.entries
+    .filter((entry) => !term || entry.text.toLowerCase().includes(term) || (entry.login || "").includes(term))
+    .sort((a, b) => a.text.localeCompare(b.text, "sv"));
+
+  if (!matches.length) {
+    el.nickList.replaceChildren(message(nick.entries.length
+      ? "Ingen träff."
+      : "Inga smeknamn än. Klicka på ett namn i chatten för att sätta ett."));
+    return;
+  }
+
+  el.nickList.replaceChildren(...matches.map((entry) => {
+    const button = document.createElement("button");
+    button.className = "nick-item";
+    button.type = "button";
+
+    const name = document.createElement("span");
+    name.className = "nick-item-name";
+    name.textContent = entry.text;
+
+    const sub = document.createElement("span");
+    sub.className = "nick-item-sub";
+    sub.textContent = entry.login ? `@${entry.login}` : "okänt konto";
+
+    button.append(name, sub);
+    button.addEventListener("click", () => openNickSheet({ userId: entry.userId, login: entry.login, displayName: entry.login || entry.text }));
+    return button;
+  }));
+}
+
 /* ------------------------------------------------------------ user actions */
 
-const SHEETS = ["userSheet", "raidPanel"];
+const SHEETS = ["userSheet", "raidPanel", "nickSheet", "nickPanel"];
 
 function closeSheets() {
   for (const id of SHEETS) $(id).hidden = true;
@@ -782,9 +1010,13 @@ function openSheet(id) {
 
 function openUserSheet(message) {
   state.target = message;
-  el.sheetName.textContent = message.displayName;
+  const nickname = nicknameOf(message.userId, message.login);
+  // The name you gave them leads here too, for the same reason it does in the column: the sheet is
+  // about a person, and the Twitch name is the half that was hard to place.
+  el.sheetName.textContent = nickname ? `${nickname} · ${message.displayName}` : message.displayName;
   el.sheetQuote.textContent = message.text;
   el.sheetConfirm.hidden = true;
+  el.sheetNick.textContent = nickname ? "🏷 Ändra smeknamn" : "🏷 Sätt smeknamn";
   el.sheetPin.textContent = pinLabel(message);
   el.sheetPinChat.textContent = state.sharedPin === message.id
     ? "📌 Ta bort tittarnas nål"

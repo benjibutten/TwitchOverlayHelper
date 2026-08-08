@@ -6,6 +6,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using TwitchOverlayHelper.Models;
+using TwitchOverlayHelper.Nicknames;
 using TwitchOverlayHelper.Pets;
 using TwitchOverlayHelper.Settings;
 using TwitchOverlayHelper.Speech;
@@ -27,12 +28,18 @@ public sealed class DockServerTests
 
     private static async Task<(DockServer Server, AppSettings Settings, HttpClient Client)> StartAsync()
     {
-        (DockServer server, AppSettings settings, HttpClient client, _) = await StartWithHubAsync(loggedInUserId: null);
+        (DockServer server, AppSettings settings, HttpClient client, _, _) = await StartWithBookAsync(loggedInUserId: null);
         return (server, settings, client);
     }
 
-    /// <summary>Seeding the token store is what makes the session look logged in without touching Twitch.</summary>
     private static async Task<(DockServer Server, AppSettings Settings, HttpClient Client, ChatHub Hub)> StartWithHubAsync(string? loggedInUserId)
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub, _) = await StartWithBookAsync(loggedInUserId);
+        return (server, settings, client, hub);
+    }
+
+    /// <summary>Seeding the token store is what makes the session look logged in without touching Twitch.</summary>
+    private static async Task<(DockServer Server, AppSettings Settings, HttpClient Client, ChatHub Hub, NicknameBook Nicknames)> StartWithBookAsync(string? loggedInUserId)
     {
         var settings = new AppSettings { DockServerPort = FreePort() };
         settings.Normalize();
@@ -46,7 +53,11 @@ public sealed class DockServerTests
         var chat = new TwitchChatClient();
         // Shared so the pets that ship with the app are written out once, not once per test.
         var petCatalog = new PetCatalog(Path.Combine(Path.GetTempPath(), "toh-tests-pets"));
-        var hub = new ChatHub(settings, new TwitchBadgeCatalog(), session, new PetRegistry(), petCatalog);
+        var nicknames = new NicknameBook();
+        var hub = new ChatHub(settings, new TwitchBadgeCatalog(), session, new PetRegistry(), petCatalog, nicknames);
+        // The same wiring the app does: the book is what a nickname change is announced from, so
+        // every open dock hears about one made through any of them.
+        nicknames.Changed += hub.PublishNickname;
         var server = new DockServer(new DockServerContext
         {
             Settings = settings,
@@ -55,11 +66,12 @@ public sealed class DockServerTests
             Api = new TwitchApiClient(new HttpClient(), session),
             Chat = chat,
             Speech = SpeechFixture.Service(settings),
-            Pets = petCatalog
+            Pets = petCatalog,
+            Nicknames = nicknames
         });
 
         Assert.True(await server.StartAsync());
-        return (server, settings, new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{settings.DockServerPort}") }, hub);
+        return (server, settings, new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{settings.DockServerPort}") }, hub, nicknames);
     }
 
     private static async Task<string> ErrorOfAsync(HttpResponseMessage response)
@@ -526,6 +538,99 @@ public sealed class DockServerTests
             hub.SpeechEnabled = true;
             using JsonDocument on = JsonDocument.Parse(await client.GetStringAsync($"/api/state?key={settings.DockAccessKey}"));
             Assert.True(on.RootElement.GetProperty("speechEnabled").GetBoolean());
+        }
+        client.Dispose();
+    }
+
+    // Naming a chatter changes nothing on Twitch and nobody else ever sees it, so it works in any
+    // channel and without a login – like the local pin, and unlike everything in the moderation row.
+    [Fact]
+    public async Task NamesAChatterWithoutALogin()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, _, NicknameBook nicknames) =
+            await StartWithBookAsync(loggedInUserId: null);
+        await using (server)
+        {
+            HttpResponseMessage response = await client.PostAsJsonAsync(
+                $"/api/nickname?key={settings.DockAccessKey}", new { userId = "7", login = "Kajsa", text = "  Grannen  " });
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("Grannen", nicknames.For("7", null));
+            // The login is stored lowercased, which is the form every chat line carries.
+            Assert.Equal("Grannen", nicknames.For(null, "kajsa"));
+        }
+        client.Dispose();
+    }
+
+    // Blank text is the way one is taken back; there is no second endpoint for it.
+    [Fact]
+    public async Task TakesANicknameBackWhenTheTextIsCleared()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, _, NicknameBook nicknames) =
+            await StartWithBookAsync(loggedInUserId: null);
+        await using (server)
+        {
+            nicknames.Set("7", "kajsa", "Grannen");
+
+            HttpResponseMessage response = await client.PostAsJsonAsync(
+                $"/api/nickname?key={settings.DockAccessKey}", new { userId = "7", login = "kajsa", text = "   " });
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Null(nicknames.For("7", "kajsa"));
+        }
+        client.Dispose();
+    }
+
+    [Fact]
+    public async Task RefusesANicknameWithNobodyToPutItOn()
+    {
+        (DockServer server, AppSettings settings, HttpClient client) = await StartAsync();
+        await using (server)
+        {
+            Assert.Contains("Vet inte vem", await ErrorOfAsync(await client.PostAsJsonAsync(
+                $"/api/nickname?key={settings.DockAccessKey}", new { userId = "", login = "", text = "Grannen" })));
+        }
+        client.Dispose();
+    }
+
+    // A nickname belongs to the chatter, not to one message, so it has to reach the docks that are
+    // already open – including the lines they drew before it existed.
+    [Fact]
+    public async Task TellsEveryDockAboutANewNickname()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, _, NicknameBook nicknames) =
+            await StartWithBookAsync(loggedInUserId: null);
+        await using (server)
+        {
+            string[] frames = await FramesAfterHelloAsync(settings, 1, () => nicknames.Set("7", "kajsa", "Grannen"));
+
+            using JsonDocument frame = JsonDocument.Parse(frames[0]);
+            Assert.Equal("nickname", frame.RootElement.GetProperty("type").GetString());
+            JsonElement payload = frame.RootElement.GetProperty("payload");
+            Assert.Equal("7", payload.GetProperty("userId").GetString());
+            Assert.Equal("Grannen", payload.GetProperty("text").GetString());
+        }
+        client.Dispose();
+    }
+
+    // A dock that reloads must not lose the names: they are read from a book it is handed up front,
+    // not from the messages, so they land on the replayed history too.
+    [Fact]
+    public async Task HandsTheWholeNicknameBookToADockThatConnects()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub, NicknameBook nicknames) =
+            await StartWithBookAsync(loggedInUserId: null);
+        await using (server)
+        {
+            nicknames.Set("7", "kajsa", "Grannen");
+            hub.SetChannel("kanal_a");
+
+            using JsonDocument hello = JsonDocument.Parse(await HelloAsync(settings));
+            JsonElement book = hello.RootElement.GetProperty("nicknames");
+
+            Assert.Equal(1, book.GetArrayLength());
+            Assert.Equal("Grannen", book[0].GetProperty("text").GetString());
+            Assert.Equal("kajsa", book[0].GetProperty("login").GetString());
         }
         client.Dispose();
     }

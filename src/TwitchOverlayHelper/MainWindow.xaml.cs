@@ -9,6 +9,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using TwitchOverlayHelper.Interop;
 using TwitchOverlayHelper.Models;
+using TwitchOverlayHelper.Nicknames;
 using TwitchOverlayHelper.Overlay;
 using TwitchOverlayHelper.Pets;
 using TwitchOverlayHelper.Services;
@@ -25,6 +26,13 @@ public partial class MainWindow : Window
     private const int EditHotkeyId = 9002;
 
     private readonly SettingsStore _settingsStore = new();
+    /// <summary>
+    /// Nicknames are the one thing in the app the user typed by hand and cannot get back from
+    /// Twitch, so they get a file of their own and are written the moment they change – with a
+    /// dated copy kept beside every save.
+    /// </summary>
+    private readonly NicknameStore _nicknameStore = new();
+    private readonly NicknameBook _nicknames;
     private readonly TwitchBadgeCatalog _badgeCatalog = new();
     private readonly TwitchChatClient _chatClient = new();
     private readonly StartupRegistrySyncService _startupRegistrySyncService = new();
@@ -93,13 +101,15 @@ public partial class MainWindow : Window
         InitializeComponent();
         VersionText.Text = AppVersion.DisplayText;
         _settings = _settingsStore.Load();
+        _nicknames = _nicknameStore.Load();
+        _nicknames.Changed += OnNicknameChanged;
         SyncStartWithWindows();
         _session = new TwitchSession(_httpClient);
         _apiClient = new TwitchApiClient(_httpClient, _session);
         _eventSubClient = new TwitchEventSubClient(_session, _apiClient);
         _namePlayer = new NameAudioPlayer(Dispatcher);
         _nameSpeech = new NameSpeechService(_speechHttpClient, _settings, _speechSecrets, _namePlayer.PlayAsync);
-        _hub = new ChatHub(_settings, _badgeCatalog, _session, _petRegistry, _petCatalog) { SpeechEnabled = _nameSpeech.IsConfigured };
+        _hub = new ChatHub(_settings, _badgeCatalog, _session, _petRegistry, _petCatalog, _nicknames) { SpeechEnabled = _nameSpeech.IsConfigured };
         _petService = new PetService(_settings, _petCatalog, _petRegistry, _hub);
         _dockContext = new DockServerContext
         {
@@ -109,10 +119,11 @@ public partial class MainWindow : Window
             Api = _apiClient,
             Chat = _chatClient,
             Speech = _nameSpeech,
-            Pets = _petCatalog
+            Pets = _petCatalog,
+            Nicknames = _nicknames
         };
         _dockServer = new DockServer(_dockContext);
-        _overlay = new OverlayWindow(_settings, _badgeCatalog);
+        _overlay = new OverlayWindow(_settings, _badgeCatalog, _nicknames);
         _edgeAlerts = new EdgeAlertWindow();
         _chatFlushTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(75) };
         _chatFlushTimer.Tick += FlushPendingMessages;
@@ -1307,6 +1318,33 @@ public partial class MainWindow : Window
         if (_loading || _closing) return;
         _settingsSaveTimer.Stop();
         _settingsSaveTimer.Start();
+    }
+
+    /// <summary>
+    /// A chatter was given a name, or lost one. Raised from whichever thread the dock request came
+    /// in on, so everything here either takes its own lock or is hopped onto the UI thread.
+    ///
+    /// Written to disk immediately rather than on the settings timer: this is the one piece of data
+    /// in the app that cannot be fetched again from anywhere, and a name typed seconds before a
+    /// crash should still be there afterwards. The store keeps a dated copy of every save, so a
+    /// nickname that is overwritten by mistake is recoverable as well.
+    /// </summary>
+    private void OnNicknameChanged(Nickname entry)
+    {
+        try
+        {
+            _nicknameStore.Save(_nicknames);
+            if (_nicknameStore.LastBackupError is { Length: > 0 } backupError)
+                RunOnUi(() => SetStatus("Smeknamnet sparades, men säkerhetskopian kunde inte skapas: " + backupError, true));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            RunOnUi(() => SetStatus("Smeknamnet kunde inte sparas: " + ex.Message, true));
+        }
+
+        _hub.PublishNickname(entry);
+        // The name is baked into the cards the overlay has already drawn, so they are rebuilt.
+        RunOnUi(_overlay.RefreshMessages);
     }
 
     private void SaveSettingsNow()

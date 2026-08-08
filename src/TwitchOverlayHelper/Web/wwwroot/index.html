@@ -13,6 +13,7 @@
   <div class="bar-actions">
     <button id="pauseBtn" class="icon-btn" type="button" title="Pausa chatten" aria-label="Pausa chatten">⏸</button>
     <button id="refreshBtn" class="icon-btn" type="button" title="Ladda om chatten" aria-label="Ladda om chatten">⟳</button>
+    <button id="nickBtn" class="icon-btn" type="button" title="Smeknamn" aria-label="Smeknamn">🏷</button>
     <button id="raidBtn" class="icon-btn" type="button" title="Raida en kanal" aria-label="Raida en kanal" hidden>📡</button>
   </div>
 </header>
@@ -56,10 +57,12 @@
       <button class="sheet-close icon-btn" type="button" data-close="userSheet" aria-label="Stäng">✕</button>
     </div>
     <p id="sheetQuote" class="sheet-quote"></p>
-    <!-- Pinning a line to the strip above changes nothing on Twitch and nobody else sees it, so it
-         is offered whether or not anyone is logged in – unlike the moderation row below. -->
+    <!-- Pinning a line to the strip above and naming a chatter both change nothing on Twitch and
+         are seen by nobody else, so they are offered whether or not anyone is logged in – unlike
+         the moderation row below. -->
     <div class="sheet-reading">
       <button id="sheetPin" class="action" type="button">📌 Nåla fast här</button>
+      <button id="sheetNick" class="action" type="button">🏷 Sätt smeknamn</button>
     </div>
     <div id="sheetActions" class="sheet-actions">
       <button id="sheetPinChat" class="action" type="button" data-act="pinChat">📌 Nåla fast för tittarna</button>
@@ -91,6 +94,42 @@
     <input id="raidSearch" class="field" type="search" placeholder="Sök bland dina följda kanaler …" autocomplete="off">
     <div id="raidList" class="raid-list"></div>
     <button id="raidCancel" class="action action-quiet" type="button">Avbryt pågående raid</button>
+  </div>
+</div>
+
+<!-- Naming one chatter. Its own sheet rather than a field in the user sheet: it is the one thing
+     here that is typed rather than pressed, and a text field wants the whole width and the caret. -->
+<div id="nickSheet" class="sheet" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="nickTitle">
+    <div class="sheet-head">
+      <span id="nickTitle" class="sheet-name">Smeknamn</span>
+      <button class="sheet-close icon-btn" type="button" data-close="nickSheet" aria-label="Stäng">✕</button>
+    </div>
+    <p id="nickFor" class="sheet-quote"></p>
+    <form id="nickForm">
+      <label class="nick-label" for="nickInput">Visas bredvid namnet i chatten – bara för dig.</label>
+      <input id="nickInput" class="field" type="text" maxlength="24" autocomplete="off"
+             autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="T.ex. Kajsa från jobbet">
+      <div class="nick-count"><span id="nickCount">0</span>/24</div>
+      <div class="sheet-confirm-row">
+        <button id="nickSave" class="action" type="submit">💾 Spara</button>
+        <button id="nickRemove" class="action action-quiet" type="button" hidden>🗑 Ta bort</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Every nickname in one place, so a name that was given months ago can be found again without
+     waiting for its owner to say something. -->
+<div id="nickPanel" class="sheet" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="nickPanelTitle">
+    <div class="sheet-head">
+      <span id="nickPanelTitle" class="sheet-name">Smeknamn</span>
+      <button class="sheet-close icon-btn" type="button" data-close="nickPanel" aria-label="Stäng">✕</button>
+    </div>
+    <input id="nickSearch" class="field" type="search" placeholder="Sök smeknamn eller användare …" autocomplete="off">
+    <div id="nickList" class="nick-list"></div>
+    <p class="nick-note">Sparas i appen, med en säkerhetskopia vid varje ändring.</p>
   </div>
 </div>
 

@@ -13,6 +13,7 @@ Appen kör en lokal webbserver som serverar en chatt byggd för läsbarhet. Adre
 - **Nåla fast för hand**: klicka på ett namn och nåla raden i remsan. Fungerar utan inloggning – nålen syns bara för dig. Är du inloggad med modbehörighet kan samma rad nålas i chatten så tittarna ser den.
 - Länkar kortas till en `🔗 länk`-knapp, VERSALER dämpas och `!kommandon` tonas ner.
 - Paus, zebra-rader, namn på egen rad och val av typsnitt.
+- **Smeknamn**: klicka på ett namn och ge chattaren ett namn du känner igen. Det visas bredvid Twitch-namnet i både docken och overlayen. Se [Smeknamn på chattare](#smeknamn-på-chattare).
 - Moderering med stora knappar: klicka på ett namn för timeout, ban eller att ta bort meddelandet. Ban kräver bekräftelse och åtgärder går att ångra direkt i notisen.
 - Raid-väljare som listar de kanaler du följer som är live just nu.
 - Skrivfält för att svara i chatten.
@@ -49,6 +50,18 @@ Power-upen *förstorad emote* ritas i full storlek på en egen rad. Meddelandeef
 
 Varje typ går att stänga av för sig: overlayens val ligger under **Händelser i overlayen** i appen, dockens under **Ändra chattens läsbarhet → Händelser i chatten**. De är separata, eftersom en overlay ovanpå ett spel tål mindre än en dock man läser i lugn och ro. Att stänga av en typ tar bort korten som redan står kvar; att slå på den igen gäller det som händer sedan (docken hämtar tillbaka historiken vid omladdning). Reglagen styr bara korten – en belöning triggar fortfarande pets, och en cheer är fortfarande en markör på meddelandet den kom med.
 
+## Smeknamn på chattare
+
+Twitch-namn är valda för att se ut på ett visst sätt, inte för att kännas igen: `xXx`-utfyllnad, medvetna felstavningar och tre stammisar vars namn börjar likadant. Därför går det att ge en chattare ett eget namn som visas **bredvid** Twitch-namnet – aldrig i stället för det, eftersom hela poängen är att koppla ihop de två.
+
+- Klicka på ett namn i docken → **🏷 Sätt smeknamn**, eller klicka direkt på ett smeknamn som redan står där för att ändra det.
+- 🏷-knappen i dockens överkant listar alla smeknamn med sökruta, så ett namn du satte för ett halvår sedan går att hitta utan att vänta på att personen skriver något.
+- Smeknamnet syns i **både docken och overlayen**, på alla rader personen redan skrivit – även i historiken efter en omladdning. Overlayen är fortfarande klickigenom och inert; den visar smeknamnen men går inte att sätta dem från.
+- Det lämnar aldrig datorn. Ingen tittare ser det, ingenting skickas till Twitch, och det krävs varken inloggning eller modbehörighet – precis som den lokala nålen.
+- Namnet knyts i första hand till Twitch-ID:t, så det följer med om personen byter användarnamn. Ett tomt fält (eller **🗑 Ta bort**) tar bort smeknamnet, och notisen efteråt har en **Ångra**-knapp.
+
+Smeknamn sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\nicknames.json` – en egen fil, eftersom det är det enda i appen som är handskrivet och omöjligt att hämta tillbaka från Twitch. Filen skrivs i samma ögonblick som något ändras (inte på en timer), och skrivningen är atomisk: en avbruten sparning kan aldrig lämna en halv fil efter sig. Vid **varje** sparning läggs dessutom en daterad kopia i `%LOCALAPPDATA%\TwitchOverlayHelper\backups\`; de tjugo senaste sparas. Går huvudfilen sönder läses den nyaste kopian som fortfarande går att tolka, och den skrivs tillbaka på plats – i stället för att appen startar med en tom lista.
+
 ## Uppläsning av namn
 
 Twitch-namn är skrivna för att titta på, inte för att säga: dekorativa x, dubblerade bokstäver och versala förkortningar. Med uppläsning påslagen får varje namn i docken en `🔊`-knapp. Ett klick skickar namnet till **DeepSeek** (`deepseek-v4-flash`), som svarar med en rad om hur en människa sannolikt skulle säga det, och den raden läses upp av **ElevenLabs** (`eleven_v3`) på datorn där appen körs – inte i webbläsaren, eftersom en dock i OBS ofta är dämpad eller ligger på en annan ljudenhet.
@@ -83,6 +96,7 @@ Om DeepSeek inte svarar läses namnet upp som det står, med en notis om varför
 - Riktiga Twitch-badge-bilder när Client ID och OAuth-token anges.
 - Automatisk återanslutning, PING/PONG-hantering och tydligt stopp vid nekad inloggning.
 - Uppläsning av chattares namn via DeepSeek och ElevenLabs, för namn som är svåra att läsa högt.
+- Egna smeknamn på chattare, synliga i både dock och overlay, sparade med säkerhetskopia vid varje ändring.
 - Inställningar sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\settings.json`. OAuth-token sparas aldrig.
 - Körs som en enda instans; en ny vanlig start öppnar den redan körande appens inställningsfönster.
 - Valbar **Starta med Windows**-inställning som startar appen minimerad i meddelandefältet utan extra bakgrundstjänst.

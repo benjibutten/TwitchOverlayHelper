@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TwitchOverlayHelper.Models;
+using TwitchOverlayHelper.Nicknames;
 using TwitchOverlayHelper.Settings;
 
 namespace TwitchOverlayHelper.Web;
@@ -87,6 +88,14 @@ internal sealed record DockHypeTrain(
     IReadOnlyList<string> Top,
     long? ExpiresAt);
 
+/// <summary>
+/// One nickname on the wire. Sent as a small book of its own rather than baked into every message,
+/// because a name given now has to reach the lines that are already on screen – including the
+/// replayed history – and a lookup the dock holds is the only version of that which cannot drift.
+/// A missing text means the nickname was taken away.
+/// </summary>
+internal sealed record DockNickname(string UserId, string Login, string? Text);
+
 internal sealed record DockStatus(string Text, string State);
 
 internal sealed record DockAuth(bool LoggedIn, string Login, bool CanSend, bool CanRaid, string? Error);
@@ -103,7 +112,8 @@ internal sealed record DockHello(
     DockPetSettings PetSettings,
     IReadOnlyList<DockPetDefinition> PetCatalog,
     IReadOnlyList<DockPet> Pets,
-    DockHypeTrain? HypeTrain);
+    DockHypeTrain? HypeTrain,
+    IReadOnlyList<DockNickname> Nicknames);
 
 internal sealed record DockPet(string Id, string Name, string? Color, string Species, long SpawnedAt, long ExpiresAt);
 
