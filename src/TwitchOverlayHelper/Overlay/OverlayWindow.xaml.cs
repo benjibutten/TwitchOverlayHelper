@@ -66,8 +66,10 @@ public partial class OverlayWindow : Window
         _renderSettings = current;
 
         // Rebuilt from the tags, so a settings change keeps events in the reading order they landed in.
+        // Switching a kind of event off takes the cards that are up down with it; switching it back
+        // on cannot bring them back, and only applies to what happens from here.
         ChatTimelineItem[] items = MessagePanel.Children.OfType<Border>().Select(card => card.Tag)
-            .OfType<ChatTimelineItem>().TakeLast(_settings.MaxMessages).ToArray();
+            .OfType<ChatTimelineItem>().Where(IsShown).TakeLast(_settings.MaxMessages).ToArray();
         ClearMessages();
         foreach (ChatTimelineItem item in items) MessagePanel.Children.Add(CreateCard(item));
         if (items.Length > 0) ChatScroller.ScrollToEnd();
@@ -81,12 +83,24 @@ public partial class OverlayWindow : Window
 
     public void AddItems(IReadOnlyList<ChatTimelineItem> items)
     {
+        int added = 0;
         foreach (ChatTimelineItem item in items)
+        {
+            if (!IsShown(item)) continue;
             MessagePanel.Children.Add(CreateCard(item));
+            added++;
+        }
         // Event cards share the column with the chat lines, so they count towards the limit too.
         while (MessagePanel.Children.Count > _settings.MaxMessages) RemoveOldestMessage();
-        if (items.Count > 0) ChatScroller.ScrollToEnd();
+        if (added > 0) ChatScroller.ScrollToEnd();
     }
+
+    /// <summary>
+    /// Whether this line is one the overlay has been asked to draw. Chat messages always are – the
+    /// switches are about event cards, which is where a quiet overlay over a game earns its keep.
+    /// </summary>
+    private bool IsShown(ChatTimelineItem item) =>
+        item.Event is not { } chatEvent || _settings.Events.Allows(chatEvent.Type);
 
     /// <summary>
     /// Replaces a line already on screen with a changed version of itself. Only one thing needs it:
@@ -604,6 +618,9 @@ public partial class OverlayWindow : Window
         bool EmphasizeMentions,
         bool ShowEmotes,
         bool GiantEmotes,
+        // A copy, not the live object: comparing the settings against themselves would find them
+        // equal however often they changed, and the rebuild would never run.
+        ChatEventVisibility Events,
         bool TextOutline,
         string MentionName)
     {
@@ -618,6 +635,7 @@ public partial class OverlayWindow : Window
             settings.EmphasizeMentions,
             settings.ShowEmotes,
             settings.GiantEmotes,
+            settings.Events with { },
             settings.TextOutline,
             string.IsNullOrWhiteSpace(settings.UserName) ? settings.Channel : settings.UserName);
     }

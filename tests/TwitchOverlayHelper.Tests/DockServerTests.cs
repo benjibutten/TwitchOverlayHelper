@@ -173,6 +173,56 @@ public sealed class DockServerTests
         client.Dispose();
     }
 
+    // Nailing a line to the dock's own strip never reaches this server. Putting it in front of the
+    // viewers does, and it is a Twitch call like any other moderation button: no channel, no call.
+    [Fact]
+    public async Task RefusesPinningForViewersBeforeTheChannelIsConnected()
+    {
+        (DockServer server, AppSettings settings, HttpClient client) = await StartAsync();
+        await using (server)
+        {
+            Assert.Contains("inte ansluten", await ErrorOfAsync(await client.PostAsJsonAsync(
+                $"/api/chat/pin?key={settings.DockAccessKey}", new { messageId = "abc" })));
+            Assert.Contains("inte ansluten", await ErrorOfAsync(await client.PostAsJsonAsync(
+                $"/api/chat/unpin?key={settings.DockAccessKey}", new { messageId = "abc" })));
+        }
+        client.Dispose();
+    }
+
+    // The strip in the dock needs no login, which is the point of building this from the local end.
+    // Pinning for everyone watching is the half that does, and hiding the button is not enforcement.
+    [Fact]
+    public async Task RefusesPinningForViewersWhenNotLoggedIn()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            hub.BroadcasterId = "42";
+
+            Assert.Contains("inte inloggad", await ErrorOfAsync(await client.PostAsJsonAsync(
+                $"/api/chat/pin?key={settings.DockAccessKey}", new { messageId = "abc" })));
+        }
+        client.Dispose();
+    }
+
+    // A message with no id cannot be pinned, and finding that out from Twitch's 400 would cost a
+    // round trip to say something we already knew.
+    [Fact]
+    public async Task RefusesPinningAMessageWithoutAnId()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: "42");
+        await using (server)
+        {
+            hub.BroadcasterId = "42";
+
+            Assert.Contains("saknar id", await ErrorOfAsync(await client.PostAsJsonAsync(
+                $"/api/chat/pin?key={settings.DockAccessKey}", new { messageId = "" })));
+            Assert.Contains("saknar id", await ErrorOfAsync(await client.PostAsJsonAsync(
+                $"/api/chat/unpin?key={settings.DockAccessKey}", new { messageId = "" })));
+        }
+        client.Dispose();
+    }
+
     [Fact]
     public async Task RefusesRaidWhenNotLoggedIn()
     {

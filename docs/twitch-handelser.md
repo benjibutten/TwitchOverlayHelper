@@ -22,7 +22,8 @@ Allt nedan är ett tredje spår, `ChatEvent`, byggt likadant.
 | Power-ups: meddelandeeffekter | IRC `animation-id` på `PRIVMSG` | inget | alla kanaler |
 | Shoutouts | EventSub `channel.shoutout.create` / `.receive` | `moderator:read:shoutouts` | kanaler du modererar |
 | Hypetåg | EventSub `channel.hype_train.begin/progress/end` **v2** | `channel:read:hype_train` | bara egen kanal |
-| Pinnade meddelanden | Helix `/helix/chat/pins` (ingen EventSub-push) | oklar, slås upp | måste pollas |
+| Nåla i docken (lokalt) | ingen — bara webbsidan | inget | alla kanaler, även utloggad |
+| Nåla för tittarna | Helix `/helix/chat/pins` (ingen EventSub-push) | `moderator:manage:chat_messages` | kanaler du modererar |
 
 ---
 
@@ -30,7 +31,9 @@ Allt nedan är ett tredje spår, `ChatEvent`, byggt likadant.
 
 - [JA] Ska varje händelsetyp gå att slå av var för sig i `DockSettings`? (rekommendation: ja –
       annars drunknar en lugn läsvy i gift sub-spam)
+      → **byggt, men i grupper i stället för per typ** – se Efterarbete längst ned.
 - [URVAL, KONFIGURERBART] Ska overlayen visa allt docken visar, eller bara ett urval? (rekommendation: urval – overlayen ligger ovanpå ett spel och ska vara lugn)
+      → **byggt**: egen lista per vy, `AppSettings.Events` vid sidan av `DockSettings.Events`.
 - [KLART] [De ska synas stort om de är gjorda att vara stora] Ska stora emotes renderas i full storlek eller plattas ut med en `⚡ förstorad`-markör?
       (reglaget finns nu, ett per vy — se etapp 3)
 
@@ -286,22 +289,104 @@ Fyra saker som code reviewn fångade och som är åtgärdade:
 Helix har fått endpoints för pins men det finns **ingen EventSub-push**, så "visa vad streamern
 pinnat" kräver pollning. Bygg det åt andra hållet i stället.
 
-- [ ] Slå upp scope-namnen för `/helix/chat/pins` innan skrivdelen byggs
-- [ ] "Nåla fast"-knapp i användarpanelen i `app.js`
-- [ ] Nåla lokalt i den befintliga pin-remsan — fungerar även utan inloggning, som ren läshjälp
-- [ ] Valfritt: skicka även `POST /helix/chat/pins` när man är inloggad med rätt behörighet, så
+- [x] Slå upp scope-namnen för `/helix/chat/pins` innan skrivdelen byggs
+      → `moderator:manage:chat_messages` för både `POST` och `DELETE`, alltså **samma scope som
+      redan används för att ta bort meddelanden**. Etapp 5 är den första etappen som inte utlöser
+      "logga in igen"-knappen. (`moderator:read:chat_messages` hör till `GET`, som vi inte gör: det
+      finns ingen EventSub-push för pins, och att polla en endpoint för att få veta vad streamern
+      själv nyss klickade på är inte värt en request var femte sekund.)
+      → **`PUT`, inte `POST`, och allt i query-strängen — ingen body alls.** Varje annan skrivning i
+      `TwitchApiClient` postar en JSON-body, så pinningen skrevs först på det viset; Twitch svarar då
+      med en 404 som inte nämner verbet med ett ord. `duration_seconds` skickas inte — en nål ska
+      sitta tills någon tar ner den. `DELETE` för unpin, också med allt i query-strängen.
+      (Referenssidan är för stor för att hämta i sin helhet och går att läsa fel. Det som avgjorde
+      var `twitch-rs`, som implementerar `RequestPut` med `EmptyBody` — och `TwitchApiClientTests`
+      spikar nu verbet, för det här är inget kompilatorn kan fånga.)
+- [x] "Nåla fast"-knapp i användarpanelen i `app.js`
+      → två knappar, för det är två olika saker. `#sheetPin` ligger *utanför* `#sheetActions` och
+      syns alltid; `#sheetPinChat` ligger i moderationsraden som en utloggning tar bort. Båda är
+      växlar: vägen ut måste finnas där vägen in fanns.
+- [x] Nåla lokalt i den befintliga pin-remsan — fungerar även utan inloggning, som ren läshjälp
+      → remsan hålls numera som en lista i `state.pins` och ritas om i sin helhet. Det var det som
+      gjorde att en sen power-up-märkning och en ändrad läsinställning når remsan lika säkert som
+      kolumnen; förut var korten där uppe noder som ingen höll reda på.
+- [x] Valfritt: skicka även `POST /helix/chat/pins` när man är inloggad med rätt behörighet, så
       pinnen syns för tittarna
-- [ ] Avgör hur lokala pins och mentions-pins samsas i samma remsa
+      → gjort, med `DELETE` på köpet. Twitch håller **en** mod-nålad rad per kanal och skickar inget
+      tillbaka när den ändras, så den enda nål docken kan tala för är den den själv satte:
+      `state.sharedPin` är det enda anspråket, och en `unpin` som Twitch avvisar blir en läsbar
+      toast och inget mer.
+- [x] Avgör hur lokala pins och mentions-pins samsas i samma remsa
+      → två band i samma remsa, med var sin rubrik och var sin bakgrund. En mention nålade sig själv
+      och släpper själv efter `PinnedMentionSeconds`; en handnålad rad är ett beslut och sitter tills
+      någon tar ner den. Att låta en timer överrida det hade varit docken som tyst bestämde att
+      läsaren var färdig — så att nåla en mention för hand *befordrar* den till manuell och stoppar
+      klockan. Manuella band överst, eftersom det är de man kommer tillbaka till.
+
+Två saker att veta om formen:
+
+- Lokala nålar bor bara i webbsidan. En omladdning av docken (eller en OBS-omstart) tar dem, precis
+  som `hello` säger: en nål är en läshjälp i stunden, inte ett tillstånd appen äger. Skulle de behöva
+  överleva vore rätt plats `ChatHub`, som hypetågsremsan — men då blir de allas nålar och inte
+  läsarens.
+- Etappen är byggd åt andra hållet mot vad rubriken antyder: vi visar inte vad streamern nålat, vi
+  låter läsaren nåla. Det första kräver pollning och inloggning i egen kanal, det andra funkar i
+  vilken kanal som helst utloggad — och är det som faktiskt löser "frågan hann rulla förbi".
+
+Fyra saker som code reviewn fångade och som är åtgärdade:
+
+- Pinningen gick som `POST` med `message_id` i bodyn. Det är `PUT` med allt i query-strängen, så
+  tittarnålen fungerade helt enkelt inte. Se scope-punkten ovan; `TwitchApiClientTests` spikar den nu.
+- `clear`-rutan rörde inte remsan, så ett kanalbyte lämnade förra kanalens meddelanden fastnålade
+  ovanför en chatt de inte var från. Till skillnad från hypetåget ska nålarna följa med `clear`:
+  båda anledningarna rutan skickas — kanalbyte, och första riktiga raden som ersätter exempelraderna
+  — tar hela kolumnen med sig, och varje nål är en kopia av en rad som låg i den.
+- `sharedPin` glömdes vid omladdning, så en nål satt kvar hos tittarna utan att docken kunde ta ner
+  den. Anspråket skrivs nu i `localStorage` tillsammans med kanalen det gäller. Det kan bli inaktuellt
+  — Twitch släpper nålen när sändningen slutar, och en annan moderator kan byta ut den — och priset är
+  en knapp som erbjuder sig att ta bort en nål som redan är borta. Den svarar med ett läsbart fel och
+  slutar sedan påstå något. Att veta säkert kräver `GET /helix/chat/pins` och scopet
+  `moderator:read:chat_messages`, alltså en ny inloggning; **det är inte gjort och är ett beslut som
+  inte är taget.**
+- Knappen i användarpanelen tog bort en automatiskt nålad mention i stället för att befordra den, så
+  befordran hela remsan är byggd kring gick inte att nå från det enda ställe någon skulle leta på den.
+  Knappen har tre lägen nu: nåla, behåll (mention → manuell), ta bort. ✕ på kortet är fortfarande den
+  enda vägen ut, i båda fallen.
 
 ---
 
 ## Efterarbete
 
-- [ ] Reglage per händelsetyp i `Settings/DockSettings.cs` + UI i `MainWindow.xaml`
-      → tills det finns visar **båda** vyerna alla typer. Urvalet i overlayen är just det här
-      reglaget, så beslutet ovan är inte glömt – det ligger här.
-- [ ] Uppdatera `README.md` med de nya funktionerna och vilka som kräver inloggning
-- [ ] Notera i README vilka funktioner som bara fungerar i egen kanal
+- [x] Reglage per händelsetyp i `Settings/DockSettings.cs` + UI i `MainWindow.xaml`
+      → **grupper, inte typer.** Sexton kryssrutor per vy hade varit en vägg att läsa igenom, och
+      ingen vill ha gift subs utan vanliga subs. Nio grupper (`Settings/ChatEventVisibility.cs`) är
+      de skillnader någon faktiskt gör. Allt är på som förval, så den som inte letar efter reglaget
+      märker inte att det finns.
+      → **en lista per vy**, `AppSettings.Events` och `DockSettings.Events`. Det var beslutet överst
+      som krävde det: overlayen ligger ovanpå ett spel och docken läses i lugn och ro, och en delad
+      lista hade tvingat fram samma svar på två olika frågor. Dockens UI hamnade i
+      `DockSettingsWindow.xaml` och inte i `MainWindow.xaml` som raden ovan sa – det är där dockens
+      alla andra reglage bor, och läsbarhetsfönstret är det man öppnar för att ändra hur docken ser ut.
+      → mappningen typ → grupp finns på **ett** ställe: docken får gruppnamnet med varje händelse
+      (`DockEvent.Group`) i stället för att känna till en enda `msg-id`. `ChatEventVisibilityTests`
+      spikar både att varje typ täcks av någon grupp och att namnen på tråden är desamma.
+      → hypetåget är ett tillstånd och inte ett kort, så reglaget måste nå remsan direkt. Docken
+      minns därför senaste tåget (`state.hypeTrain`) – annars hade "slå på igen" inte visat något
+      förrän nästa `progress`. Ett tåg som remsan redan tagit ner glöms samtidigt som det göms, så
+      en ändrad läsinställning en halvtimme senare inte återuppväcker det.
+      → **av tar bort, på gäller framåt.** Att låta korten stå kvar hade sagt att reglaget bara
+      gäller en chatt som ännu inte hänt. Att ta tillbaka dem går inte i någon av vyerna – docken
+      bygger om från noderna på skärmen, overlayen från korten i panelen – men dockens historik
+      ligger kvar i `ChatHub`, så en omladdning hämtar tillbaka dem.
+      → reglagen rör bara korten. En belöning triggar fortfarande pets och en cheer är fortfarande
+      en markör på meddelandet den kom med: det är inte händelsekort, och att gömma ett kort handlade
+      aldrig om dem.
+- [x] Uppdatera `README.md` med de nya funktionerna och vilka som kräver inloggning
+- [x] Notera i README vilka funktioner som bara fungerar i egen kanal
+      → båda blev ett eget avsnitt, *Händelser i chatten*, med en tabell som svarar på de två
+      frågorna i samma rad: kräver det inloggning, och var fungerar det. De hör ihop – "kräver
+      inloggning" och "kräver din egen kanal" är olika hinder, och en läsare som bara får det ena
+      svaret letar på fel ställe. Samma skillnad som appen gör i sin egen statusrad.
 
 ---
 

@@ -92,6 +92,23 @@
                         <CheckBox x:Name="CommandsCheck" Content="Tona ner !kommandon" Checked="Setting_Changed" Unchecked="Setting_Changed" />
                     </StackPanel>
                 </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Händelser i chatten" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <TextBlock Text="Subs, raids och annat får ett eget kort i chattlistan. Stäng av det du inte vill läsa – korten som redan står kvar försvinner direkt, och avstängt gäller allt som händer sedan."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,0,0,10" />
+                        <CheckBox x:Name="EventSubsCheck" Content="Prenumerationer och gåvor" ToolTip="Nya subs, resubs, gift subs och gåvor som fortsätter som betald sub" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EventRaidsCheck" Content="Raids" ToolTip="Raids in i kanalen och raids härifrån" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EventAnnouncementsCheck" Content="Meddelanden från streamern" ToolTip="/announce – färgade meddelanden från streamern eller en moderator" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EventBitsCheck" Content="Bits-märken och firanden" ToolTip="Nytt bits-märke och power-upen Celebration. Vanliga cheers är markörer på meddelandet och påverkas inte." Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EventMilestonesCheck" Content="Tittarstreaks och nya chattare" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EventRewardsCheck" Content="Inlösta belöningar utan text" ToolTip="Belöningar med textfält syns som meddelandet de skapade och påverkas inte. Pets triggar oavsett." Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EventShoutoutsCheck" Content="Shoutouts" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EventHypeCheck" Content="Hypetåg (remsan överst)" ToolTip="Remsan med nivå, mätare och toppbidrag" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EventOtherCheck" Content="Övriga händelser" ToolTip="Sådant Twitch skickar som vi inte har ett eget kort för – visas med Twitchs egen text" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </ScrollViewer>
 

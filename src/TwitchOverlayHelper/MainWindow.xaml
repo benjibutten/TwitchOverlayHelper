@@ -265,6 +265,20 @@
                     <CheckBox x:Name="GiantEmotesCheck" Content="Visa förstorade emotes i full storlek" ToolTip="Power-upen “Gigantify an Emote” gör en emote tre gånger så stor. Av: emoten visas i vanlig storlek med en markör i stället." Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
                     <CheckBox x:Name="OutlineCheck" Content="Kantlinje runt texten" ToolTip="Gör texten läsbar även utan bakgrund" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
 
+                    <Separator Background="#343B50" Margin="0,20" />
+                    <TextBlock Text="Händelser i overlayen" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <TextBlock Text="Subs, raids och annat får ett eget kort bland meddelandena. Overlayen ligger ovanpå ett spel, så här är det ofta värt att välja ut några få. Avstängt tar bort korten som står kvar och gäller allt som händer sedan; docken har egna reglage under Ändra chattens läsbarhet."
+                               TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,0,0,10" />
+                    <CheckBox x:Name="EventSubsCheck" Content="Prenumerationer och gåvor" ToolTip="Nya subs, resubs, gift subs och gåvor som fortsätter som betald sub" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                    <CheckBox x:Name="EventRaidsCheck" Content="Raids" ToolTip="Raids in i kanalen och raids härifrån" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                    <CheckBox x:Name="EventAnnouncementsCheck" Content="Meddelanden från streamern" ToolTip="/announce – färgade meddelanden från streamern eller en moderator" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                    <CheckBox x:Name="EventBitsCheck" Content="Bits-märken och firanden" ToolTip="Nytt bits-märke och power-upen Celebration. Vanliga cheers är markörer på meddelandet och påverkas inte." Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                    <CheckBox x:Name="EventMilestonesCheck" Content="Tittarstreaks och nya chattare" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                    <CheckBox x:Name="EventRewardsCheck" Content="Inlösta belöningar utan text" ToolTip="Belöningar med textfält syns som meddelandet de skapade och påverkas inte. Pets triggar oavsett." Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                    <CheckBox x:Name="EventShoutoutsCheck" Content="Shoutouts" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                    <CheckBox x:Name="EventHypeCheck" Content="Hypetåg" ToolTip="Två kort: ett när tåget startar och ett när det tar slut. Mätaren däremellan finns bara i docken." Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                    <CheckBox x:Name="EventOtherCheck" Content="Övriga händelser" ToolTip="Sådant Twitch skickar som vi inte har ett eget kort för – visas med Twitchs egen text" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+
                     <TextBlock Text="Max antal meddelanden" Margin="0,17,0,6" />
                     <TextBox x:Name="MaxMessagesInput" TextChanged="MaxMessages_TextChanged" LostKeyboardFocus="MaxMessages_LostKeyboardFocus" ToolTip="Ange ett tal mellan 1 och 200" />
                     <TextBlock Text="De senaste meddelandena behålls i overlayen. När gränsen nås tas det äldsta bort. Hur många som ryms samtidigt beror också på overlayens höjd och textstorlek. (1–200)"

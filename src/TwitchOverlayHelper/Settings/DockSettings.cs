@@ -35,6 +35,12 @@ public sealed class DockSettings
     /// <summary>Dims "!command" lines and known bot chatter without hiding them.</summary>
     public bool DimCommands { get; set; } = true;
 
+    /// <summary>
+    /// Which event cards the dock draws. Travels to the dock with the rest of these settings, so the
+    /// filtering happens where the cards are built and a change lands without a reload.
+    /// </summary>
+    public ChatEventVisibility Events { get; set; } = new();
+
     /// <summary>Upper bound on how fast new messages are revealed, in messages per second. 0 disables the limit.</summary>
     public double MessagesPerSecond { get; set; } = 2.5;
     /// <summary>Keeps messages that mention the streamer in a pinned strip so questions do not scroll away.</summary>
@@ -43,6 +49,7 @@ public sealed class DockSettings
 
     public void Normalize()
     {
+        Events ??= new ChatEventVisibility();
         FontSize = Math.Clamp(FiniteOrDefault(FontSize, 20), 12, 48);
         LineHeight = Math.Clamp(FiniteOrDefault(LineHeight, 1.6), 1.2, 2.4);
         LetterSpacing = Math.Clamp(FiniteOrDefault(LetterSpacing, 0.02), 0, 0.25);

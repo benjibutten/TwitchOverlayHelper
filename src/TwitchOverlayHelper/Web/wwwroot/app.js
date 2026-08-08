@@ -11,6 +11,7 @@ const el = {
   toast: $("toast"), toastText: $("toastText"), toastAction: $("toastAction"),
   userSheet: $("userSheet"), sheetName: $("sheetName"), sheetQuote: $("sheetQuote"),
   sheetActions: $("sheetActions"), sheetLocked: $("sheetLocked"),
+  sheetPin: $("sheetPin"), sheetPinChat: $("sheetPinChat"),
   sheetConfirm: $("sheetConfirm"), sheetConfirmText: $("sheetConfirmText"),
   raidPanel: $("raidPanel"), raidList: $("raidList"), raidSearch: $("raidSearch"),
   hype: $("hype"), hypeHeadline: $("hypeHeadline"), hypeDetail: $("hypeDetail"),
@@ -30,7 +31,19 @@ const state = {
   toastTimer: 0,
   removed: new Map(),  // message id -> note, so deletions survive a re-render
   stick: true,         // follow the newest message until the reader scrolls up
+  pins: [],            // what the strip at the top is holding, mentions and manual pins alike
+  sharedPin: "",       // the message this dock last pinned for the viewers, so it can take it down
+  channel: "",         // which chat that claim belongs to
+  hypeTrain: null,     // last state Twitch sent, kept so the strip survives a settings change
 };
+
+/* Whether a kind of event card is switched on in the app. Each event arrives carrying the name of
+   the group it belongs to, so this never has to know what a submysterygift is. An older app that
+   sends no list at all means everything shows, which is what the dock did before the switches. */
+function showsEvent(chatEvent) {
+  const groups = state.settings && state.settings.events;
+  return !groups || groups[chatEvent.group] !== false;
+}
 
 /* ------------------------------------------------------------------ transport */
 
@@ -74,8 +87,11 @@ function handle(frame) {
     // A hello is a fresh start, and after a reconnect the history already contains whatever was
     // still queued here. Anything left over would be shown a second time.
     el.chat.replaceChildren();
-    el.pinned.replaceChildren();
-    el.pinned.hidden = true;
+    clearPins();
+    // A pin belongs to the chat it was made in, so the claim is only picked back up when the dock
+    // has come back to the same channel. A reload is the whole reason it is written down at all.
+    state.channel = frame.channel || "";
+    state.sharedPin = recallSharedPin(state.channel);
     state.queue.length = 0;
     state.missed = 0;
     updateJump();
@@ -83,17 +99,34 @@ function handle(frame) {
     applyHypeTrain(frame.hypeTrain || null);
 
     // History is already read; it should appear at once rather than trickle through the pacer.
-    frame.history.forEach((item) => appendItem(item.type === "event" ? evt(item.event) : msg(item.message), true));
+    // The app keeps every event in its history, so a kind switched back on is here again after a
+    // reload even though the cards already on screen were not brought back when it was switched on.
+    frame.history
+      .filter((item) => item.type !== "event" || showsEvent(item.event))
+      .forEach((item) => appendItem(item.type === "event" ? evt(item.event) : msg(item.message), true));
     scrollToEnd();
     return;
   }
   if (frame.type === "message") { state.queue.push(msg(frame.payload)); return; }
-  if (frame.type === "event") { state.queue.push(evt(frame.payload)); return; }
+  // Dropped here rather than at render, so a hidden card never counts as something the reader is
+  // behind on: the jump button counts what is waiting in the queue.
+  if (frame.type === "event") { if (showsEvent(frame.payload)) state.queue.push(evt(frame.payload)); return; }
   if (frame.type === "messageUpdate") { applyMessageUpdate(frame.payload); return; }
   // No payload means there is no train. Deliberately not folded into the clear frame below: that
   // one also fires when the first real line replaces the samples, which says nothing about a train.
   if (frame.type === "hypeTrain") { applyHypeTrain(frame.payload || null); return; }
-  if (frame.type === "clear") { el.chat.replaceChildren(); state.queue.length = 0; state.missed = 0; return; }
+  // Both things that send a clear – switching channel, and the first real line replacing the
+  // samples – take the whole column with them, and every pin is a copy of a line that was in it.
+  // Leaving the strip alone would nail the previous channel's messages above a chat they are not
+  // from. Deliberately unlike the hype train, which is a state of its own and has its own frame.
+  if (frame.type === "clear") {
+    el.chat.replaceChildren();
+    clearPins();
+    forgetSharedPin();
+    state.queue.length = 0;
+    state.missed = 0;
+    return;
+  }
   if (frame.type === "moderation") { applyModeration(frame.payload); return; }
   if (frame.type === "status") { setStatus(frame.payload.text, frame.payload.state); return; }
   if (frame.type === "settings") { applySettings(frame.payload); return; }
@@ -488,7 +521,11 @@ function markRemoved(node, note) {
 }
 
 function rerender() {
-  const items = [...el.chat.children].map((node) => node.item).filter(Boolean);
+  // Switching a kind of event off takes the cards that are up down with it – leaving them would say
+  // the switch only applies to a chat that has not happened yet. Switching it back on cannot put
+  // them back, so the promise is the honest half of that: off now, on from here.
+  const items = [...el.chat.children].map((node) => node.item)
+    .filter((item) => item && (item.kind !== "event" || showsEvent(item.data)));
   el.chat.replaceChildren(...items.map(buildItem));
   scrollToEnd();
 }
@@ -501,30 +538,104 @@ function appendItem(item, isHistory) {
   // Event cards live in the same column, so they count towards the limit like any other line.
   while (el.chat.childElementCount > state.settings.maxMessages) el.chat.firstElementChild.remove();
 
-  if (!isHistory && node.dataset.mention === "true" && state.settings.pinMentions) pin(item.data);
+  if (!isHistory && node.dataset.mention === "true" && state.settings.pinMentions) pinMessage(item.data, "mention");
   if (follow) scrollToEnd(); else if (!isHistory) state.missed++;
 }
 
-function pin(message) {
-  const node = build(message);
-  const wrapper = document.createElement("div");
-  if (el.pinned.hidden) {
-    el.pinned.hidden = false;
+/* ------------------------------------------------------------ pinned strip */
+
+/* Two kinds of pin share the shelf, and they are not the same promise. A mention put itself there
+   because it named you, so it takes itself away again after a while – nobody asked for it. A manual
+   pin is a decision, "I want to come back to this", and letting a timer overrule that would be the
+   dock quietly deciding the reader was done. So it stays until it is taken down by hand.
+
+   Held as a list rather than as nodes, because everything that touches a pinned line – a power-up
+   arriving late, a reading setting changing in the app – has to reach the strip as well as the
+   column, and a rebuild from state is the only version of that which cannot drift apart. */
+const PIN_GROUPS = [
+  { kind: "manual", label: "Fastnålat" },
+  { kind: "mention", label: "Till dig" },
+];
+
+function findPin(messageId) {
+  return state.pins.find((pin) => pin.message.id === messageId);
+}
+
+function pinMessage(message, kind) {
+  const existing = findPin(message.id);
+  if (existing) {
+    // Pinning a mention by hand promotes it: the timer would otherwise pull it away under the
+    // reader who just said they wanted to keep it.
+    if (kind === "manual" && existing.kind === "mention") {
+      clearTimeout(existing.timer);
+      existing.kind = "manual";
+      existing.timer = 0;
+      renderPins();
+    }
+    return;
+  }
+
+  const pin = { message, kind, timer: 0 };
+  if (kind === "mention") {
+    pin.timer = setTimeout(() => unpinMessage(message.id), state.settings.pinnedMentionSeconds * 1000);
+  }
+  state.pins.push(pin);
+  renderPins();
+}
+
+function unpinMessage(messageId) {
+  const index = state.pins.findIndex((pin) => pin.message.id === messageId);
+  if (index < 0) return;
+  clearTimeout(state.pins[index].timer);
+  state.pins.splice(index, 1);
+  renderPins();
+}
+
+function clearPins() {
+  for (const pin of state.pins) clearTimeout(pin.timer);
+  state.pins.length = 0;
+  renderPins();
+}
+
+function renderPins() {
+  el.pinned.replaceChildren();
+  el.pinned.hidden = state.pins.length === 0;
+  if (el.pinned.hidden) return;
+
+  // Manual pins first: they were put there on purpose and are the ones being come back to.
+  for (const group of PIN_GROUPS) {
+    const pins = state.pins.filter((pin) => pin.kind === group.kind);
+    if (!pins.length) continue;
+
+    const section = document.createElement("div");
+    section.className = "pin-group";
+    section.dataset.kind = group.kind;
+
     const label = document.createElement("div");
     label.className = "pin-label";
-    label.textContent = "Till dig";
-    el.pinned.appendChild(label);
-  }
-  wrapper.appendChild(node);
-  el.pinned.appendChild(wrapper);
+    label.textContent = group.label;
+    section.appendChild(label);
 
-  setTimeout(() => {
-    wrapper.remove();
-    if (el.pinned.querySelectorAll(".msg").length === 0) {
-      el.pinned.replaceChildren();
-      el.pinned.hidden = true;
-    }
-  }, state.settings.pinnedMentionSeconds * 1000);
+    for (const pin of pins) section.appendChild(buildPin(pin));
+    el.pinned.appendChild(section);
+  }
+}
+
+function buildPin(pin) {
+  const item = document.createElement("div");
+  item.className = "pin-item";
+  item.appendChild(build(pin.message));
+
+  const drop = document.createElement("button");
+  drop.className = "pin-drop";
+  drop.type = "button";
+  drop.textContent = "✕";
+  const label = `Ta bort nålen från ${pin.message.displayName}`;
+  drop.title = label;
+  drop.setAttribute("aria-label", label);
+  drop.addEventListener("click", () => unpinMessage(pin.message.id));
+  item.appendChild(drop);
+  return item;
 }
 
 /* ------------------------------------------------------------- hype train */
@@ -541,7 +652,10 @@ let hypeTimer = 0;
 
 function applyHypeTrain(train) {
   clearTimeout(hypeTimer);
-  if (!train) { el.hype.hidden = true; return; }
+  // Held on to because the strip is a state, not a line: turning hype trains back on mid-train has
+  // to be able to put it up again, and nothing else would arrive until the next progress frame.
+  state.hypeTrain = train;
+  if (!train || !showsEvent({ group: "hypeTrain" })) { el.hype.hidden = true; return; }
 
   el.hype.hidden = false;
   el.hype.dataset.phase = train.phase;
@@ -566,7 +680,9 @@ function applyHypeTrain(train) {
     ? HYPE_LINGER_MS
     : Math.max(0, (train.expiresAt || 0) - Date.now());
   if (train.phase === "ended" || train.expiresAt) {
-    hypeTimer = setTimeout(() => { el.hype.hidden = true; }, linger);
+    // Forgotten as well as hidden: a train the strip has already retired must not come back up
+    // because some unrelated reading setting was changed half an hour later.
+    hypeTimer = setTimeout(() => { el.hype.hidden = true; state.hypeTrain = null; }, linger);
   }
 }
 
@@ -588,8 +704,8 @@ function applyMessageUpdate(payload) {
 
   // The pinned strip keeps a copy of its own. A marker that landed on only one of the two would
   // make a single message say different things depending on where in the dock it is read.
-  const pinnedNode = el.pinned.querySelector(`.msg[data-id="${CSS.escape(payload.id)}"]`);
-  if (pinnedNode) pinnedNode.replaceWith(build(payload));
+  const pinned = findPin(payload.id);
+  if (pinned) { pinned.message = payload; renderPins(); }
 }
 
 function applyModeration(payload) {
@@ -669,9 +785,87 @@ function openUserSheet(message) {
   el.sheetName.textContent = message.displayName;
   el.sheetQuote.textContent = message.text;
   el.sheetConfirm.hidden = true;
+  el.sheetPin.textContent = pinLabel(message);
+  el.sheetPinChat.textContent = state.sharedPin === message.id
+    ? "📌 Ta bort tittarnas nål"
+    : "📌 Nåla fast för tittarna";
   el.sheetActions.hidden = !state.auth.loggedIn;
   el.sheetLocked.hidden = state.auth.loggedIn;
   openSheet("userSheet");
+}
+
+/* Nailing a line to this dock's strip is a reading aid, not a moderation action: it changes nothing
+   on Twitch and nobody but this reader sees it. So it sits outside the row a logout takes away, and
+   works in any channel – which is the whole reason stage five was built from this end rather than
+   from polling Twitch for what the streamer pinned. */
+/* Three states, not two. A mention is already on the strip but on a clock, so the useful thing to
+   offer is to stop the clock – and offering "remove" instead was what made the promotion the strip
+   is built around unreachable from the one place anybody would look for it. Getting rid of a pin is
+   the ✕ on the card, in both cases; this button never needs to be a second way to do that. */
+function pinLabel(message) {
+  const pin = findPin(message.id);
+  if (!pin) return "📌 Nåla fast här";
+  return pin.kind === "mention" ? "📌 Behåll nålen" : "📌 Ta bort nålen härifrån";
+}
+
+el.sheetPin.addEventListener("click", () => {
+  const target = state.target;
+  if (!target) return;
+  el.userSheet.hidden = true;
+  const pin = findPin(target.id);
+  if (pin && pin.kind === "manual") unpinMessage(target.id);
+  else pinMessage(target, "manual");
+});
+
+/* The other half: the same line in front of everyone watching. Twitch keeps one mod-pinned message
+   per channel and pushes nothing back when it changes, so the only pin this dock can honestly speak
+   for is the one it made itself.
+
+   That claim is written down rather than kept in memory, because an OBS dock gets reloaded and a
+   forgotten claim is a pin nobody can take down again without going to Twitch by hand. It can go
+   stale – Twitch drops the pin at the end of a stream, and another moderator can replace it – and
+   the cost of that is a button offering to remove a pin that is already gone, which answers with a
+   readable error and then stops claiming it. Knowing for certain would mean asking Twitch, and
+   that needs a scope this app does not hold. */
+const SHARED_PIN_KEY = "toh.sharedPin";
+
+function rememberSharedPin(messageId) {
+  state.sharedPin = messageId;
+  try {
+    localStorage.setItem(SHARED_PIN_KEY, JSON.stringify({ channel: state.channel, messageId }));
+  } catch (error) { /* storage can be off; the claim then simply lasts as long as the page does */ }
+}
+
+function forgetSharedPin() {
+  state.sharedPin = "";
+  try { localStorage.removeItem(SHARED_PIN_KEY); } catch (error) { /* nothing to undo */ }
+}
+
+function recallSharedPin(channel) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SHARED_PIN_KEY) || "null");
+    return saved && saved.channel === channel ? saved.messageId : "";
+  } catch (error) { return ""; }
+}
+
+function pinForViewers(target) {
+  api("/api/chat/pin", { method: "POST", body: JSON.stringify({ messageId: target.id }) })
+    .then(() => {
+      rememberSharedPin(target.id);
+      toast(`Meddelandet från ${target.displayName} är fastnålat i chatten.`, "info",
+        { label: "Ta ner", action: () => unpinForViewers(target) });
+    })
+    .catch((error) => toast(error.message, "error"));
+}
+
+function unpinForViewers(target) {
+  api("/api/chat/unpin", { method: "POST", body: JSON.stringify({ messageId: target.id }) })
+    .then(() => toast("Nålen är borttagen för tittarna.", "info"))
+    .catch((error) => toast(error.message, "error"))
+    // Either answer ends the claim. A refusal means Twitch does not agree this dock owns the
+    // channel's pin, and a button that keeps offering to take down a pin that is not there is a
+    // dead end the reader can only get out of by guessing.
+    .finally(() => { if (state.sharedPin === target.id) forgetSharedPin(); });
 }
 
 el.sheetActions.addEventListener("click", (event) => {
@@ -679,6 +873,15 @@ el.sheetActions.addEventListener("click", (event) => {
   if (!button || !state.target) return;
   const target = state.target;
 
+  if (button.dataset.act === "pinChat") {
+    el.userSheet.hidden = true;
+    if (state.sharedPin === target.id) { unpinForViewers(target); return; }
+    pinForViewers(target);
+    // Kept in reach here too: the line the whole channel is looking at is the one worth having
+    // where it can be read, and nothing comes back from Twitch that would put it there for us.
+    pinMessage(target, "manual");
+    return;
+  }
   if (button.dataset.act === "profile") {
     window.open(`https://twitch.tv/${target.login}`, "_blank", "noreferrer");
     el.userSheet.hidden = true;
@@ -849,7 +1052,9 @@ function applySettings(settings) {
 
   // Badges, timestamps, link chips and shouting are baked into the markup, so changing them
   // from the app has to rebuild what is already on screen – not just swap CSS variables.
-  if (isChange) rerender();
+  // The pinned strip holds cards of its own and would otherwise be the one place in the dock
+  // still showing the old setting.
+  if (isChange) { rerender(); renderPins(); applyHypeTrain(state.hypeTrain); }
 }
 
 function applyAuth(auth) {

@@ -10,6 +10,7 @@ Appen kör en lokal webbserver som serverar en chatt byggd för läsbarhet. Adre
 - Fem lugna teman med gräddvit grund i stället för hård svartvit kontrast.
 - **Tempobroms** som håller igen hur snabbt nya meddelanden dyker upp, så de hinner läsas när chatten går varmt.
 - **Fastnålade mentions**: meddelanden till dig läggs i en remsa överst så frågor inte scrollar bort.
+- **Nåla fast för hand**: klicka på ett namn och nåla raden i remsan. Fungerar utan inloggning – nålen syns bara för dig. Är du inloggad med modbehörighet kan samma rad nålas i chatten så tittarna ser den.
 - Länkar kortas till en `🔗 länk`-knapp, VERSALER dämpas och `!kommandon` tonas ner.
 - Paus, zebra-rader, namn på egen rad och val av typsnitt.
 - Moderering med stora knappar: klicka på ett namn för timeout, ban eller att ta bort meddelandet. Ban kräver bekräftelse och åtgärder går att ångra direkt i notisen.
@@ -21,6 +22,32 @@ Moderering fungerar i alla kanaler där du är moderator, inte bara i din egen. 
 - Serverns adress innehåller en hemlig nyckel och är bunden till `127.0.0.1`, så den är varken nåbar från nätverket eller användbar för andra sidor på datorn.
 
 Moderering, raid och skrivfältet kräver inloggning; utan den fungerar docken som en ren läsvy.
+
+## Händelser i chatten
+
+Subs, raids, meddelanden från streamern och annat som händer i chatten visas som egna kort bland meddelandena – i både docken och overlayen. Ett hypetåg är ingen enskild rad utan ett tillstånd som lever i minuter, så det får en remsa överst i docken med nivå, mätare och toppbidrag; overlayen visar i stället två kort, ett när tåget startar och ett när det tar slut.
+
+Det mesta kommer via IRC och fungerar **utan inloggning i vilken kanal som helst**: prenumerationer och gåvor, raids, `/announce`, cheers (som en markör på meddelandet), bits-märken, tittarstreaks och nya chattare. Något Twitch skickar som saknar eget kort visas med Twitchs egen text i stället för att försvinna.
+
+Resten kommer via EventSub och kräver inloggning, rätt behörighet och – för de flesta – **din egen kanal**:
+
+| Funktion | Kräver inloggning | Var det fungerar |
+|---|---|---|
+| Subs, gåvor, raids, `/announce`, cheers, bits-märken, streaks, nya chattare | Nej | Alla kanaler |
+| Inlösta belöningar med namn och kostnad | Ja (`channel:read:redemptions`) | Bara din egen kanal |
+| Power-ups: förstorad emote, firande | Ja (`bits:read`) | Bara din egen kanal |
+| Hypetåg | Ja (`channel:read:hype_train`) | Bara din egen kanal |
+| Shoutouts | Ja (`moderator:read:shoutouts`) | Kanaler där du är moderator |
+| Nåla fast för tittarna | Ja (`moderator:manage:chat_messages`) | Kanaler där du är moderator |
+| Timeout, ban, ta bort meddelande | Ja | Kanaler där du är moderator |
+| Raid | Ja | Bara din egen kanal |
+| Skriva i chatten | Ja | Alla kanaler |
+
+Saknas något slutar det alltid med *färre kort* – aldrig med en chatt som slutar läsa. Appen skriver under **5. Logga in för moderering** vilka extra händelser som är påslagna just nu, och skiljer på de två orsakerna till att något inte syns: en behörighet du inte gett, och en kanal som inte är din. En sparad inloggning från innan en behörighet fanns fixas med knappen **Logga in igen** – en förnyad token ger tillbaka gamla behörigheter, aldrig nya.
+
+Power-upen *förstorad emote* ritas i full storlek på en egen rad. Meddelandeeffekter (`animation-id`) kommer över IRC och visas som en markör i alla kanaler, även utloggad – animationen i sig återges inte.
+
+Varje typ går att stänga av för sig: overlayens val ligger under **Händelser i overlayen** i appen, dockens under **Ändra chattens läsbarhet → Händelser i chatten**. De är separata, eftersom en overlay ovanpå ett spel tål mindre än en dock man läser i lugn och ro. Att stänga av en typ tar bort korten som redan står kvar; att slå på den igen gäller det som händer sedan (docken hämtar tillbaka historiken vid omladdning). Reglagen styr bara korten – en belöning triggar fortfarande pets, och en cheer är fortfarande en markör på meddelandet den kom med.
 
 ## Uppläsning av namn
 
@@ -50,6 +77,7 @@ Om DeepSeek inte svarar läses namnet upp som det står, med en notis om varför
 - Separata reglage för hela rutans bakgrund och varje meddelandes bakgrund; båda kan dras till 0 % för helt ren overlay.
 - Valfri kantlinje runt texten som håller den läsbar utan bakgrund.
 - Liveinställningar för textstorlek, radavstånd, typsnitt och antal meddelanden.
+- Händelsekort för subs, raids, meddelanden från streamern, belöningar, shoutouts, power-ups och hypetåg – med reglage per typ i varje vy. Se [Händelser i chatten](#händelser-i-chatten).
 - Twitch-metadata för broadcaster, moderator, VIP, subscriber med lokala markörer.
 - Riktiga Twitch-badge-bilder när Client ID och OAuth-token anges.
 - Automatisk återanslutning, PING/PONG-hantering och tydligt stopp vid nekad inloggning.
@@ -68,7 +96,7 @@ Skriv kanalnamnet och välj **Anslut**. Använd **Redigera overlay** för att pl
 
 ## Twitch-inloggning (valfritt)
 
-Anonym anslutning räcker för att läsa chatten och få rollinformation via IRC-taggar. Inloggning behövs för timeout, ban, raid, för att skriva i chatten och för Twitchs egna badgebilder.
+Anonym anslutning räcker för att läsa chatten, se subs, raids och meddelanden och få rollinformation via IRC-taggar. Inloggning behövs för timeout, ban, raid, för att skriva i chatten, för Twitchs egna badgebilder och för de händelser som går över EventSub – belöningar, shoutouts, power-ups och hypetåg. Tabellen under [Händelser i chatten](#händelser-i-chatten) visar vad som kräver vad, och vad som bara fungerar i din egen kanal.
 
 Inloggningen sker med **Device Code Flow**: registrera en egen app på [dev.twitch.tv](https://dev.twitch.tv/console/apps) med klienttypen **Public**, klistra in dess Client ID i appen och välj **Logga in med Twitch**. Du får en kod att skriva in på `twitch.tv/activate` – ingen client secret och ingen redirect-URI behövs.
 

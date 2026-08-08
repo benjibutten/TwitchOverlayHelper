@@ -53,6 +53,9 @@ internal sealed record DockMessage(
 internal sealed record DockEvent(
     string Id,
     string Kind,
+    // Which switch in the reading settings decides whether this card is drawn at all. Sent along
+    // rather than worked out in the dock, so the mapping exists once and not once per language.
+    string Group,
     string Headline,
     string DisplayName,
     string Login,
@@ -188,6 +191,7 @@ internal static class DockMapper
     public static DockEvent ToDock(ChatEvent chatEvent) => new(
         chatEvent.Id,
         Kind(chatEvent.Type),
+        ChatEventVisibility.Group(chatEvent.Type),
         ChatEventText.Describe(chatEvent),
         chatEvent.DisplayName,
         chatEvent.UserLogin,

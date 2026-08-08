@@ -199,6 +199,17 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
         app.MapPost("/api/mod/delete", async (DeleteMessageRequest request) =>
             await RunAsync(() => context.Api.DeleteMessageAsync(RequireBroadcaster(), request.MessageId)).ConfigureAwait(false));
 
+        // Only half of pinning is a Twitch call. Nailing a line to the dock's own strip never leaves
+        // the browser and needs neither a login nor a mod role, so it has no endpoint at all; putting
+        // the same line in front of the viewers is a moderator action and goes through Helix.
+        // Twitch pushes nothing back when a pin changes, so nothing here can be polled into a state –
+        // these two are the whole feature on this side.
+        app.MapPost("/api/chat/pin", async (PinMessageRequest request) =>
+            await RunAsync(() => context.Api.PinMessageAsync(RequireBroadcaster(), request.MessageId)).ConfigureAwait(false));
+
+        app.MapPost("/api/chat/unpin", async (PinMessageRequest request) =>
+            await RunAsync(() => context.Api.UnpinMessageAsync(RequireBroadcaster(), request.MessageId)).ConfigureAwait(false));
+
         app.MapGet("/api/raid/candidates", async () =>
         {
             try { return Results.Json(await context.Api.GetFollowedLiveChannelsAsync().ConfigureAwait(false), DockJson.Options); }

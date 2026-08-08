@@ -26,6 +26,12 @@ public sealed class AppSettings
     /// off: the emote then stays at reading size with a "⚡ förstorad" marker.
     /// </summary>
     public bool GiantEmotes { get; set; } = true;
+    /// <summary>
+    /// Which event cards the overlay draws. Kept apart from the dock's list on purpose: the overlay
+    /// lies over a game, so this is where a calm selection is usually made, while the dock is read at
+    /// rest and can take everything.
+    /// </summary>
+    public ChatEventVisibility Events { get; set; } = new();
     public bool TextOutline { get; set; }
     public bool OverlayVisible { get; set; } = true;
     public bool StartWithWindows { get; set; }
@@ -58,6 +64,7 @@ public sealed class AppSettings
         if (string.IsNullOrWhiteSpace(DockAccessKey)) DockAccessKey = GenerateAccessKey();
         Dock ??= new DockSettings();
         Dock.Normalize();
+        Events ??= new ChatEventVisibility();
         Speech ??= new SpeechSettings();
         Speech.Normalize();
         Pets ??= new PetSettings();

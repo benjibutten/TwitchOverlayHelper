@@ -95,18 +95,36 @@ body { display: flex; flex-direction: column; }
 /* No contributors yet – an empty row would still cost a line of height. */
 .hype-top:empty { display: none; }
 
-/* ---------- pinned mentions ---------- */
+/* ---------- pinned strip ---------- */
+/* Two kinds of pin share the shelf: a mention that put itself there and lets go on its own, and a
+   line someone nailed up on purpose. They get their own band each rather than one heap, because how
+   long a card is going to stay is the one thing the reader needs to know about it. */
 .pinned {
   flex: 0 0 auto; max-height: 34vh; overflow-y: auto;
-  background: var(--mention);
   border-bottom: 2px solid var(--mention-line);
-  padding: 4px 8px;
 }
-.pinned .msg { background: transparent; }
+.pin-group { padding: 4px 8px; }
+.pin-group[data-kind="mention"] { background: var(--mention); }
+.pin-group[data-kind="manual"] { background: var(--surface-alt); }
+/* No animation: the strip is rebuilt whole whenever anything on it changes, and a card that is
+   staying put must not flash because a neighbour left. */
+.pinned .msg { background: transparent; animation: none; }
 .pin-label {
   font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
   color: var(--mention-line); text-transform: uppercase; padding: 2px 0;
 }
+.pin-group[data-kind="manual"] .pin-label { color: var(--muted); }
+
+/* The way back out, in the card's own corner rather than on a row of its own: every pixel the
+   strip takes is a pixel of chat it took. */
+.pin-item { position: relative; }
+.pin-drop {
+  position: absolute; top: 2px; right: 2px;
+  border: none; background: transparent; color: var(--muted);
+  font-family: inherit; font-size: 12px; line-height: 1;
+  padding: 4px 6px; border-radius: 6px; cursor: pointer;
+}
+.pin-drop:hover { background: var(--surface); color: var(--text); }
 
 /* ---------- chat ---------- */
 .chat {
@@ -326,6 +344,9 @@ body[data-nameline="false"] .msg-text { display: inline; }
   font-size: 14px; color: var(--muted); max-height: 5.5em; overflow: hidden;
 }
 .sheet-actions { display: flex; flex-direction: column; gap: 7px; }
+/* What the sheet offers without a login. Separated from the moderation row by a rule rather than by
+   a heading: it is one button, and a heading over one button says less than the gap does. */
+.sheet-reading { padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
 .sheet-confirm { margin-top: 10px; }
 .sheet-confirm p { margin: 0 0 8px; font-size: 14px; }
 .sheet-confirm-row { display: flex; gap: 7px; }

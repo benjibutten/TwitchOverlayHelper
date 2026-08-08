@@ -47,6 +47,15 @@ public partial class DockSettingsWindow : Window
         LinksCheck.IsChecked = dock.CollapseLinks;
         ShoutingCheck.IsChecked = dock.CalmShouting;
         CommandsCheck.IsChecked = dock.DimCommands;
+        EventSubsCheck.IsChecked = dock.Events.Subs;
+        EventRaidsCheck.IsChecked = dock.Events.Raids;
+        EventAnnouncementsCheck.IsChecked = dock.Events.Announcements;
+        EventBitsCheck.IsChecked = dock.Events.Bits;
+        EventMilestonesCheck.IsChecked = dock.Events.Milestones;
+        EventRewardsCheck.IsChecked = dock.Events.Rewards;
+        EventShoutoutsCheck.IsChecked = dock.Events.Shoutouts;
+        EventHypeCheck.IsChecked = dock.Events.HypeTrain;
+        EventOtherCheck.IsChecked = dock.Events.Other;
         UpdateValueLabels();
     }
 
@@ -76,6 +85,15 @@ public partial class DockSettingsWindow : Window
         dock.CollapseLinks = LinksCheck.IsChecked == true;
         dock.CalmShouting = ShoutingCheck.IsChecked == true;
         dock.DimCommands = CommandsCheck.IsChecked == true;
+        dock.Events.Subs = EventSubsCheck.IsChecked == true;
+        dock.Events.Raids = EventRaidsCheck.IsChecked == true;
+        dock.Events.Announcements = EventAnnouncementsCheck.IsChecked == true;
+        dock.Events.Bits = EventBitsCheck.IsChecked == true;
+        dock.Events.Milestones = EventMilestonesCheck.IsChecked == true;
+        dock.Events.Rewards = EventRewardsCheck.IsChecked == true;
+        dock.Events.Shoutouts = EventShoutoutsCheck.IsChecked == true;
+        dock.Events.HypeTrain = EventHypeCheck.IsChecked == true;
+        dock.Events.Other = EventOtherCheck.IsChecked == true;
         dock.Normalize();
 
         UpdateValueLabels();

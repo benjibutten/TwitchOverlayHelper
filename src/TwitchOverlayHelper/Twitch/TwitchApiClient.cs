@@ -66,6 +66,34 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
         await SendAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Pins a message at the top of the channel's chat, where the viewers see it too. Twitch keeps
+    /// one mod-pinned message per channel, so a new pin quietly replaces whatever was pinned before.
+    ///
+    /// <para><b>PUT, and everything in the query string.</b> Every sibling call in this file posts a
+    /// JSON body, and pinning reads like it should do the same – it does not, and Twitch answers a
+    /// POST with a 404 that says nothing about why. No <c>duration_seconds</c> either: a pin stays
+    /// until it is taken down, which is what pinning reads as.</para>
+    /// </summary>
+    public async Task PinMessageAsync(string broadcasterId, string messageId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(messageId)) throw new TwitchApiException("Meddelandet saknar id och går inte att nåla fast.");
+        string url = $"https://api.twitch.tv/helix/chat/pins?broadcaster_id={Uri.EscapeDataString(broadcasterId)}" +
+                     $"&moderator_id={Uri.EscapeDataString(session.UserId)}&message_id={Uri.EscapeDataString(messageId)}";
+        using var request = new HttpRequestMessage(HttpMethod.Put, url);
+        await SendAsync(request, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Takes the channel's pin down again.</summary>
+    public async Task UnpinMessageAsync(string broadcasterId, string messageId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(messageId)) throw new TwitchApiException("Meddelandet saknar id och nålen går inte att ta bort.");
+        string url = $"https://api.twitch.tv/helix/chat/pins?broadcaster_id={Uri.EscapeDataString(broadcasterId)}" +
+                     $"&moderator_id={Uri.EscapeDataString(session.UserId)}&message_id={Uri.EscapeDataString(messageId)}";
+        using var request = new HttpRequestMessage(HttpMethod.Delete, url);
+        await SendAsync(request, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task StartRaidAsync(string fromBroadcasterId, string toBroadcasterId, CancellationToken cancellationToken = default)
     {
         string url = $"https://api.twitch.tv/helix/raids?from_broadcaster_id={Uri.EscapeDataString(fromBroadcasterId)}" +

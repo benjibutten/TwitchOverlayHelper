@@ -31,7 +31,7 @@
   <div id="hypeTop" class="hype-top"></div>
 </section>
 
-<section id="pinned" class="pinned" hidden aria-label="Meddelanden till dig"></section>
+<section id="pinned" class="pinned" hidden aria-label="Fastnålade meddelanden"></section>
 
 <main id="chat" class="chat" role="log" aria-live="polite" aria-label="Chatt"></main>
 
@@ -56,7 +56,13 @@
       <button class="sheet-close icon-btn" type="button" data-close="userSheet" aria-label="Stäng">✕</button>
     </div>
     <p id="sheetQuote" class="sheet-quote"></p>
+    <!-- Pinning a line to the strip above changes nothing on Twitch and nobody else sees it, so it
+         is offered whether or not anyone is logged in – unlike the moderation row below. -->
+    <div class="sheet-reading">
+      <button id="sheetPin" class="action" type="button">📌 Nåla fast här</button>
+    </div>
     <div id="sheetActions" class="sheet-actions">
+      <button id="sheetPinChat" class="action" type="button" data-act="pinChat">📌 Nåla fast för tittarna</button>
       <button class="action" type="button" data-act="timeout" data-seconds="60">⏱ 1 minut</button>
       <button class="action" type="button" data-act="timeout" data-seconds="600">⏱ 10 minuter</button>
       <button class="action" type="button" data-act="timeout" data-seconds="3600">⏱ 1 timme</button>
