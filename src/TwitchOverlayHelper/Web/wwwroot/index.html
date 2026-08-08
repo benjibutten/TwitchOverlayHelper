@@ -17,6 +17,20 @@
   </div>
 </header>
 
+<!-- A hype train runs for minutes, so it gets a shelf of its own above the column rather than a
+     card that the next twenty messages would push out of sight. -->
+<section id="hype" class="hype" hidden aria-label="Hypetåg">
+  <div class="hype-head">
+    <span class="hype-icon" aria-hidden="true">🚂</span>
+    <span id="hypeHeadline" class="hype-headline"></span>
+    <span id="hypeDetail" class="hype-detail"></span>
+  </div>
+  <div id="hypeBar" class="hype-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" hidden>
+    <div id="hypeFill" class="hype-fill"></div>
+  </div>
+  <div id="hypeTop" class="hype-top"></div>
+</section>
+
 <section id="pinned" class="pinned" hidden aria-label="Meddelanden till dig"></section>
 
 <main id="chat" class="chat" role="log" aria-live="polite" aria-label="Chatt"></main>

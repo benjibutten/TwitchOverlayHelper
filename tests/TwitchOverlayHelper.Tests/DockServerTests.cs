@@ -289,6 +289,147 @@ public sealed class DockServerTests
         client.Dispose();
     }
 
+    // A dock that opens mid-train – an OBS restart, a page reload – must not stand there empty while
+    // the whole channel is watching a train it cannot see.
+    [Fact]
+    public async Task HandsARunningHypeTrainToADockThatConnectsMidTrain()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            hub.SetChannel("kanal_a");
+            hub.PublishHypeTrain(new HypeTrainState("t1", HypeTrainPhase.Progress, 3, 200, 800, 1400, DateTimeOffset.Now)
+            {
+                ExpiresAt = DateTimeOffset.Now.AddMinutes(4),
+                TopContributions = [new HypeTrainContribution("Kajsa", "bits", 1200)]
+            });
+
+            using JsonDocument hello = JsonDocument.Parse(await HelloAsync(settings));
+            JsonElement train = hello.RootElement.GetProperty("hypeTrain");
+
+            Assert.Equal("running", train.GetProperty("phase").GetString());
+            Assert.Equal("Hypetåg – nivå 3", train.GetProperty("headline").GetString());
+            Assert.Equal(800, train.GetProperty("goal").GetInt32());
+            // Grouped with the non-breaking space Swedish uses, taken from the culture rather than
+            // typed: the two kinds of space are indistinguishable in a source file.
+            string nbsp = System.Globalization.CultureInfo.GetCultureInfo("sv-SE").NumberFormat.NumberGroupSeparator;
+            Assert.Equal($"Kajsa (1{nbsp}200 bits)", train.GetProperty("top")[0].GetString());
+        }
+        client.Dispose();
+    }
+
+    // A train belongs to the channel it ran in; carrying it into the next one would put a strip over
+    // someone else's chat for a train they were never part of. It goes even while the sample lines
+    // are still up, because a train needs nobody to have said anything to be running.
+    [Fact]
+    public async Task ForgetsTheHypeTrainWhenSwitchingChannels()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            hub.ShowSamples();
+            hub.SetChannel("kanal_a");
+            hub.PublishHypeTrain(RunningTrain());
+
+            hub.SetChannel("kanal_b");
+
+            using JsonDocument hello = JsonDocument.Parse(await HelloAsync(settings));
+            Assert.False(hello.RootElement.TryGetProperty("hypeTrain", out _));
+        }
+        client.Dispose();
+    }
+
+    /// <summary>
+    /// The strip is only ever taken down by a frame that says so. It used to ride along on the clear
+    /// frame, which also fires when the first real line replaces the sample lines – so a train
+    /// running in a quiet room was wiped off the strip by a stranger's first "hej".
+    /// </summary>
+    [Fact]
+    public async Task LeavesTheHypeTrainAloneWhenTheFirstRealLineReplacesTheSamples()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            hub.ShowSamples();
+            hub.PublishHypeTrain(RunningTrain());
+
+            // The clear that drops the samples, and the line that replaced them.
+            string[] frames = await FramesAfterHelloAsync(settings, 2, () =>
+                hub.PublishMessage(new ChatMessage("1", "Någon", "hej", null, [], false, false, DateTimeOffset.Now)));
+
+            Assert.All(frames, frame => Assert.DoesNotContain("hypeTrain", frame, StringComparison.Ordinal));
+
+            using JsonDocument hello = JsonDocument.Parse(await HelloAsync(settings));
+            Assert.True(hello.RootElement.TryGetProperty("hypeTrain", out _));
+        }
+        client.Dispose();
+    }
+
+    // Losing the connection means nothing can tell us the train ended, so the docks that are open
+    // right now have to hear that the strip is over – waiting for its deadline would leave it
+    // claiming a train is running long after we stopped listening.
+    [Fact]
+    public async Task TellsOpenDocksWhenThereIsNoTrainAnyMore()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            hub.PublishHypeTrain(RunningTrain());
+
+            string[] frames = await FramesAfterHelloAsync(settings, 1, hub.ClearHypeTrain);
+
+            using JsonDocument frame = JsonDocument.Parse(frames[0]);
+            Assert.Equal("hypeTrain", frame.RootElement.GetProperty("type").GetString());
+            // No payload at all is how "there is no train" travels.
+            Assert.False(frame.RootElement.TryGetProperty("payload", out _));
+        }
+        client.Dispose();
+    }
+
+    private static HypeTrainState RunningTrain() =>
+        new("t1", HypeTrainPhase.Progress, 3, 200, 800, 1400, DateTimeOffset.Now)
+        {
+            ExpiresAt = DateTimeOffset.Now.AddMinutes(4)
+        };
+
+    /// <summary>Opens a dock, reads past its hello, then returns the frames <paramref name="act"/> caused.</summary>
+    private static async Task<string[]> FramesAfterHelloAsync(AppSettings settings, int count, Action act)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var socket = new ClientWebSocket();
+        await socket.ConnectAsync(new Uri($"ws://127.0.0.1:{settings.DockServerPort}/ws?key={settings.DockAccessKey}"), timeout.Token);
+
+        byte[] buffer = new byte[64 * 1024];
+        await socket.ReceiveAsync(buffer, timeout.Token);
+
+        act();
+
+        var frames = new List<string>(count);
+        for (int i = 0; i < count; i++)
+        {
+            WebSocketReceiveResult result = await socket.ReceiveAsync(buffer, timeout.Token);
+            frames.Add(Encoding.UTF8.GetString(buffer, 0, result.Count));
+        }
+        return frames.ToArray();
+    }
+
+    // The strip is a state, not a log: a train that ended before this dock existed is not news.
+    [Fact]
+    public async Task DoesNotReplayATrainThatIsLongOver()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            hub.SetChannel("kanal_a");
+            hub.PublishHypeTrain(new HypeTrainState("t1", HypeTrainPhase.Ended, 4, 0, 0, 4250,
+                DateTimeOffset.Now - HypeTrainState.EndedLinger - TimeSpan.FromMinutes(1)));
+
+            using JsonDocument hello = JsonDocument.Parse(await HelloAsync(settings));
+            Assert.False(hello.RootElement.TryGetProperty("hypeTrain", out _));
+        }
+        client.Dispose();
+    }
+
     private static async Task<int> HelloHistoryCountAsync(AppSettings settings)
     {
         using JsonDocument json = JsonDocument.Parse(await HelloAsync(settings));

@@ -38,6 +38,13 @@ public partial class MainWindow : Window
     private readonly RewardCatalog _rewards = new();
     private readonly PowerUpTracker _powerUps = new();
     /// <summary>
+    /// Which hype train moments have already been given a card. The strip can refuse an update for
+    /// being out of order and still owe the overlay its card – a begin arriving after the progress
+    /// it started is late, not wrong – so the two are kept apart, and the card is deduplicated on
+    /// the one thing that identifies the moment rather than on whether the strip moved.
+    /// </summary>
+    private readonly RecentMessageIds _hypeCards = new();
+    /// <summary>
     /// Keeps a chat line and the power-up marker for it in that order. The two are raised on
     /// different threads – IRC and EventSub – and the moment the tracker knows about a line, the
     /// marked copy can go out. If it overtook the line itself, the views would be asked to update a
@@ -126,6 +133,7 @@ public partial class MainWindow : Window
         _eventSubClient.EventReceived += OnChatEvent;
         _eventSubClient.RedemptionReceived += OnRedemption;
         _eventSubClient.GigantifyReceived += OnGigantify;
+        _eventSubClient.HypeTrainChanged += OnHypeTrain;
         _eventSubClient.StatusChanged += status => RunOnUi(() => SetEventStatus(status));
         _eventSubClient.CoverageChanged += coverage => RunOnUi(() => ApplyEventCoverage(coverage));
         _chatClient.StatusChanged += status => RunOnUi(() => SetStatus(status));
@@ -587,6 +595,11 @@ public partial class MainWindow : Window
         // Another channel's reward names would be wrong here, and a stale name is worse than none.
         _rewards.Clear();
         _powerUps.Clear();
+        // From here on nothing can tell us the train ended, so the strip has to go even when the
+        // channel is the same one. A live train writes itself back on the next progress; a train
+        // that ended during the gap would otherwise sit there claiming to be running.
+        _hub.ClearHypeTrain();
+        _hypeCards.Clear();
         _petService.RedemptionsFromEventSub = false;
         if (generation != _eventSubGeneration) return;
 
@@ -628,6 +641,7 @@ public partial class MainWindow : Window
         if (coverage.Redemptions) on.Add("inlösta belöningar visas med namn och kostnad");
         if (coverage.Shoutouts) on.Add("shoutouts visas");
         if (coverage.PowerUps) on.Add("power-ups visas");
+        if (coverage.HypeTrain) on.Add("hypetåg visas");
 
         // A stored login only misses a scope when it was granted before we started asking for it.
         bool offerLogin = _session.IsLoggedIn && coverage.MissingScopes.Count > 0;
@@ -636,9 +650,9 @@ public partial class MainWindow : Window
         // permission we never asked for would send the user looking in the wrong place.
         string headline =
             on.Count > 0 ? "Extra händelser: " + string.Join(", ", on) + "."
-            : !_session.IsLoggedIn ? "Inte inloggad, så subs och raids visas men inte belöningar, shoutouts eller power-ups."
+            : !_session.IsLoggedIn ? "Inte inloggad, så subs och raids visas men inte belöningar, shoutouts, power-ups eller hypetåg."
             : offerLogin ? "Inga extra händelser än."
-            : "Inga extra händelser i den här kanalen – belöningar och power-ups kräver din egen kanal, shoutouts att du är moderator.";
+            : "Inga extra händelser i den här kanalen – belöningar, power-ups och hypetåg kräver din egen kanal, shoutouts att du är moderator.";
 
         EventStatusText.Text = offerLogin
             ? $"{headline} Logga in igen för att slå på {string.Join(" och ", coverage.MissingScopes.Select(TwitchAuth.DescribeScope))}."
@@ -744,6 +758,21 @@ public partial class MainWindow : Window
     {
         Queue(ChatTimelineItem.Of(chatEvent));
         _hub.PublishEvent(chatEvent);
+    }
+
+    /// <summary>
+    /// A step in a hype train. The two views want different things from it, which is why this does
+    /// not go through <see cref="OnChatEvent"/>: the dock is handed the whole state and draws a strip
+    /// that stays put for the minutes the train lasts, while the overlay – which has nowhere to put
+    /// a strip – gets a card for the start and one for the end and nothing in between. A bar
+    /// redrawing every few seconds on top of a game is the opposite of what the overlay is for.
+    /// </summary>
+    private void OnHypeTrain(HypeTrainState train)
+    {
+        _hub.PublishHypeTrain(train);
+        // The card's id names the train and which of its two moments this is, so a moment that has
+        // already been carded cannot be carded again – whatever order Twitch delivers in.
+        if (train.ToChatEvent() is { } card && _hypeCards.IsNew(card.Id)) Queue(ChatTimelineItem.Of(card));
     }
 
     /// <summary>
@@ -1002,6 +1031,10 @@ public partial class MainWindow : Window
     {
         await _chatClient.DisconnectAsync();
         await _eventSubClient.StopAsync();
+        // Nothing will reach us about the train from here, so the strip must not outlive the
+        // connection that was feeding it.
+        _hub.ClearHypeTrain();
+        _hypeCards.Clear();
         SetConnectionButtons(false);
     }
 

@@ -271,6 +271,9 @@ public partial class OverlayWindow : Window
         ChatEventType.RewardRedemption => ("BELÖNING", Color.FromRgb(15, 124, 138)),
         ChatEventType.ShoutoutSent or ChatEventType.ShoutoutReceived => ("SHOUTOUT", Color.FromRgb(192, 40, 127)),
         ChatEventType.Celebration => ("FIRANDE", Color.FromRgb(139, 92, 246)),
+        // The overlay has nowhere to put a strip, so a train shows as the two moments that are
+        // moments: it started, and it ended on this level. The minutes in between are the dock's.
+        ChatEventType.HypeTrainBegin or ChatEventType.HypeTrainEnd => ("HYPETÅG", Color.FromRgb(240, 168, 30)),
         _ => ("HÄNDELSE", Color.FromRgb(150, 150, 170))
     };
 

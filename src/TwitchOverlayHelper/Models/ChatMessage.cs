@@ -163,7 +163,14 @@ public enum ChatEventType
     /// message. It is the one power-up with nothing to attach itself to, which is why it gets a
     /// card of its own while the other two only mark a chat line.
     /// </summary>
-    Celebration
+    Celebration,
+    /// <summary>
+    /// A hype train started. The train itself is a state rather than an event – the dock draws it as
+    /// a strip – but its start is a moment, and the overlay has nowhere to put a strip.
+    /// </summary>
+    HypeTrainBegin,
+    /// <summary>A hype train ended, with the level it reached.</summary>
+    HypeTrainEnd
 }
 
 /// <summary>
@@ -226,6 +233,24 @@ public sealed record ChatEvent(
 
     /// <summary>Channel points the redemption cost.</summary>
     public int? RewardCost { get; init; }
+
+    /// <summary>The level a hype train was on when it started or ended.</summary>
+    public int? HypeLevel { get; init; }
+
+    /// <summary>Points contributed to the hype train in total.</summary>
+    public int? HypeTotal { get; init; }
+
+    /// <summary>Twitch's own kind of train: "regular", "treasure" or "golden_kappa".</summary>
+    public string? HypeKind { get; init; }
+
+    /// <summary>Whether the train was being run together with other channels.</summary>
+    public bool HypeIsShared { get; init; }
+
+    /// <summary>
+    /// Who carried the train. Only the first is put on the card – the overlay card is one line, and
+    /// the full list belongs in the dock's strip where there is room for it.
+    /// </summary>
+    public IReadOnlyList<HypeTrainContribution> TopContributions { get; init; } = Array.Empty<HypeTrainContribution>();
 }
 
 /// <summary>

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Net.WebSockets;
 using System.Text;
@@ -7,9 +8,11 @@ using TwitchOverlayHelper.Models;
 namespace TwitchOverlayHelper.Twitch;
 
 /// <summary>What the app managed to switch on in the connected channel, and what it could not.</summary>
-public sealed record EventSubCoverage(bool Redemptions, bool Shoutouts, bool PowerUps, IReadOnlyList<string> MissingScopes)
+public sealed record EventSubCoverage(bool Redemptions, bool Shoutouts, bool PowerUps, bool HypeTrain, IReadOnlyList<string> MissingScopes)
 {
-    public bool Any => Redemptions || Shoutouts || PowerUps;
+    public static readonly EventSubCoverage Nothing = new(false, false, false, false, []);
+
+    public bool Any => Redemptions || Shoutouts || PowerUps || HypeTrain;
 }
 
 /// <summary>
@@ -29,7 +32,7 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
     private CancellationTokenSource? _lifetime;
     private Task? _runTask;
     private EventSubPlan _plan = EventSubPlan.Nothing;
-    private EventSubCoverage _covered = new(false, false, false, []);
+    private EventSubCoverage _covered = EventSubCoverage.Nothing;
 
     // During a reconnect Twitch keeps delivering on the old socket while the new one comes up, so
     // for a moment both are live and the same notification arrives twice. Without this guard one
@@ -46,6 +49,12 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
     /// belongs to a chat line, and the app's job is to find that line and mark it.
     /// </summary>
     public event Action<GigantifiedEmote>? GigantifyReceived;
+
+    /// <summary>
+    /// Raised on every step of a hype train. Not an event card: a train is a state that lives for
+    /// minutes, so each notification is the whole current picture and replaces the last one.
+    /// </summary>
+    public event Action<HypeTrainState>? HypeTrainChanged;
 
     public event Action<string>? StatusChanged;
 
@@ -71,13 +80,16 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
         bool shoutouts = session.HasScope(TwitchAuth.ShoutoutsScope);
         // Power-ups are spent in a channel, and only its broadcaster may read them.
         bool powerUps = ownChannel && session.HasScope(TwitchAuth.BitsScope);
+        // A hype train belongs to the channel it runs in, and reads the same way.
+        bool hypeTrain = ownChannel && session.HasScope(TwitchAuth.HypeTrainScope);
 
         var missing = new List<string>();
         if (ownChannel && !session.HasScope(TwitchAuth.RedemptionsScope)) missing.Add(TwitchAuth.RedemptionsScope);
         if (!session.HasScope(TwitchAuth.ShoutoutsScope)) missing.Add(TwitchAuth.ShoutoutsScope);
         if (ownChannel && !session.HasScope(TwitchAuth.BitsScope)) missing.Add(TwitchAuth.BitsScope);
+        if (ownChannel && !session.HasScope(TwitchAuth.HypeTrainScope)) missing.Add(TwitchAuth.HypeTrainScope);
 
-        return new EventSubPlan(redemptions, shoutouts, powerUps, missing);
+        return new EventSubPlan(redemptions, shoutouts, powerUps, hypeTrain, missing);
     }
 
     public Task StartAsync(string broadcasterId)
@@ -87,7 +99,7 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
         _plan = plan;
         if (!plan.WorthConnecting)
         {
-            CoverageChanged?.Invoke(new EventSubCoverage(false, false, false, plan.MissingScopes));
+            CoverageChanged?.Invoke(EventSubCoverage.Nothing with { MissingScopes = plan.MissingScopes });
             return Task.CompletedTask;
         }
 
@@ -106,7 +118,7 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
     private void ReportNothingCovered()
     {
         if (!_covered.Any) return;
-        _covered = new EventSubCoverage(false, false, false, _plan.MissingScopes);
+        _covered = EventSubCoverage.Nothing with { MissingScopes = _plan.MissingScopes };
         CoverageChanged?.Invoke(_covered);
     }
 
@@ -281,7 +293,8 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
         if (type == "channel.channel_points_custom_reward_redemption.add") _covered = _covered with { Redemptions = false };
         else if (type.StartsWith("channel.shoutout", StringComparison.Ordinal)) _covered = _covered with { Shoutouts = false };
         else if (type == "channel.bits.use") _covered = _covered with { PowerUps = false };
-        else _covered = _covered with { Redemptions = false, Shoutouts = false, PowerUps = false };
+        else if (type.StartsWith("channel.hype_train", StringComparison.Ordinal)) _covered = _covered with { HypeTrain = false };
+        else _covered = _covered with { Redemptions = false, Shoutouts = false, PowerUps = false, HypeTrain = false };
 
         CoverageChanged?.Invoke(_covered);
         StatusChanged?.Invoke("Twitch drog tillbaka en händelseprenumeration – logga in igen om du vill ha den tillbaka.");
@@ -297,6 +310,7 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
         bool redemptions = false;
         bool shoutouts = false;
         bool powerUps = false;
+        bool hypeTrain = false;
 
         if (plan.Redemptions)
             redemptions = await TrySubscribeAsync("channel.channel_points_custom_reward_redemption.add", "1",
@@ -320,7 +334,26 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
             powerUps = await TrySubscribeAsync("channel.bits.use", "1",
                 new Dictionary<string, string> { ["broadcaster_user_id"] = broadcasterId }, sessionId, token).ConfigureAwait(false);
 
-        _covered = new EventSubCoverage(redemptions, shoutouts, powerUps, plan.MissingScopes);
+        if (plan.HypeTrain)
+        {
+            var condition = new Dictionary<string, string> { ["broadcaster_user_id"] = broadcasterId };
+            // Version 2, not 1: v1 knows nothing about shared trains or the golden Kappa train.
+            //
+            // Asked for one at a time rather than chained with &&, because the end is what takes the
+            // strip back down: skipping it when an earlier one happened to fail is exactly how a
+            // strip ends up standing over a train that finished half an hour ago. A subscription
+            // that did get through while another did not is left where it is – websocket
+            // subscriptions belong to the session and go when it does, so a reconnect starts over
+            // from nothing either way.
+            bool begin = await TrySubscribeAsync("channel.hype_train.begin", "2", condition, sessionId, token).ConfigureAwait(false);
+            bool progress = await TrySubscribeAsync("channel.hype_train.progress", "2", condition, sessionId, token).ConfigureAwait(false);
+            bool end = await TrySubscribeAsync("channel.hype_train.end", "2", condition, sessionId, token).ConfigureAwait(false);
+            // Only all three add up to a strip that appears, moves and leaves again; anything less
+            // would have the app claim a feature it can only do half of.
+            hypeTrain = begin && progress && end;
+        }
+
+        _covered = new EventSubCoverage(redemptions, shoutouts, powerUps, hypeTrain, plan.MissingScopes);
         CoverageChanged?.Invoke(_covered);
         StatusChanged?.Invoke(_covered.Any ? "Händelser på" : "Inga extra händelser i den här kanalen");
     }
@@ -395,7 +428,55 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
                     ViewerCount = ReadInt(data, "viewer_count")
                 });
                 return;
+            case "channel.hype_train.begin":
+                HypeTrainChanged?.Invoke(ReadHypeTrain(data, HypeTrainPhase.Begin, at));
+                return;
+            case "channel.hype_train.progress":
+                HypeTrainChanged?.Invoke(ReadHypeTrain(data, HypeTrainPhase.Progress, at));
+                return;
+            case "channel.hype_train.end":
+                HypeTrainChanged?.Invoke(ReadHypeTrain(data, HypeTrainPhase.Ended, at));
+                return;
         }
+    }
+
+    /// <summary>
+    /// One hype train notification as the app's whole picture of that train. The end payload carries
+    /// neither progress nor goal – there is no next level to reach – so both read as zero, which is
+    /// what makes the strip drop its bar rather than freeze it mid-climb.
+    /// </summary>
+    private static HypeTrainState ReadHypeTrain(JsonElement data, HypeTrainPhase phase, DateTimeOffset at) => new(
+        ReadString(data, "id"),
+        phase,
+        ReadInt(data, "level") ?? 0,
+        ReadInt(data, "progress") ?? 0,
+        ReadInt(data, "goal") ?? 0,
+        ReadInt(data, "total") ?? 0,
+        at)
+    {
+        Kind = EmptyToNull(ReadString(data, "type")),
+        IsShared = data.TryGetProperty("is_shared_train", out JsonElement shared) && shared.ValueKind == JsonValueKind.True,
+        ExpiresAt = ReadTime(data, "expires_at"),
+        TopContributions = ReadContributions(data)
+    };
+
+    /// <summary>
+    /// Who is carrying the train, kept in the order Twitch ranked them. Sorting them here would mean
+    /// comparing a bits count against a subscription tier price, which are the same points only
+    /// when a gift batch counts as one subscription – and the payload does not say whether it does.
+    /// </summary>
+    private static IReadOnlyList<HypeTrainContribution> ReadContributions(JsonElement data)
+    {
+        if (!data.TryGetProperty("top_contributions", out JsonElement list) || list.ValueKind != JsonValueKind.Array) return [];
+
+        var result = new List<HypeTrainContribution>();
+        foreach (JsonElement item in list.EnumerateArray())
+        {
+            string name = ReadString(item, "user_name");
+            if (name.Length == 0) continue;
+            result.Add(new HypeTrainContribution(name, ReadString(item, "type"), ReadInt(item, "total") ?? 0));
+        }
+        return result;
     }
 
     /// <summary>
@@ -517,17 +598,26 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
             ? number
             : null;
 
+    /// <summary>Twitch writes its timestamps as RFC 3339 with more precision than DateTimeOffset keeps.</summary>
+    private static DateTimeOffset? ReadTime(JsonElement element, string property) =>
+        element.ValueKind == JsonValueKind.Object
+        && element.TryGetProperty(property, out JsonElement value)
+        && value.ValueKind == JsonValueKind.String
+        && DateTimeOffset.TryParse(value.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset parsed)
+            ? parsed
+            : null;
+
     private static string? EmptyToNull(string value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
     public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
 }
 
 /// <summary>What is worth subscribing to in a channel, decided before any request is sent.</summary>
-public sealed record EventSubPlan(bool Redemptions, bool Shoutouts, bool PowerUps, IReadOnlyList<string> MissingScopes)
+public sealed record EventSubPlan(bool Redemptions, bool Shoutouts, bool PowerUps, bool HypeTrain, IReadOnlyList<string> MissingScopes)
 {
-    public static readonly EventSubPlan Nothing = new(false, false, false, []);
+    public static readonly EventSubPlan Nothing = new(false, false, false, false, []);
 
-    public bool WorthConnecting => Redemptions || Shoutouts || PowerUps;
+    public bool WorthConnecting => Redemptions || Shoutouts || PowerUps || HypeTrain;
 }
 
 /// <summary>

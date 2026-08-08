@@ -67,6 +67,23 @@ internal sealed record DockEvent(
 /// <summary>One replayed line, tagged so the dock can hand it to the same code as a live frame.</summary>
 internal sealed record DockHistoryItem(string Type, DockMessage? Message, DockEvent? Event);
 
+/// <summary>
+/// The hype train strip. A train is a state that runs for minutes rather than a line in a log, so
+/// it travels as the whole current picture: each frame replaces the last one, and a dock that
+/// connects mid-train is handed the same shape in its hello. The contributors arrive already
+/// worded, because turning a subscription's tier price into readable Swedish is not the dock's job.
+/// </summary>
+internal sealed record DockHypeTrain(
+    string Id,
+    string Phase,
+    string Headline,
+    string? Detail,
+    int Level,
+    int Progress,
+    int Goal,
+    IReadOnlyList<string> Top,
+    long? ExpiresAt);
+
 internal sealed record DockStatus(string Text, string State);
 
 internal sealed record DockAuth(bool LoggedIn, string Login, bool CanSend, bool CanRaid, string? Error);
@@ -82,7 +99,8 @@ internal sealed record DockHello(
     IReadOnlyList<DockHistoryItem> History,
     DockPetSettings PetSettings,
     IReadOnlyList<DockPetDefinition> PetCatalog,
-    IReadOnlyList<DockPet> Pets);
+    IReadOnlyList<DockPet> Pets,
+    DockHypeTrain? HypeTrain);
 
 internal sealed record DockPet(string Id, string Name, string? Color, string Species, long SpawnedAt, long ExpiresAt);
 
@@ -181,6 +199,22 @@ internal static class DockMapper
         chatEvent.At.ToUnixTimeMilliseconds(),
         chatEvent.AnnouncementColor);
 
+    /// <summary>
+    /// A hype train for the strip. The bar is about the level being climbed right now, so a train
+    /// that has ended sends no detail line and a goal of zero – there is nothing left to climb.
+    /// </summary>
+    public static DockHypeTrain ToDock(HypeTrainState train) => new(
+        train.Id,
+        train.HasEnded ? "ended" : "running",
+        ChatEventText.DescribeHypeTrain(train),
+        train.HasEnded ? null : ChatEventText.DescribeHypeProgress(train),
+        train.Level,
+        train.Progress,
+        train.HasEnded ? 0 : train.Goal,
+        // Three fit on one line in a narrow dock; a fourth would push the row into an ellipsis.
+        train.TopContributions.Take(3).Select(ChatEventText.DescribeContribution).ToArray(),
+        train.ExpiresAt?.ToUnixTimeMilliseconds());
+
     /// <summary>Kept as camelCase strings rather than numbers so the dock's CSS can key off them.</summary>
     private static string Kind(ChatEventType type) => type switch
     {
@@ -198,6 +232,10 @@ internal static class DockMapper
         ChatEventType.ShoutoutSent => "shoutoutSent",
         ChatEventType.ShoutoutReceived => "shoutoutReceived",
         ChatEventType.Celebration => "celebration",
+        // Only the overlay draws these; the dock has the strip instead. Named all the same, so a
+        // card that ever did reach the dock would not arrive labelled as something unknown.
+        ChatEventType.HypeTrainBegin => "hypeTrainBegin",
+        ChatEventType.HypeTrainEnd => "hypeTrainEnd",
         _ => "other"
     };
 

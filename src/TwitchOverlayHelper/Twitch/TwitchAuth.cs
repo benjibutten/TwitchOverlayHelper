@@ -34,6 +34,9 @@ public sealed class TwitchAuth(HttpClient httpClient)
     /// <summary>Power-ups and cheers through channel.bits.use, in your own channel only.</summary>
     public const string BitsScope = "bits:read";
 
+    /// <summary>Hype trains, in your own channel only.</summary>
+    public const string HypeTrainScope = "channel:read:hype_train";
+
     /// <summary>
     /// What the app asks Twitch for at login. "Required" is about the request, not about running:
     /// every one of these is optional at run time. A login granted before a scope existed keeps
@@ -50,7 +53,8 @@ public sealed class TwitchAuth(HttpClient httpClient)
         "user:read:follows",
         RedemptionsScope,
         ShoutoutsScope,
-        BitsScope
+        BitsScope,
+        HypeTrainScope
     ];
 
     public static string ScopeString => string.Join(' ', RequiredScopes);
@@ -73,6 +77,7 @@ public sealed class TwitchAuth(HttpClient httpClient)
         RedemptionsScope => "inlösta belöningar",
         ShoutoutsScope => "shoutouts",
         BitsScope => "power-ups och förstorade emotes",
+        HypeTrainScope => "hypetåg",
         "chat:read" => "läsa chatten",
         "chat:edit" => "skriva i chatten",
         "moderator:manage:banned_users" => "timeout och ban",

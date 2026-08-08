@@ -13,6 +13,8 @@ const el = {
   sheetActions: $("sheetActions"), sheetLocked: $("sheetLocked"),
   sheetConfirm: $("sheetConfirm"), sheetConfirmText: $("sheetConfirmText"),
   raidPanel: $("raidPanel"), raidList: $("raidList"), raidSearch: $("raidSearch"),
+  hype: $("hype"), hypeHeadline: $("hypeHeadline"), hypeDetail: $("hypeDetail"),
+  hypeBar: $("hypeBar"), hypeFill: $("hypeFill"), hypeTop: $("hypeTop"),
 };
 
 const state = {
@@ -77,6 +79,8 @@ function handle(frame) {
     state.queue.length = 0;
     state.missed = 0;
     updateJump();
+    // A train that is still running when OBS restarts should be there when the dock comes back.
+    applyHypeTrain(frame.hypeTrain || null);
 
     // History is already read; it should appear at once rather than trickle through the pacer.
     frame.history.forEach((item) => appendItem(item.type === "event" ? evt(item.event) : msg(item.message), true));
@@ -86,6 +90,9 @@ function handle(frame) {
   if (frame.type === "message") { state.queue.push(msg(frame.payload)); return; }
   if (frame.type === "event") { state.queue.push(evt(frame.payload)); return; }
   if (frame.type === "messageUpdate") { applyMessageUpdate(frame.payload); return; }
+  // No payload means there is no train. Deliberately not folded into the clear frame below: that
+  // one also fires when the first real line replaces the samples, which says nothing about a train.
+  if (frame.type === "hypeTrain") { applyHypeTrain(frame.payload || null); return; }
   if (frame.type === "clear") { el.chat.replaceChildren(); state.queue.length = 0; state.missed = 0; return; }
   if (frame.type === "moderation") { applyModeration(frame.payload); return; }
   if (frame.type === "status") { setStatus(frame.payload.text, frame.payload.state); return; }
@@ -518,6 +525,49 @@ function pin(message) {
       el.pinned.hidden = true;
     }
   }, state.settings.pinnedMentionSeconds * 1000);
+}
+
+/* ------------------------------------------------------------- hype train */
+
+/* A hype train is the one thing here that is a state rather than a line: it runs for minutes and
+   changes while it does. So it gets a strip that stays put, and every frame is the whole current
+   picture – rendering is a straight replace, never a merge. */
+
+/* How long a finished train stays up so the level it reached can be read. Matches
+   HypeTrainState.EndedLinger in the app, which is what decides whether a reconnecting dock is
+   handed the train at all. */
+const HYPE_LINGER_MS = 12000;
+let hypeTimer = 0;
+
+function applyHypeTrain(train) {
+  clearTimeout(hypeTimer);
+  if (!train) { el.hype.hidden = true; return; }
+
+  el.hype.hidden = false;
+  el.hype.dataset.phase = train.phase;
+  el.hypeHeadline.textContent = train.headline;
+  el.hypeDetail.textContent = train.detail || "";
+  // "Toppbidrag", not "störst": Twitch ranks these per contribution method, so the first one is not
+  // necessarily the biggest single contribution.
+  el.hypeTop.textContent = train.top.length ? `Toppbidrag: ${train.top.join(" · ")}` : "";
+
+  // The bar is about the level being climbed right now, so a train that is over has none.
+  const share = train.goal > 0 ? Math.min(1, train.progress / train.goal) : 0;
+  el.hypeBar.hidden = train.goal <= 0;
+  el.hypeFill.style.width = `${Math.round(share * 100)}%`;
+  el.hypeBar.setAttribute("aria-valuenow", String(Math.round(share * 100)));
+  el.hypeBar.setAttribute("aria-label", train.detail || train.headline);
+
+  /* Two ways the strip leaves on its own. A finished train has been read after a few seconds; and a
+     running one whose deadline passes is a train we have lost contact with, because Twitch would
+     have sent a level-up or an end otherwise. Without the second one, a dropped connection mid-train
+     would leave a frozen bar sitting there for the rest of the stream. */
+  const linger = train.phase === "ended"
+    ? HYPE_LINGER_MS
+    : Math.max(0, (train.expiresAt || 0) - Date.now());
+  if (train.phase === "ended" || train.expiresAt) {
+    hypeTimer = setTimeout(() => { el.hype.hidden = true; }, linger);
+  }
 }
 
 /* A line we have already been given, changed: a Gigantify power-up that reached the desktop app

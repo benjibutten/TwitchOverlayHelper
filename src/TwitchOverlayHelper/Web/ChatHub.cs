@@ -23,7 +23,11 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
     // landed between even after the dock reconnects and replays the history.
     private readonly Queue<ChatTimelineItem> _history = new();
     private readonly Lock _historyLock = new();
+    // Written from the EventSub reader and read by every dock that connects, so it needs a lock of
+    // its own rather than riding along on the history's.
+    private readonly Lock _hypeTrainLock = new();
 
+    private HypeTrainState? _hypeTrain;
     private string _statusText = "Inte ansluten";
     private string _statusState = "idle";
     private string _channel = string.Empty;
@@ -49,11 +53,32 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
         bool changed = !string.Equals(_channel, channel, StringComparison.OrdinalIgnoreCase);
         _channel = channel;
         BroadcasterId = string.Empty;
+        if (!changed) return;
+
+        // A train belongs to the channel it ran in, and it goes even while the sample lines are
+        // still up: a train needs nobody to have said anything, so it can be running in a room
+        // where the samples have never been replaced.
+        ClearHypeTrain();
 
         // Samples are not anyone's chat, so they stay until the first real message replaces them.
-        if (!changed || _showingSamples) return;
+        if (_showingSamples) return;
         lock (_historyLock) _history.Clear();
         Send(DockJson.Serialize(new DockEnvelope<object?>("clear", null)));
+    }
+
+    /// <summary>
+    /// Says there is no train any more. Its own frame rather than a ride on the clear frame: clear
+    /// also fires when the first real line replaces the sample lines, and a train that started
+    /// before anyone had said a word would be wiped off the strip by a stranger's first "hej".
+    /// </summary>
+    public void ClearHypeTrain()
+    {
+        lock (_hypeTrainLock)
+        {
+            if (_hypeTrain is null) return;
+            _hypeTrain = null;
+        }
+        Send(DockJson.Serialize(new DockEnvelope<DockHypeTrain?>("hypeTrain", null)));
     }
 
     public void PublishMessage(ChatMessage message)
@@ -66,6 +91,23 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
     {
         Remember(ChatTimelineItem.Of(chatEvent));
         Send(DockJson.Serialize(new DockEnvelope<DockEvent>("event", DockMapper.ToDock(chatEvent))));
+    }
+
+    /// <summary>
+    /// Where the hype train stands now. Deliberately not part of the history: a train is one thing
+    /// that changes for minutes, not a run of lines, and remembering every step would push the chat
+    /// out of the column it shares. Each frame is the whole picture and replaces the last one.
+    /// </summary>
+    public void PublishHypeTrain(HypeTrainState train)
+    {
+        lock (_hypeTrainLock)
+        {
+            // Twitch promises nothing about the order of these, so an update that would walk the
+            // train backwards is dropped rather than shown.
+            if (!train.Supersedes(_hypeTrain)) return;
+            _hypeTrain = train;
+        }
+        Send(DockJson.Serialize(new DockEnvelope<DockHypeTrain>("hypeTrain", DockMapper.ToDock(train))));
     }
 
     /// <summary>
@@ -245,6 +287,8 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
     {
         ChatTimelineItem[] history;
         lock (_historyLock) history = _history.ToArray();
+        HypeTrainState? hypeTrain;
+        lock (_hypeTrainLock) hypeTrain = _hypeTrain;
 
         string mentionName = settings.UserName.Length > 0 ? settings.UserName : settings.Channel;
         return DockJson.Serialize(new DockHello(
@@ -258,7 +302,10 @@ public sealed class ChatHub(AppSettings settings, TwitchBadgeCatalog badges, Twi
             history.Select(ToDock).ToArray(),
             BuildPetSettings(),
             BuildPetCatalog(),
-            pets.Snapshot().Select(ToDock).ToArray()));
+            pets.Snapshot().Select(ToDock).ToArray(),
+            // A train that has already run out is not news to a dock opening now, and replaying it
+            // would put a strip on screen for something that finished before the page existed.
+            hypeTrain is { } train && train.IsWorthShowing(DateTimeOffset.Now) ? DockMapper.ToDock(train) : null));
     }
 
     private DockMessage ToDock(ChatMessage message) => DockMapper.ToDock(message, badge =>

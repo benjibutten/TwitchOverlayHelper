@@ -11,6 +11,7 @@
   --danger: #b32626;
   --mention: #ffe9a8;
   --mention-line: #d9a400;
+  --hype: #c07a00;
   --font: Verdana, sans-serif;
   --size: 20px;
   --lh: 1.6;
@@ -21,7 +22,7 @@
 body[data-theme="peach"] { --bg:#fdeee4; --surface:#fff6ef; --surface-alt:#f7e2d3; --text:#2b201a; --muted:#7a6154; --line:#e8cdba; --mention:#ffe0bd; --mention-line:#d97a2b; }
 body[data-theme="mint"]  { --bg:#e9f4ee; --surface:#f5fbf7; --surface-alt:#dcece2; --text:#1c2a23; --muted:#566b60; --line:#c8ddd1; --mention:#d8f0c9; --mention-line:#4f8f2f; }
 body[data-theme="light"] { --bg:#f2f2f4; --surface:#ffffff; --surface-alt:#ececed; --text:#1a1a1c; --muted:#63636b; --line:#dcdce0; --mention:#fff0bd; --mention-line:#c08a00; }
-body[data-theme="dark"]  { --bg:#14161c; --surface:#1c1f27; --surface-alt:#232733; --text:#ece9f0; --muted:#9b96a8; --line:#333846; --accent:#a97cff; --danger:#ff6b6b; --mention:#4a3a12; --mention-line:#e0a92b; }
+body[data-theme="dark"]  { --bg:#14161c; --surface:#1c1f27; --surface-alt:#232733; --text:#ece9f0; --muted:#9b96a8; --line:#333846; --accent:#a97cff; --danger:#ff6b6b; --mention:#4a3a12; --mention-line:#e0a92b; --hype:#f0b429; }
 
 * { box-sizing: border-box; }
 
@@ -64,6 +65,35 @@ body { display: flex; flex-direction: column; }
 }
 .icon-btn:hover { background: var(--surface-alt); color: var(--text); }
 .icon-btn[aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+/* ---------- hype train ---------- */
+/* A train is a state, not a line, so it sits on the same shelf as the pinned mentions and stays put
+   for the minutes it lasts. Sized in fixed pixels like the top bar rather than in the reading size:
+   it is chrome around the chat, and the one thing it must not be mistaken for is a message. */
+.hype {
+  flex: 0 0 auto;
+  background: var(--surface-alt);
+  border-bottom: 2px solid var(--hype);
+  padding: 5px 8px;
+}
+/* The train is over; the strip is still up so the level it reached can be read. */
+.hype[data-phase="ended"] { opacity: 0.72; }
+
+.hype-head { display: flex; align-items: baseline; gap: 6px; }
+.hype-icon { flex: 0 0 auto; font-size: 13px; }
+.hype-headline {
+  flex: 1 1 auto; min-width: 0; font-weight: 700; font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hype-detail { flex: 0 0 auto; font-size: 11px; color: var(--muted); }
+
+.hype-bar { height: 7px; margin: 4px 0 3px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.hype-fill { height: 100%; border-radius: 99px; background: var(--hype); transition: width 400ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .hype-fill { transition: none; } }
+
+.hype-top { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* No contributors yet – an empty row would still cost a line of height. */
+.hype-top:empty { display: none; }
 
 /* ---------- pinned mentions ---------- */
 .pinned {

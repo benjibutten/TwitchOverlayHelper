@@ -119,6 +119,42 @@ public sealed class EventSubPlanTests
 
         Assert.DoesNotContain(TwitchAuth.BitsScope, plan.MissingScopes);
     }
+
+    [Fact]
+    public void ReadsHypeTrainsInYourOwnChannel()
+    {
+        EventSubPlan plan = Client(OwnUserId, TwitchAuth.HypeTrainScope).Plan(OwnUserId);
+
+        Assert.True(plan.HypeTrain);
+        Assert.True(plan.WorthConnecting);
+    }
+
+    // A hype train belongs to the channel it runs in, and only that broadcaster may read it – the
+    // same shape as power-ups, so there is nothing to learn from asking anywhere else.
+    [Fact]
+    public void NeverAsksForHypeTrainsInSomeoneElsesChannel()
+    {
+        EventSubPlan plan = Client(OwnUserId, TwitchAuth.HypeTrainScope).Plan("999");
+
+        Assert.False(plan.HypeTrain);
+    }
+
+    [Fact]
+    public void SkipsHypeTrainsWhenTheStoredLoginPredatesTheScope()
+    {
+        EventSubPlan plan = Client(OwnUserId, "chat:read").Plan(OwnUserId);
+
+        Assert.False(plan.HypeTrain);
+        Assert.Contains(TwitchAuth.HypeTrainScope, plan.MissingScopes);
+    }
+
+    [Fact]
+    public void DoesNotOfferTheHypeTrainScopeInSomeoneElsesChannel()
+    {
+        EventSubPlan plan = Client(OwnUserId, "chat:read").Plan("999");
+
+        Assert.DoesNotContain(TwitchAuth.HypeTrainScope, plan.MissingScopes);
+    }
 }
 
 public sealed class ScopeMigrationTests
@@ -131,6 +167,7 @@ public sealed class ScopeMigrationTests
         Assert.Contains(TwitchAuth.RedemptionsScope, missing);
         Assert.Contains(TwitchAuth.ShoutoutsScope, missing);
         Assert.Contains(TwitchAuth.BitsScope, missing);
+        Assert.Contains(TwitchAuth.HypeTrainScope, missing);
         Assert.DoesNotContain("chat:read", missing);
     }
 
@@ -154,6 +191,7 @@ public sealed class ScopeMigrationTests
         Assert.Equal("inlösta belöningar", TwitchAuth.DescribeScope(TwitchAuth.RedemptionsScope));
         Assert.Equal("shoutouts", TwitchAuth.DescribeScope(TwitchAuth.ShoutoutsScope));
         Assert.Equal("power-ups och förstorade emotes", TwitchAuth.DescribeScope(TwitchAuth.BitsScope));
+        Assert.Equal("hypetåg", TwitchAuth.DescribeScope(TwitchAuth.HypeTrainScope));
     }
 }
 
