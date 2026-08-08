@@ -58,6 +58,9 @@ public sealed class AppSettings
     /// <summary>Channel point pets in the OBS pet overlay.</summary>
     public PetSettings Pets { get; set; } = new();
 
+    /// <summary>The edge glow that catches the streamer's eye – mod call and new chatters.</summary>
+    public EdgeAlertSettings EdgeAlerts { get; set; } = new();
+
     public void Normalize()
     {
         DockServerPort = DockServerPort is >= 1024 and <= 65535 ? DockServerPort : 4747;
@@ -69,6 +72,8 @@ public sealed class AppSettings
         Speech.Normalize();
         Pets ??= new PetSettings();
         Pets.Normalize();
+        EdgeAlerts ??= new EdgeAlertSettings();
+        EdgeAlerts.Normalize();
         OverlayLeft = FiniteOrDefault(OverlayLeft, 42);
         OverlayTop = FiniteOrDefault(OverlayTop, 120);
         OverlayWidth = Math.Clamp(FiniteOrDefault(OverlayWidth, 520), 320, 4000);

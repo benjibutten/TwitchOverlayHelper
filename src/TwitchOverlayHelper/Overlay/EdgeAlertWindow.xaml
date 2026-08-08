@@ -1,0 +1,15 @@
+<Window x:Class="TwitchOverlayHelper.Overlay.EdgeAlertWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Kantljus" WindowStyle="None" ResizeMode="NoResize"
+        AllowsTransparency="True" Background="Transparent" Topmost="True"
+        ShowInTaskbar="False" ShowActivated="False" Focusable="False" IsHitTestVisible="False">
+    <!-- Four gradient bands, one per screen edge. They overlap in the corners, where the two
+         translucent gradients blending into each other is what rounds the light off. -->
+    <Grid x:Name="GlowRoot" Opacity="0">
+        <Rectangle x:Name="TopEdge" VerticalAlignment="Top" />
+        <Rectangle x:Name="BottomEdge" VerticalAlignment="Bottom" />
+        <Rectangle x:Name="LeftEdge" HorizontalAlignment="Left" />
+        <Rectangle x:Name="RightEdge" HorizontalAlignment="Right" />
+    </Grid>
+</Window>

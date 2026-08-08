@@ -78,6 +78,7 @@ Om DeepSeek inte svarar läses namnet upp som det står, med en notis om varför
 - Valfri kantlinje runt texten som håller den läsbar utan bakgrund.
 - Liveinställningar för textstorlek, radavstånd, typsnitt och antal meddelanden.
 - Händelsekort för subs, raids, meddelanden från streamern, belöningar, shoutouts, power-ups och hypetåg – med reglage per typ i varje vy. Se [Händelser i chatten](#händelser-i-chatten).
+- **Kantljus**: ett mjukt, klickigenom ljus som tonar in längs skärmens kanter när mods skriver ett kommando (standard `!psst`, bara streamern och mods kan trigga det) eller när en ny chattare skriver sitt första meddelande – varsin färg, styrka och varaktighet, med testknappar i appen.
 - Twitch-metadata för broadcaster, moderator, VIP, subscriber med lokala markörer.
 - Riktiga Twitch-badge-bilder när Client ID och OAuth-token anges.
 - Automatisk återanslutning, PING/PONG-hantering och tydligt stopp vid nekad inloggning.

@@ -62,6 +62,7 @@ public partial class MainWindow : Window
     private readonly DockServerContext _dockContext;
     private readonly AppSettings _settings;
     private readonly OverlayWindow _overlay;
+    private readonly EdgeAlertWindow _edgeAlerts;
     private readonly System.Collections.ObjectModel.ObservableCollection<PetRewardRule> _petRewards = [];
     private readonly ConcurrentQueue<ChatTimelineItem> _pendingMessages = new();
     private readonly DispatcherTimer _chatFlushTimer;
@@ -112,6 +113,7 @@ public partial class MainWindow : Window
         };
         _dockServer = new DockServer(_dockContext);
         _overlay = new OverlayWindow(_settings, _badgeCatalog);
+        _edgeAlerts = new EdgeAlertWindow();
         _chatFlushTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(75) };
         _chatFlushTimer.Tick += FlushPendingMessages;
         _settingsApplyTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(150) };
@@ -752,6 +754,12 @@ public partial class MainWindow : Window
         }
         _petService.HandleMessage(message);
         TrackLastReward(message);
+        // The edge glow. A mod calling outranks the welcome: when a moderator's very first message
+        // is the command, the streamer is being called, not introduced to their own mod.
+        if (_settings.EdgeAlerts.TriggersModAlert(message))
+            RunOnUi(() => _edgeAlerts.Play(_settings.EdgeAlerts.ModAlert, _settings.EdgeAlerts.EdgeWidth));
+        else if (_settings.EdgeAlerts.TriggersNewChatterAlert(message))
+            RunOnUi(() => _edgeAlerts.Play(_settings.EdgeAlerts.NewChatterAlert, _settings.EdgeAlerts.EdgeWidth));
     }
 
     private void OnChatEvent(ChatEvent chatEvent)
@@ -893,8 +901,57 @@ public partial class MainWindow : Window
         RefreshPetCatalogUi();
         ToggleHotkeyLabel.Text = _settings.ToggleHotkeyText;
         EditHotkeyLabel.Text = _settings.EditHotkeyText;
+        PopulateColorBox(EdgeModColorBox);
+        PopulateColorBox(EdgeNewColorBox);
+        EdgeModEnabledCheck.IsChecked = _settings.EdgeAlerts.ModAlert.Enabled;
+        EdgeModCommandBox.Text = _settings.EdgeAlerts.ModCommand;
+        SelectColor(EdgeModColorBox, _settings.EdgeAlerts.ModAlert.Color);
+        EdgeModIntensitySlider.Value = _settings.EdgeAlerts.ModAlert.Intensity;
+        EdgeModDurationSlider.Value = _settings.EdgeAlerts.ModAlert.DurationSeconds;
+        EdgeNewEnabledCheck.IsChecked = _settings.EdgeAlerts.NewChatterAlert.Enabled;
+        SelectColor(EdgeNewColorBox, _settings.EdgeAlerts.NewChatterAlert.Color);
+        EdgeNewIntensitySlider.Value = _settings.EdgeAlerts.NewChatterAlert.Intensity;
+        EdgeNewDurationSlider.Value = _settings.EdgeAlerts.NewChatterAlert.DurationSeconds;
+        EdgeWidthSlider.Value = _settings.EdgeAlerts.EdgeWidth;
         UpdateValueLabels();
     }
+
+    /// <summary>The colours the edge glow can have. A handful of clear names beats a colour picker here.</summary>
+    private static readonly (string Name, string Hex)[] EdgeColors =
+    [
+        ("Orange", "#F59E0B"), ("Röd", "#EF4444"), ("Rosa", "#DB2777"), ("Lila", "#A970FF"),
+        ("Blå", "#3B82F6"), ("Turkos", "#5FD6C8"), ("Grön", "#22C55E"), ("Gul", "#FACC15"), ("Vit", "#FFFFFF")
+    ];
+
+    private static void PopulateColorBox(ComboBox box)
+    {
+        foreach ((string name, string hex) in EdgeColors)
+        {
+            var swatch = new Border
+            {
+                Width = 14,
+                Height = 14,
+                CornerRadius = new CornerRadius(4),
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)!),
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(swatch);
+            row.Children.Add(new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center });
+            box.Items.Add(new ComboBoxItem { Content = row, Tag = hex });
+        }
+    }
+
+    private static void SelectColor(ComboBox box, string hex)
+    {
+        foreach (object item in box.Items)
+            if (item is ComboBoxItem option && string.Equals(option.Tag as string, hex, StringComparison.OrdinalIgnoreCase)) { box.SelectedItem = option; return; }
+        box.SelectedIndex = 0;
+    }
+
+    private static string SelectedColor(ComboBox box, string fallback) =>
+        (box.SelectedItem as ComboBoxItem)?.Tag as string ?? fallback;
 
     protected override void OnSourceInitialized(EventArgs e)
     {
@@ -1102,6 +1159,42 @@ public partial class MainWindow : Window
         SaveSettings();
     }
 
+    private void EdgeSetting_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading || _overlay is null) return;
+        EdgeAlertSettings edge = _settings.EdgeAlerts;
+        edge.ModAlert.Enabled = EdgeModEnabledCheck.IsChecked == true;
+        edge.ModAlert.Color = SelectedColor(EdgeModColorBox, edge.ModAlert.Color);
+        edge.ModAlert.Intensity = EdgeModIntensitySlider.Value;
+        edge.ModAlert.DurationSeconds = EdgeModDurationSlider.Value;
+        edge.NewChatterAlert.Enabled = EdgeNewEnabledCheck.IsChecked == true;
+        edge.NewChatterAlert.Color = SelectedColor(EdgeNewColorBox, edge.NewChatterAlert.Color);
+        edge.NewChatterAlert.Intensity = EdgeNewIntensitySlider.Value;
+        edge.NewChatterAlert.DurationSeconds = EdgeNewDurationSlider.Value;
+        edge.EdgeWidth = EdgeWidthSlider.Value;
+        UpdateValueLabels();
+        SaveSettings();
+    }
+
+    private void EdgeModCommand_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_loading) return;
+        _settings.EdgeAlerts.ModCommand = EdgeAlertSettings.CleanCommand(EdgeModCommandBox.Text);
+        SaveSettings();
+    }
+
+    /// <summary>Shows what will actually count – "psst hej" became "!psst" the moment it was typed.</summary>
+    private void EdgeModCommand_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        => EdgeModCommandBox.Text = _settings.EdgeAlerts.ModCommand;
+
+    // The test buttons play even when the alert is switched off, so the look can be tuned first
+    // and the switch flipped after.
+    private void EdgeModTest_Click(object sender, RoutedEventArgs e)
+        => _edgeAlerts.Play(_settings.EdgeAlerts.ModAlert, _settings.EdgeAlerts.EdgeWidth);
+
+    private void EdgeNewTest_Click(object sender, RoutedEventArgs e)
+        => _edgeAlerts.Play(_settings.EdgeAlerts.NewChatterAlert, _settings.EdgeAlerts.EdgeWidth);
+
     private void MaxMessages_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_loading || _overlay is null) return;
@@ -1202,6 +1295,11 @@ public partial class MainWindow : Window
         LineSpacingValue.Text = $"{LineSpacingSlider.Value:0.00}×";
         OpacityValue.Text = $"{OpacitySlider.Value:P0}";
         MessageOpacityValue.Text = $"{MessageOpacitySlider.Value:P0}";
+        EdgeModIntensityValue.Text = $"{EdgeModIntensitySlider.Value:P0}";
+        EdgeModDurationValue.Text = $"{EdgeModDurationSlider.Value:0} s";
+        EdgeNewIntensityValue.Text = $"{EdgeNewIntensitySlider.Value:P0}";
+        EdgeNewDurationValue.Text = $"{EdgeNewDurationSlider.Value:0} s";
+        EdgeWidthValue.Text = $"{EdgeWidthSlider.Value:0} px";
     }
 
     private void SaveSettings()
@@ -1247,6 +1345,7 @@ public partial class MainWindow : Window
         GlobalHotkeys.Unregister(this, EditHotkeyId);
         _hwndSource?.RemoveHook(WndProc);
         _overlay.Close();
+        _edgeAlerts.Close();
         _namePlayer.Close();
         await _dockServer.DisposeAsync();
         await _chatClient.DisposeAsync();

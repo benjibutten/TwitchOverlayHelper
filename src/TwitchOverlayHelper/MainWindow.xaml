@@ -237,8 +237,8 @@
 
                 </StackPanel>
 
-                <Border Grid.Row="2" Grid.Column="2" VerticalAlignment="Top"
-                        Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22">
+                <StackPanel Grid.Row="2" Grid.Column="2" VerticalAlignment="Top">
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22">
                 <StackPanel>
                     <TextBlock Text="Overlayens läsbarhet" FontSize="19" FontWeight="SemiBold" />
                     <TextBlock Text="Ändringar syns direkt i overlayen." Foreground="{StaticResource MutedTextBrush}" Margin="0,6,0,18" />
@@ -302,6 +302,48 @@
                     </Border>
                 </StackPanel>
                 </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Text="Kantljus" FontSize="19" FontWeight="SemiBold" />
+                    <TextBlock Text="Ett mjukt ljus tonar in längs skärmens kanter och tonar ut igen – helt klickigenom, precis som overlayen. Mods kan kalla på din uppmärksamhet med ett kommando, och nya chattare kan hälsas med en egen färg så att du ser dem direkt."
+                               TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" Margin="0,7,0,16" LineHeight="20" />
+
+                    <CheckBox x:Name="EdgeModEnabledCheck" Content="Ljus när mods kallar på dig"
+                              ToolTip="Bara streamern och moderatorer kan trigga ljuset – kommandot gör ingenting när någon annan skriver det"
+                              Checked="EdgeSetting_Changed" Unchecked="EdgeSetting_Changed" />
+                    <TextBlock Text="Kommando" Foreground="{StaticResource MutedTextBrush}" Margin="0,10,0,5" />
+                    <TextBox x:Name="EdgeModCommandBox" TextChanged="EdgeModCommand_TextChanged" LostKeyboardFocus="EdgeModCommand_LostKeyboardFocus"
+                             ToolTip="Ett ord som börjar med ! – text efteråt går bra, t.ex. “!psst kolla chatten”" />
+                    <DockPanel Margin="0,10,0,0"><TextBlock Text="Färg" VerticalAlignment="Center" Margin="0,0,10,0" /><ComboBox x:Name="EdgeModColorBox" SelectionChanged="EdgeSetting_Changed" /></DockPanel>
+                    <DockPanel Margin="0,10,0,0"><TextBlock Text="Styrka" /><TextBlock x:Name="EdgeModIntensityValue" Text="70 %" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                    <Slider x:Name="EdgeModIntensitySlider" Minimum="0.15" Maximum="1" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed" />
+                    <DockPanel Margin="0,10,0,0"><TextBlock Text="Varaktighet" /><TextBlock x:Name="EdgeModDurationValue" Text="6 s" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                    <Slider x:Name="EdgeModDurationSlider" Minimum="2" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed" />
+                    <Button x:Name="EdgeModTestButton" Content="Testa mod-ljuset" Background="#343B50" Margin="0,10,0,0" Click="EdgeModTest_Click" />
+
+                    <Separator Background="#343B50" Margin="0,18" />
+
+                    <CheckBox x:Name="EdgeNewEnabledCheck" Content="Ljus när en ny chattare skriver"
+                              ToolTip="Samma ögonblick som meddelandet med NY-markören – någon skriver i kanalen för första gången"
+                              Checked="EdgeSetting_Changed" Unchecked="EdgeSetting_Changed" />
+                    <DockPanel Margin="0,10,0,0"><TextBlock Text="Färg" VerticalAlignment="Center" Margin="0,0,10,0" /><ComboBox x:Name="EdgeNewColorBox" SelectionChanged="EdgeSetting_Changed" /></DockPanel>
+                    <DockPanel Margin="0,10,0,0"><TextBlock Text="Styrka" /><TextBlock x:Name="EdgeNewIntensityValue" Text="70 %" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                    <Slider x:Name="EdgeNewIntensitySlider" Minimum="0.15" Maximum="1" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed" />
+                    <DockPanel Margin="0,10,0,0"><TextBlock Text="Varaktighet" /><TextBlock x:Name="EdgeNewDurationValue" Text="6 s" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                    <Slider x:Name="EdgeNewDurationSlider" Minimum="2" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed" />
+                    <Button x:Name="EdgeNewTestButton" Content="Testa ny chattare-ljuset" Background="#343B50" Margin="0,10,0,0" Click="EdgeNewTest_Click" />
+
+                    <Separator Background="#343B50" Margin="0,18" />
+
+                    <DockPanel><TextBlock Text="Ljusets bredd" /><TextBlock x:Name="EdgeWidthValue" Text="160 px" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                    <Slider x:Name="EdgeWidthSlider" Minimum="60" Maximum="320" TickFrequency="10" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed"
+                            ToolTip="Hur långt in från kanten ljuset når – gäller båda färgerna" />
+                    <TextBlock Text="Ljuset visas på huvudskärmen och går aldrig att klicka på. Testa-knapparna visar exakt hur det kommer se ut."
+                               TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,10,0,0" />
+                </StackPanel>
+                </Border>
+                </StackPanel>
             </Grid>
         </ScrollViewer>
 
