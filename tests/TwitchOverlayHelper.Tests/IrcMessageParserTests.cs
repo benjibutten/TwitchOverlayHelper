@@ -21,6 +21,38 @@ public sealed class IrcMessageParserTests
         Assert.Equal("42", IrcMessageParser.TryGetRoomId(raw));
     }
 
+    /// <summary>
+    /// USERSTATE is how we learn what our own messages look like, since Twitch never sends them back
+    /// to us. It has to survive being sent without an id, which is the case on JOIN.
+    /// </summary>
+    [Fact]
+    public void ParsesUserState()
+    {
+        const string raw = "@badge-info=;badges=broadcaster/1;color=#9146FF;display-name=Benji\\sBoy;emote-sets=0;id=m9;mod=0;subscriber=0;user-type= :tmi.twitch.tv USERSTATE #demo";
+
+        Assert.True(IrcMessageParser.TryParseUserState(raw, out UserState? state));
+        Assert.Equal("m9", state!.MessageId);
+        Assert.Equal("Benji Boy", state.DisplayName);
+        Assert.Equal("#9146FF", state.Color);
+        Assert.Equal("broadcaster", Assert.Single(state.Badges).SetId);
+
+        const string onJoin = "@badge-info=;badges=;color=;display-name=Benji;emote-sets=0;mod=0;user-type= :tmi.twitch.tv USERSTATE #demo";
+
+        Assert.True(IrcMessageParser.TryParseUserState(onJoin, out UserState? joined));
+        Assert.Null(joined!.MessageId);
+        Assert.Null(joined.Color);
+        Assert.Empty(joined.Badges);
+    }
+
+    [Fact]
+    public void AChatMessageIsNotAUserState()
+    {
+        const string raw = "@display-name=Kajsa;id=m1 :kajsa!kajsa@kajsa.tmi.twitch.tv PRIVMSG #demo :hej";
+
+        Assert.False(IrcMessageParser.TryParseUserState(raw, out UserState? state));
+        Assert.Null(state);
+    }
+
     [Fact]
     public void ParsesChannelPointRewardId()
     {
@@ -141,5 +173,43 @@ public sealed class IrcMessageParserTests
         var emote = Assert.Single(message!.Emotes);
         Assert.Equal("25", emote.EmoteId);
         Assert.Equal("Kappa", message.Text.Substring(emote.Start, emote.Length));
+    }
+
+    /// <summary>
+    /// A refused message is answered with a NOTICE and nothing else – no USERSTATE ever follows – so
+    /// this is the only sign that a line the reader typed did not reach the chat.
+    /// </summary>
+    [Fact]
+    public void ReadsARefusedMessageOutOfItsNotice()
+    {
+        const string raw = "@msg-id=msg_slowmode :tmi.twitch.tv NOTICE #demo :This room is in slow mode. You may send another message in 3 seconds.";
+
+        Assert.True(IrcMessageParser.TryParseSendRefusal(raw, out string? reason));
+        // Twitch's own wording, whole: the seconds are the part worth reading.
+        Assert.Equal("This room is in slow mode. You may send another message in 3 seconds.", reason);
+    }
+
+    /// <summary>
+    /// The same NOTICE command carries things about the room that say nothing about our message.
+    /// Treating one of those as a refusal would report a message that went through as rejected.
+    /// </summary>
+    [Fact]
+    public void ANoticeAboutTheRoomIsNotARefusal()
+    {
+        Assert.False(IrcMessageParser.TryParseSendRefusal(
+            "@msg-id=slow_on :tmi.twitch.tv NOTICE #demo :This room is now in slow mode.", out _));
+        Assert.False(IrcMessageParser.TryParseSendRefusal(
+            "@msg-id=emote_only_off :tmi.twitch.tv NOTICE #demo :This room is no longer in emote-only mode.", out _));
+        // Nothing to tell the two apart by, so it cannot be claimed as one.
+        Assert.False(IrcMessageParser.TryParseSendRefusal(":tmi.twitch.tv NOTICE #demo :Något hände.", out _));
+    }
+
+    /// <summary>A line beginning with a slash is a command, and an unknown one says nothing at all.</summary>
+    [Fact]
+    public void AnUnrecognisedCommandCountsAsNothingSaid()
+    {
+        Assert.True(IrcMessageParser.TryParseSendRefusal(
+            "@msg-id=unrecognized_cmd :tmi.twitch.tv NOTICE #demo :Unrecognized command: /nonsense", out string? reason));
+        Assert.Equal("Unrecognized command: /nonsense", reason);
     }
 }

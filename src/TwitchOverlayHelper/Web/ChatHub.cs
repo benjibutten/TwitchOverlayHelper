@@ -256,6 +256,7 @@ public sealed class ChatHub(
             // Twitch only lets you raid out of your own channel, so the button is pointless
             // while watching someone else's chat as a moderator.
             state.IsLoggedIn && BroadcasterId.Length > 0 && BroadcasterId == state.UserId,
+            BroadcasterId,
             state.Error);
     }
 

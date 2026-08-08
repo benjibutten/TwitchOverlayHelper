@@ -58,16 +58,18 @@ public sealed class DockServerTests
         // The same wiring the app does: the book is what a nickname change is announced from, so
         // every open dock hears about one made through any of them.
         nicknames.Changed += hub.PublishNickname;
+        var api = new TwitchApiClient(new HttpClient(), session);
         var server = new DockServer(new DockServerContext
         {
             Settings = settings,
             Hub = hub,
             Session = session,
-            Api = new TwitchApiClient(new HttpClient(), session),
+            Api = api,
             Chat = chat,
             Speech = SpeechFixture.Service(settings),
             Pets = petCatalog,
-            Nicknames = nicknames
+            Nicknames = nicknames,
+            Emotes = new UsableEmoteCatalog(api)
         });
 
         Assert.True(await server.StartAsync());

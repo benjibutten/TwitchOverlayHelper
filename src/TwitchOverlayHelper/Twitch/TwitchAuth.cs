@@ -38,6 +38,13 @@ public sealed class TwitchAuth(HttpClient httpClient)
     public const string HypeTrainScope = "channel:read:hype_train";
 
     /// <summary>
+    /// The emotes this account may send anywhere – subscriber and follower emotes above all. Without
+    /// it the picker still has the channel's own emotes and the global ones, which need no scope at
+    /// all; what is missing is the half that is personal to the logged-in user.
+    /// </summary>
+    public const string EmotesScope = "user:read:emotes";
+
+    /// <summary>
     /// What the app asks Twitch for at login. "Required" is about the request, not about running:
     /// every one of these is optional at run time. A login granted before a scope existed keeps
     /// working and the feature behind the missing scope simply stays off, so nothing here can lock
@@ -54,7 +61,8 @@ public sealed class TwitchAuth(HttpClient httpClient)
         RedemptionsScope,
         ShoutoutsScope,
         BitsScope,
-        HypeTrainScope
+        HypeTrainScope,
+        EmotesScope
     ];
 
     public static string ScopeString => string.Join(' ', RequiredScopes);
@@ -78,6 +86,7 @@ public sealed class TwitchAuth(HttpClient httpClient)
         ShoutoutsScope => "shoutouts",
         BitsScope => "power-ups och förstorade emotes",
         HypeTrainScope => "hypetåg",
+        EmotesScope => "dina egna emotes i emote-väljaren",
         "chat:read" => "läsa chatten",
         "chat:edit" => "skriva i chatten",
         "moderator:manage:banned_users" => "timeout och ban",

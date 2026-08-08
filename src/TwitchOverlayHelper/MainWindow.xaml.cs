@@ -42,6 +42,11 @@ public partial class MainWindow : Window
     private readonly System.Net.Http.HttpClient _speechHttpClient = new() { Timeout = TimeSpan.FromSeconds(30) };
     private readonly TwitchSession _session;
     private readonly TwitchApiClient _apiClient;
+    /// <summary>
+    /// What we may send in this channel. Asked for once when the room becomes known, because it is
+    /// needed the moment a line is written rather than the moment somebody opens the picker.
+    /// </summary>
+    private readonly UsableEmoteCatalog _emotes;
     private readonly TwitchEventSubClient _eventSubClient;
     private readonly RewardCatalog _rewards = new();
     private readonly PowerUpTracker _powerUps = new();
@@ -71,6 +76,7 @@ public partial class MainWindow : Window
     private readonly AppSettings _settings;
     private readonly OverlayWindow _overlay;
     private readonly EdgeAlertWindow _edgeAlerts;
+    private readonly EdgeAlertScheduler _edgeScheduler = new();
     private readonly System.Collections.ObjectModel.ObservableCollection<PetRewardRule> _petRewards = [];
     private readonly ConcurrentQueue<ChatTimelineItem> _pendingMessages = new();
     private readonly DispatcherTimer _chatFlushTimer;
@@ -106,6 +112,10 @@ public partial class MainWindow : Window
         SyncStartWithWindows();
         _session = new TwitchSession(_httpClient);
         _apiClient = new TwitchApiClient(_httpClient, _session);
+        _emotes = new UsableEmoteCatalog(_apiClient);
+        // Our own line arrives with no emote spans; this is what puts them back, before either view
+        // has seen the message.
+        _chatClient.ResolveEmotes = _emotes.SpansIn;
         _eventSubClient = new TwitchEventSubClient(_session, _apiClient);
         _namePlayer = new NameAudioPlayer(Dispatcher);
         _nameSpeech = new NameSpeechService(_speechHttpClient, _settings, _speechSecrets, _namePlayer.PlayAsync);
@@ -120,7 +130,8 @@ public partial class MainWindow : Window
             Chat = _chatClient,
             Speech = _nameSpeech,
             Pets = _petCatalog,
-            Nicknames = _nicknames
+            Nicknames = _nicknames,
+            Emotes = _emotes
         };
         _dockServer = new DockServer(_dockContext);
         _overlay = new OverlayWindow(_settings, _badgeCatalog, _nicknames);
@@ -570,7 +581,8 @@ public partial class MainWindow : Window
             await _chatClient.ConnectAsync(
                 _settings.Channel,
                 _session.Login,
-                authenticated ? _session.TryGetIrcTokenAsync : null);
+                authenticated ? _session.TryGetIrcTokenAsync : null,
+                _session.UserId);
             SetConnectionButtons(true);
             _hub.PublishAuth(_chatClient.CanSend);
         }
@@ -589,6 +601,25 @@ public partial class MainWindow : Window
         // room id is known – not at login, and not when the socket opens.
         await RestartEventSubAsync(roomId);
         await LoadBadgesAsync(roomId);
+        await LoadUsableEmotesAsync(roomId);
+    }
+
+    /// <summary>
+    /// Which emotes we may send here. Fetched when the room becomes known rather than when the
+    /// picker is opened, because the other thing it is for happens without warning: the first line
+    /// the streamer writes needs its emotes resolved before it reaches the overlay.
+    /// </summary>
+    private async Task LoadUsableEmotesAsync(string roomId)
+    {
+        // Another channel's emotes drawn onto our own lines would be worse than none at all.
+        _emotes.Forget();
+        if (!_session.IsLoggedIn) return;
+        try { await _emotes.GetAsync(roomId, _session.UserId); }
+        catch (Exception ex) when (ex is TwitchApiException or TwitchAuthException or System.Net.Http.HttpRequestException)
+        {
+            // Not worth surfacing: without the list our own lines read as they were typed, which is
+            // exactly how they read before any of this existed. The dock says so where it matters.
+        }
     }
 
     /// <summary>
@@ -657,18 +688,26 @@ public partial class MainWindow : Window
         if (coverage.HypeTrain) on.Add("hypetåg visas");
 
         // A stored login only misses a scope when it was granted before we started asking for it.
-        bool offerLogin = _session.IsLoggedIn && coverage.MissingScopes.Count > 0;
+        bool missingEventScopes = _session.IsLoggedIn && coverage.MissingScopes.Count > 0;
 
         // The reason has to be the real one. Blaming the channel role when the actual cause is a
         // permission we never asked for would send the user looking in the wrong place.
         string headline =
             on.Count > 0 ? "Extra händelser: " + string.Join(", ", on) + "."
             : !_session.IsLoggedIn ? "Inte inloggad, så subs och raids visas men inte belöningar, shoutouts, power-ups eller hypetåg."
-            : offerLogin ? "Inga extra händelser än."
+            : missingEventScopes ? "Inga extra händelser än."
             : "Inga extra händelser i den här kanalen – belöningar, power-ups och hypetåg kräver din egen kanal, shoutouts att du är moderator.";
 
+        // The emote picker's personal half is not an event, so it stays out of the headline – but it
+        // is behind the very same "log in again", and a scope nobody is told about is a feature that
+        // silently never turns on. Appended to the sentence rather than given one of its own,
+        // because the button under it can only be pressed once for all of them.
+        var missing = coverage.MissingScopes.ToList();
+        if (_session.IsLoggedIn && !_session.HasScope(TwitchAuth.EmotesScope)) missing.Add(TwitchAuth.EmotesScope);
+        bool offerLogin = _session.IsLoggedIn && missing.Count > 0;
+
         EventStatusText.Text = offerLogin
-            ? $"{headline} Logga in igen för att slå på {string.Join(" och ", coverage.MissingScopes.Select(TwitchAuth.DescribeScope))}."
+            ? $"{headline} Logga in igen för att slå på {string.Join(" och ", missing.Select(TwitchAuth.DescribeScope))}."
             : headline;
         ReauthorizeButton.Visibility = offerLogin ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -767,10 +806,25 @@ public partial class MainWindow : Window
         TrackLastReward(message);
         // The edge glow. A mod calling outranks the welcome: when a moderator's very first message
         // is the command, the streamer is being called, not introduced to their own mod.
-        if (_settings.EdgeAlerts.TriggersModAlert(message))
-            RunOnUi(() => _edgeAlerts.Play(_settings.EdgeAlerts.ModAlert, _settings.EdgeAlerts.EdgeWidth));
-        else if (_settings.EdgeAlerts.TriggersNewChatterAlert(message))
-            RunOnUi(() => _edgeAlerts.Play(_settings.EdgeAlerts.NewChatterAlert, _settings.EdgeAlerts.EdgeWidth));
+        if (_settings.EdgeAlerts.TriggersModAlert(message)) RaiseEdgeAlert(EdgeAlertKind.ModCall);
+        else if (_settings.EdgeAlerts.TriggersNewChatterAlert(message)) RaiseEdgeAlert(EdgeAlertKind.NewChatter);
+    }
+
+    /// <summary>
+    /// Lights the edges, unless <see cref="_edgeScheduler"/> says this one has nothing to add to
+    /// what is already lit. Deciding here rather than in the window keeps the policy testable and
+    /// leaves the settings window's test buttons free to preview a glow whatever chat is doing.
+    /// </summary>
+    private void RaiseEdgeAlert(EdgeAlertKind kind)
+    {
+        EdgeAlertStyle style = kind == EdgeAlertKind.ModCall
+            ? _settings.EdgeAlerts.ModAlert
+            : _settings.EdgeAlerts.NewChatterAlert;
+        // The length comes from the scheduler, not from the setting: a glow being held open has only
+        // the rest of its ceiling to run, and playing a full alert on top of it is what would keep
+        // the edges lit past the limit during a busy chat.
+        if (_edgeScheduler.PlayFor(kind, style.DurationSeconds, DateTimeOffset.UtcNow) is not { } lit) return;
+        RunOnUi(() => _edgeAlerts.Play(style, _settings.EdgeAlerts.EdgeWidth, lit.TotalSeconds));
     }
 
     private void OnChatEvent(ChatEvent chatEvent)
@@ -1088,6 +1142,9 @@ public partial class MainWindow : Window
         // room discovery on the new connection starts them again.
         await _eventSubClient.StopAsync();
         _rewards.Clear();
+        // Whatever the old channel had lit is over; the new one's first alert should not be held
+        // back by a cooldown someone else's chat started.
+        _edgeScheduler.Reset();
         _hub.SetChannel(channel);
         ScheduleOverlayApply();
         SaveSettings();
@@ -1098,7 +1155,8 @@ public partial class MainWindow : Window
             await _chatClient.ConnectAsync(
                 channel,
                 _session.Login,
-                _session.IsLoggedIn ? _session.TryGetIrcTokenAsync : null);
+                _session.IsLoggedIn ? _session.TryGetIrcTokenAsync : null,
+                _session.UserId);
             _hub.PublishAuth(_chatClient.CanSend);
         }
         catch (Exception ex) { SetConnectionButtons(false); SetStatus(ex.Message, true); }

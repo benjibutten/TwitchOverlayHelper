@@ -39,6 +39,14 @@ public sealed record ChatMessage(
     /// <summary>True for a /me action message, which Twitch wraps in ACTION control characters.</summary>
     public bool IsAction { get; init; }
 
+    /// <summary>
+    /// A line we wrote that Twitch never gave an id to. It is shown like any other message – that is
+    /// the whole point of echoing it – but <see cref="Id"/> is then a local invention, and calling
+    /// Helix with it to pin or delete the message can only ever answer "no such message". So the
+    /// views drop the two buttons that would do that, rather than offering an action that cannot work.
+    /// </summary>
+    public bool IsLocalEcho { get; init; }
+
     /// <summary>The message this one is a reply to, when it is one. Null for an ordinary line.</summary>
     public ChatReply? Reply { get; init; }
 

@@ -8,10 +8,13 @@ const el = {
   jump: $("jumpBtn"), jumpCount: $("jumpCount"), pause: $("pauseBtn"), refresh: $("refreshBtn"),
   raidBtn: $("raidBtn"),
   composer: $("composer"), composerInput: $("composerInput"), composerSend: $("composerSend"),
+  mentionList: $("mentionList"),
+  emoteBtn: $("emoteBtn"), emotePanel: $("emotePanel"), emoteSearch: $("emoteSearch"),
+  emoteBody: $("emoteBody"), emoteNote: $("emoteNote"),
   toast: $("toast"), toastText: $("toastText"), toastAction: $("toastAction"),
   userSheet: $("userSheet"), sheetName: $("sheetName"), sheetQuote: $("sheetQuote"),
   sheetActions: $("sheetActions"), sheetLocked: $("sheetLocked"),
-  sheetPin: $("sheetPin"), sheetPinChat: $("sheetPinChat"),
+  sheetPin: $("sheetPin"), sheetPinChat: $("sheetPinChat"), sheetDelete: $("sheetDelete"),
   sheetConfirm: $("sheetConfirm"), sheetConfirmText: $("sheetConfirmText"),
   raidPanel: $("raidPanel"), raidList: $("raidList"), raidSearch: $("raidSearch"),
   nickBtn: $("nickBtn"), sheetNick: $("sheetNick"),
@@ -40,6 +43,11 @@ const state = {
   sharedPin: "",       // the message this dock last pinned for the viewers, so it can take it down
   channel: "",         // which chat that claim belongs to
   hypeTrain: null,     // last state Twitch sent, kept so the strip survives a settings change
+  chatters: new Map(), // login -> who they are, newest first: what the @-list is picked from
+  seenEmotes: [],      // emote names we have used ourselves, newest first, for the picker's top row
+  emotes: null,        // what Twitch says may be sent here; asked for once per account and channel
+  emoteIndex: null,    // the same list keyed by name, for turning written words back into pictures
+  emoteOwner: null,    // the account and room that answer belongs to, so a change can invalidate it
 };
 
 /* Whether a kind of event card is switched on in the app. Each event arrives carrying the name of
@@ -100,6 +108,9 @@ function handle(frame) {
     // has come back to the same channel. A reload is the whole reason it is written down at all.
     state.channel = frame.channel || "";
     state.sharedPin = recallSharedPin(state.channel);
+    // Before the history is replayed, because replaying it is what fills these back up: a hello is
+    // the one frame that says which room the dock is in.
+    forgetChannel();
     state.queue.length = 0;
     state.missed = 0;
     updateJump();
@@ -131,6 +142,7 @@ function handle(frame) {
     el.chat.replaceChildren();
     clearPins();
     forgetSharedPin();
+    forgetChannel();
     state.queue.length = 0;
     state.missed = 0;
     return;
@@ -240,8 +252,17 @@ el.refresh.addEventListener("click", () => location.reload());
 
 /* The chat column holds two kinds of card. Tagging each line as it arrives keeps the pacer, the
    history replay and the re-render from having to guess which of the two they are holding. */
-const msg = (data) => ({ kind: "message", data });
-const evt = (data) => ({ kind: "event", data });
+const msg = (data) => { remember(data); return { kind: "message", data }; };
+const evt = (data) => { remember(data); return { kind: "event", data }; };
+
+/* Everything the composer needs to offer is learned from the chat going past: who is here to be
+   named, and which emotes we have used ourselves. Wired into the two factories rather than into the
+   renderer, so a line that is paced, hidden or scrolled off still counts – the list of people in
+   chat should not depend on which reading settings are switched on. */
+function remember(data) {
+  rememberChatter(data);
+  rememberEmotes(data);
+}
 
 /* Nobody in chat types "https://". A link is written the way it is read – "linktr.ee/perralinks" –
    and a pattern that only knows schemes leaves most of them lying there as dead text. So a bare
@@ -315,6 +336,10 @@ function appendText(target, text, calm) {
   if (cursor < source.length) target.appendChild(document.createTextNode(source.slice(cursor)));
 }
 
+/* "default" rather than "static" so an animated emote animates where the browser can play it, which
+   is the same choice the picker makes – the two must never show different pictures of one emote. */
+const emoteUrl = (id, size) => `https://static-cdn.jtvnw.net/emoticons/v2/${encodeURIComponent(id)}/default/dark/${size}`;
+
 function renderBody(message) {
   const body = document.createElement("span");
   body.className = "msg-text";
@@ -322,6 +347,10 @@ function renderBody(message) {
 
   // Lower-casing preserves length, so emote spans stay valid after calming a shout.
   const calm = state.settings.calmShouting && isShouting(message.text);
+  /* Including our own lines, which Twitch sends no emote spans for – it decides which words were
+     emotes on the way to the viewers and tells everyone except the sender. The app fills those in
+     before either view sees the message, so the overlay over the game and the dock agree, and this
+     stays one branch rather than two. */
   const emotes = state.settings.showEmotes ? message.emotes : [];
   /* Which span the Gigantify an Emote power-up blew up. The desktop app decides it, so the dock and
      the overlay enlarge the same emote; showing it big is a reading setting of its own, because a
@@ -341,7 +370,7 @@ function renderBody(message) {
     // The 3.0 variant is the only one with the pixels for it; 2.0 scaled up is a blurry mess.
     const size = i === giant ? "3.0" : "2.0";
     if (i === giant) image.dataset.giant = "true";
-    image.src = `https://static-cdn.jtvnw.net/emoticons/v2/${encodeURIComponent(emote.id)}/default/dark/${size}`;
+    image.src = emoteUrl(emote.id, size);
     body.appendChild(image);
     cursor = emote.start + emote.length;
   }
@@ -1021,6 +1050,15 @@ function openUserSheet(message) {
   el.sheetPinChat.textContent = state.sharedPin === message.id
     ? "📌 Ta bort tittarnas nål"
     : "📌 Nåla fast för tittarna";
+
+  /* A line of our own that Twitch never gave an id to carries a local one instead, so it can be a
+     message like any other here. The two buttons that would hand that id to Twitch are the ones it
+     cannot answer, and a button that can only fail is worse than no button. Everything else on the
+     sheet – the local pin, the nickname, the profile – works on a name rather than on a message. */
+  const addressable = message.localEcho !== true;
+  el.sheetPinChat.hidden = !addressable;
+  el.sheetDelete.hidden = !addressable;
+
   el.sheetActions.hidden = !state.auth.loggedIn;
   el.sheetLocked.hidden = state.auth.loggedIn;
   openSheet("userSheet");
@@ -1227,16 +1265,582 @@ $("raidCancel").addEventListener("click", () => {
 
 /* ---------------------------------------------------------------- composer */
 
+/* Twitch's own limit on one chat line. Enforced here as well as on the way out, so a message is
+   stopped while it is being written rather than quietly cut in half after it was sent. */
+const MAX_MESSAGE = 480;
+
+/* The field holds two kinds of node and nothing else: text, and an <img> standing in for an emote
+   whose name is written on it. That is the whole contract – everything below reads or writes the
+   field through these two functions, so "what is in the box" and "what gets sent" cannot drift. */
+function composerText() {
+  return textOfNodes(el.composerInput.childNodes);
+}
+
+/* What a run of those nodes says, as the chat would read it. Split out from composerText because
+   what a paste is about to replace has to be measured the same way the whole field is. */
+function textOfNodes(nodes) {
+  let text = "";
+  for (const node of nodes) {
+    if (node.nodeType === Node.TEXT_NODE) text += node.nodeValue;
+    else if (node.nodeName === "IMG") text += node.dataset.emote || "";
+    // A browser leaves a <br> behind when the last character is deleted, and pasted markup can
+    // arrive as anything at all; both are worth exactly their text.
+    else text += node.textContent;
+  }
+  return text;
+}
+
+/* How many characters may still be added: what is left of the limit, plus whatever the caret has
+   selected – that text is on its way out and its room comes back with it. */
+function composerRoom() {
+  const selection = window.getSelection();
+  let selected = 0;
+  if (selection && !selection.isCollapsed && selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0);
+    if (el.composerInput.contains(range.commonAncestorContainer))
+      selected = textOfNodes(range.cloneContents().childNodes).length;
+  }
+  return Math.max(0, MAX_MESSAGE - composerText().length + selected);
+}
+
+/* Text back into the field, with any emote name in it drawn as the emote again. Used when a refused
+   message is handed back: it went in as pictures and should not come back as words. */
+function setComposerText(text) {
+  el.composerInput.replaceChildren(...composerNodes(text));
+  updateComposerEmpty();
+}
+
+function composerNodes(text) {
+  const nodes = [];
+  let cursor = 0;
+  for (const span of emoteSpansIn(text)) {
+    if (span.start > cursor) nodes.push(document.createTextNode(text.slice(cursor, span.start)));
+    nodes.push(emoteImage(text.substr(span.start, span.length), span.id));
+    cursor = span.start + span.length;
+  }
+  if (cursor < text.length) nodes.push(document.createTextNode(text.slice(cursor)));
+  return nodes;
+}
+
+function emoteImage(name, id) {
+  const image = document.createElement("img");
+  // The larger file scaled down by CSS: the field is 22px tall and the 1.0 variant is 28, which
+  // lands somewhere blurry on a high-density screen.
+  image.src = emoteUrl(id, "2.0");
+  image.alt = name;
+  image.title = name;
+  // What the name was, kept on the node: it is the only way back from the picture to the text.
+  image.dataset.emote = name;
+  return image;
+}
+
+/* An empty editor is not empty markup – there is usually a stray <br> in it – so the placeholder is
+   driven from what the field actually says rather than from CSS's idea of emptiness. */
+function updateComposerEmpty() {
+  el.composerInput.dataset.empty = String(composerText().length === 0);
+}
+
 el.composer.addEventListener("submit", (event) => {
   event.preventDefault();
-  const text = el.composerInput.value.trim();
+  const text = composerText().trim();
   if (!text) return;
-  el.composerInput.value = "";
+  el.composerInput.replaceChildren();
+  updateComposerEmpty();
+  closeComposerPanels();
   api("/api/chat/send", { method: "POST", body: JSON.stringify({ text }) })
     .catch((error) => {
-      el.composerInput.value = text;
+      setComposerText(text);
       toast(error.message, "error");
     });
+});
+
+// The field is no longer an <input>, so nothing submits the form on its own.
+el.composerInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.shiftKey || mention.open) return;
+  event.preventDefault();
+  el.composer.requestSubmit();
+});
+
+/* Editable markup accepts anything the clipboard holds – styled HTML, whole tables. Only the words
+   are wanted, and a newline would be an IRC command separator rather than a line break. */
+el.composerInput.addEventListener("paste", (event) => {
+  event.preventDefault();
+  const pasted = (event.clipboardData?.getData("text/plain") || "").replace(/\s+/g, " ");
+  // Cut to what is left, and said out loud. Typing stops at the limit and the picker refuses an
+  // emote that will not fit, so a paste going straight past it is the one way over – and the send
+  // path cuts at the same limit without a word, which loses the end of the line after it was sent.
+  const text = pasted.slice(0, composerRoom());
+  if (text.length < pasted.length) toast(`Bara de första ${MAX_MESSAGE} tecknen får plats.`, "error");
+  if (text) insertAtCaret(document.createTextNode(text));
+  updateComposerEmpty();
+  updateMentions();
+});
+
+el.composerInput.addEventListener("beforeinput", (event) => {
+  if (!event.inputType.startsWith("insert")) return;
+  // Only when nothing is selected: replacing a selection cannot make the line longer.
+  const selection = window.getSelection();
+  if (selection && !selection.isCollapsed) return;
+  if (composerText().length >= MAX_MESSAGE) event.preventDefault();
+});
+
+el.composerInput.addEventListener("input", updateComposerEmpty);
+
+/* ------------------------------------------------------------ caret */
+
+/* The caret, as the two things everything here needs: which text node it sits in and how far along.
+   Null when it is not in the field at all, or is resting against an emote rather than inside words –
+   neither an @-name nor a search term can begin there. */
+function caretInText() {
+  const selection = window.getSelection();
+  if (!selection || !selection.isCollapsed || selection.rangeCount === 0) return null;
+  const node = selection.anchorNode;
+  if (!node || node.nodeType !== Node.TEXT_NODE || !el.composerInput.contains(node)) return null;
+  return { node, offset: selection.anchorOffset };
+}
+
+function placeCaret(node, offset) {
+  const range = document.createRange();
+  range.setStart(node, Math.min(offset, node.nodeValue.length));
+  range.collapse(true);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+/* Inserts at the caret, or at the very end when the field has never been focused – which is where a
+   reader who has only clicked the picker would expect their first emote to land. */
+function insertAtCaret(node) {
+  const selection = window.getSelection();
+  let range;
+  if (selection && selection.rangeCount > 0 && el.composerInput.contains(selection.anchorNode)) {
+    range = selection.getRangeAt(0);
+    range.deleteContents();
+  } else {
+    range = document.createRange();
+    range.selectNodeContents(el.composerInput);
+    range.collapse(false);
+  }
+  range.insertNode(node);
+  range.setStartAfter(node);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+/* ------------------------------------------------------- who is in chat */
+
+/* Deep enough to hold a quiet evening's regulars, short enough that a raid cannot turn the list into
+   a thousand strangers. The map is keyed by login and rewritten on every line, so its insertion
+   order is recency – which is the order the suggestions want, and costs nothing to keep. */
+const CHATTER_LIMIT = 400;
+
+function rememberChatter(data) {
+  const login = (data.login || "").toLowerCase();
+  if (!login) return;
+  state.chatters.delete(login);
+  state.chatters.set(login, { login, displayName: data.displayName || login, userId: data.userId || "" });
+  if (state.chatters.size > CHATTER_LIMIT) state.chatters.delete(state.chatters.keys().next().value);
+}
+
+/* The names of the emotes we have used ourselves, so the picker can open on what this account keeps
+   reaching for rather than on an alphabetical wall. Only the name is kept: which of them may be sent
+   is Twitch's answer, and the picker only shows the ones that appear in both lists. */
+const SEEN_EMOTE_LIMIT = 40;
+
+function rememberEmotes(data) {
+  const emotes = data.emotes;
+  const text = data.text || data.message || "";
+  if (!emotes || !emotes.length || !text) return;
+  // Our own lines only. What the room is using is not the same as what we may send: a subscriber
+  // emote scrolling past belongs to whoever wrote it, and putting it in the top row of our own
+  // picker is an invitation to send something that reaches the chat as loose words. An emote we
+  // have already used is one Twitch has already accepted from this account.
+  const me = (state.auth.login || "").toLowerCase();
+  if (!me || (data.login || "").toLowerCase() !== me) return;
+
+  for (const emote of emotes) {
+    const name = text.substr(emote.start, emote.length);
+    if (!name) continue;
+    const at = state.seenEmotes.indexOf(name);
+    if (at >= 0) state.seenEmotes.splice(at, 1);
+    state.seenEmotes.unshift(name);
+  }
+  if (state.seenEmotes.length > SEEN_EMOTE_LIMIT) state.seenEmotes.length = SEEN_EMOTE_LIMIT;
+}
+
+/* A channel switch takes the people and the emotes with it: the names in the old room are not who
+   is here now, and offering them would be the one way this list could put the wrong @ in a message. */
+function forgetChannel() {
+  state.chatters.clear();
+  state.seenEmotes.length = 0;
+  // The @-list is gone with the people in it, so it cannot stay up. The emote picker can: it refills
+  // itself in place, and closing it here would have shut it under the reader every time the sample
+  // lines were replaced by the first real message – which is a clear frame like any other.
+  closeMentions();
+  forgetEmotes();
+}
+
+/* Which fetch is the current one. An emote list is asked for once and then held, so a switch of
+   channel or account has to invalidate both what is held and whatever is still on its way – a reply
+   landing afterwards would quietly install the previous room's emotes over the new room's. */
+let emoteRequest = 0;
+
+function forgetEmotes() {
+  state.emotes = null;
+  state.emoteIndex = null;
+  emoteRequest++;
+  // Open right now: fill it again rather than leave the reader looking at nothing.
+  if (!el.emotePanel.hidden) loadEmotes();
+}
+
+/* Emote names in a line, for drawing what is being typed into the composer. Whole words only, the
+   way Twitch matches them: "Kappa" inside "Kappagrejen" is five more letters and nothing else.
+   Messages in the column need none of this – they arrive with their spans already worked out. */
+function emoteSpansIn(text) {
+  if (!state.emoteIndex || !text) return [];
+  const spans = [];
+  for (const word of text.matchAll(/\S+/g)) {
+    const emote = state.emoteIndex.get(word[0]);
+    if (emote) spans.push({ id: emote.id, start: word.index, length: word[0].length });
+  }
+  return spans;
+}
+
+/* --------------------------------------------------------- @-suggestions */
+
+/* An @ that starts a word. Deliberately not \w: display names carry å, ä and ö, and a reader who
+   types the name they see should meet the same list as one who types the login. */
+const MENTION_PATTERN = /(?:^|\s)@([^\s@]{0,25})$/u;
+const MENTION_LIMIT = 8;
+
+/* Where the half-typed name is: the text node holding it and the offsets of its "@" and its end.
+   A node rather than a position in the whole field, because a name cannot run across an emote – so
+   the one run of text the caret is in is the whole of what has to be read and replaced. */
+const mention = { open: false, matches: [], index: 0, node: null, at: 0, end: 0 };
+
+function mentionQuery() {
+  const caret = caretInText();
+  if (!caret) return null;
+  const found = MENTION_PATTERN.exec(caret.node.nodeValue.slice(0, caret.offset));
+  if (!found) return null;
+  return { term: found[1], node: caret.node, at: caret.offset - found[1].length - 1, end: caret.offset };
+}
+
+/* Three tiers rather than one: a name that starts with what was typed is nearly always the one
+   meant, and a nickname match is worth having but should never outrank the Twitch name someone is
+   halfway through typing. Sorting is stable, so recency decides inside each tier. */
+function chattersMatching(term) {
+  const needle = term.toLowerCase();
+  const found = [];
+  const newestFirst = [...state.chatters.values()].reverse();
+
+  for (const chatter of newestFirst) {
+    const nickname = nicknameOf(chatter.userId, chatter.login).toLowerCase();
+    const display = chatter.displayName.toLowerCase();
+    let rank;
+    if (!needle) rank = 0;
+    else if (chatter.login.startsWith(needle) || display.startsWith(needle)) rank = 0;
+    else if (nickname && nickname.startsWith(needle)) rank = 1;
+    else if (chatter.login.includes(needle) || display.includes(needle) || (nickname && nickname.includes(needle))) rank = 2;
+    else continue;
+    found.push({ chatter, rank });
+  }
+
+  found.sort((a, b) => a.rank - b.rank);
+  return found.slice(0, MENTION_LIMIT).map((entry) => entry.chatter);
+}
+
+function updateMentions() {
+  if (el.composer.hidden) return closeMentions();
+  const query = mentionQuery();
+  if (!query) return closeMentions();
+
+  const matches = chattersMatching(query.term);
+  if (!matches.length) return closeMentions();
+
+  // The two panels hang in the same place above the field, so one opening puts the other away.
+  // Typing an @ is the more specific thing to be doing, so it wins.
+  closeEmotePanel();
+  mention.open = true;
+  mention.matches = matches;
+  mention.node = query.node;
+  mention.at = query.at;
+  mention.end = query.end;
+  mention.index = 0;
+  renderMentions();
+}
+
+function closeMentions() {
+  if (!mention.open) return;
+  mention.open = false;
+  mention.matches = [];
+  mention.node = null;
+  el.mentionList.hidden = true;
+  el.mentionList.replaceChildren();
+}
+
+function renderMentions() {
+  el.mentionList.replaceChildren(...mention.matches.map((chatter, index) => {
+    const row = document.createElement("button");
+    row.className = "suggest-item";
+    row.type = "button";
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", String(index === mention.index));
+
+    const name = document.createElement("span");
+    name.className = "suggest-name";
+    name.textContent = chatter.displayName;
+    row.appendChild(name);
+
+    // The name you gave them is the half you recognise, so it is in the list too – the whole reason
+    // nicknames exist is that three regulars can start with the same four letters.
+    const nickname = nicknameOf(chatter.userId, chatter.login);
+    if (nickname) {
+      const chip = document.createElement("span");
+      chip.className = "suggest-nick";
+      chip.textContent = nickname;
+      row.appendChild(chip);
+    }
+
+    // Only when it says something the display name does not: for most accounts the two are the
+    // same word in different case, and repeating it would be noise on every row.
+    if (chatter.login !== chatter.displayName.toLowerCase()) {
+      const login = document.createElement("span");
+      login.className = "suggest-login";
+      login.textContent = `@${chatter.login}`;
+      row.appendChild(login);
+    }
+
+    // The caret has to stay in the field, so the press must never move focus to the button.
+    row.addEventListener("mousedown", (event) => event.preventDefault());
+    row.addEventListener("click", () => acceptMention(chatter));
+    return row;
+  }));
+
+  el.mentionList.hidden = false;
+  el.mentionList.children[mention.index]?.scrollIntoView({ block: "nearest" });
+}
+
+function moveMention(step) {
+  mention.index = (mention.index + step + mention.matches.length) % mention.matches.length;
+  renderMentions();
+}
+
+/* Twitch notices a mention by the login, and for an account whose display name is written in another
+   script the two are different words – so the login is what goes in unless the display name is the
+   same name with capitals, which is the case for nearly everyone. */
+function acceptMention(chatter) {
+  const name = chatter.displayName.toLowerCase() === chatter.login ? chatter.displayName : chatter.login;
+  const inserted = `@${name} `;
+  const node = mention.node;
+  const value = node.nodeValue;
+  const at = mention.at;
+
+  node.nodeValue = value.slice(0, at) + inserted + value.slice(mention.end);
+  closeMentions();
+  el.composerInput.focus();
+  placeCaret(node, at + inserted.length);
+  updateComposerEmpty();
+}
+
+el.composerInput.addEventListener("input", updateMentions);
+el.composerInput.addEventListener("click", updateMentions);
+// Moving the caret with the keyboard changes which word it sits in, and only these keys do that
+// without also raising an input event.
+el.composerInput.addEventListener("keyup", (event) => {
+  if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) updateMentions();
+});
+el.composerInput.addEventListener("blur", closeMentions);
+
+el.composerInput.addEventListener("keydown", (event) => {
+  if (!mention.open) return;
+  if (event.key === "ArrowDown") { event.preventDefault(); moveMention(1); }
+  else if (event.key === "ArrowUp") { event.preventDefault(); moveMention(-1); }
+  // Enter would otherwise send a half-typed name to the chat, and Tab would leave the field.
+  else if (event.key === "Enter" || event.key === "Tab") { event.preventDefault(); acceptMention(mention.matches[mention.index]); }
+  else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeMentions(); }
+});
+
+/* -------------------------------------------------------- emote picker */
+
+/* Reading order, closest first. Which of the three groups an emote belongs to is settled in the app
+   before it gets here – a name the channel owns and the global set also uses is the channel's – so
+   this list only has to decide where each group is drawn. "Recent" is the exception and deliberately
+   repeats: it is a shortcut to the ones we keep using, not a fourth place to look. */
+const EMOTE_GROUPS = [
+  { key: "recent", label: "Nyligen använda" },
+  { key: "channel", label: "Kanalens emotes" },
+  { key: "yours", label: "Dina emotes" },
+  { key: "global", label: "Globala" },
+];
+
+/* Someone subscribed to a hundred channels has more emotes than anyone can look through, and every
+   one of them is an image request. The cap is a reading limit, not a fetch limit: the whole list is
+   still searchable, it is only the wall of pictures that stops. */
+const EMOTE_SECTION_LIMIT = 200;
+
+function toggleEmotePanel() {
+  if (el.emotePanel.hidden) openEmotePanel(); else closeEmotePanel();
+}
+
+function openEmotePanel() {
+  closeMentions();
+  el.emoteSearch.value = "";
+  el.emotePanel.hidden = false;
+  el.emoteBtn.setAttribute("aria-expanded", "true");
+  renderEmotes();
+  // Only ever asked for once per channel: the answer cannot change while a chat is open, and the
+  // picker should feel like a panel rather than like a page load every time it is opened.
+  if (!state.emotes) loadEmotes();
+}
+
+function closeEmotePanel() {
+  el.emotePanel.hidden = true;
+  el.emoteBtn.setAttribute("aria-expanded", "false");
+}
+
+function closeComposerPanels() {
+  closeMentions();
+  closeEmotePanel();
+}
+
+function loadEmotes() {
+  const request = ++emoteRequest;
+  el.emoteBody.replaceChildren(emoteNote("Hämtar emotes …"));
+  el.emoteNote.hidden = true;
+  api("/api/emotes")
+    .then((data) => {
+      // The channel or the account changed while this was in flight: it is an answer about a room
+      // the dock has already left.
+      if (request !== emoteRequest) return;
+      state.emotes = data;
+      state.emoteIndex = new Map(data.emotes.map((emote) => [emote.name, emote]));
+      if (!el.emotePanel.hidden) renderEmotes();
+    })
+    .catch((error) => {
+      if (request !== emoteRequest) return;
+      // Nothing is kept, so the next opening tries again rather than showing the failure forever.
+      if (!el.emotePanel.hidden) el.emoteBody.replaceChildren(emoteNote(error.message));
+    });
+}
+
+function emoteNote(text) {
+  const note = document.createElement("p");
+  note.className = "emote-empty";
+  note.textContent = text;
+  return note;
+}
+
+function renderEmotes() {
+  if (!state.emotes) return;
+  const term = el.emoteSearch.value.trim().toLowerCase();
+
+  // Held against the list as well as collected from our own lines: an emote used before a channel
+  // switch or a sub running out is one this account may no longer send, and it would go into the
+  // box as a picture and reach the chat as plain words.
+  const recent = state.seenEmotes.map((name) => state.emoteIndex.get(name)).filter(Boolean);
+
+  const sections = term
+    // A search is a search: sections would only put distance between a name and the match for it.
+    ? [{ label: "", emotes: state.emotes.emotes.filter((emote) => emote.name.toLowerCase().includes(term)) }]
+    : EMOTE_GROUPS.map((group) => ({
+      label: group.label,
+      emotes: group.key === "recent" ? recent : state.emotes.emotes.filter((emote) => emote.group === group.key),
+    }));
+
+  const drawn = [];
+  for (const section of sections) {
+    if (!section.emotes.length) continue;
+    if (section.label) {
+      const heading = document.createElement("div");
+      heading.className = "emote-group";
+      heading.textContent = section.emotes.length > EMOTE_SECTION_LIMIT
+        ? `${section.label} (${EMOTE_SECTION_LIMIT} av ${section.emotes.length} – sök för att hitta fler)`
+        : section.label;
+      drawn.push(heading);
+    }
+    const grid = document.createElement("div");
+    grid.className = "emote-grid";
+    for (const emote of section.emotes.slice(0, EMOTE_SECTION_LIMIT)) grid.appendChild(emoteButton(emote));
+    drawn.push(grid);
+  }
+
+  el.emoteBody.replaceChildren(...(drawn.length ? drawn : [emoteNote(term ? "Ingen emote heter så." : "Inga emotes att visa.")]));
+
+  /* A section that is missing has to say so where it would have been, not stay quiet: the picker
+     otherwise looks like a channel with no emotes, which is a different and unfixable thing. */
+  const missing = state.emotes.missingScope
+    ? "Kanalens och dina egna emotes visas inte: appen får inte veta vilka du får skicka. "
+      + "Välj Logga in igen i appen, så kommer de hit."
+    : !state.emotes.channelChecked
+      ? "Kanalens emotes visas inte: din egen emote-lista är för lång för att kunna kontrolleras mot den."
+      : "";
+  el.emoteNote.hidden = missing.length === 0;
+  el.emoteNote.textContent = missing;
+}
+
+/* Where an emote comes from, for the tooltip. Worth saying because a search shows one flat list with
+   no headings above it, and "which of my four hundred emotes is this" is a fair question. */
+const EMOTE_SOURCES = { channel: "kanalens", yours: "din", global: "global" };
+
+function emoteButton(emote) {
+  const button = document.createElement("button");
+  button.className = "emote-pick";
+  button.type = "button";
+  button.title = `${emote.name} · ${EMOTE_SOURCES[emote.group] || emote.group}`;
+
+  const image = document.createElement("img");
+  image.loading = "lazy";
+  image.src = emoteUrl(emote.id, "2.0");
+  image.alt = emote.name;
+  button.appendChild(image);
+
+  button.addEventListener("mousedown", (event) => event.preventDefault());
+  button.addEventListener("click", () => insertEmote(emote));
+  return button;
+}
+
+/* Goes in as the picture it is, not as its name. The two are the same message – what is sent is
+   read back off the image – but a name in the box tells the reader nothing about whether they
+   picked the right one, which is the whole reason for having a picker.
+
+   Twitch only reads an emote that stands alone, so the space after it is part of inserting one, and
+   the panel stays open on purpose: picking two or three in a row is the normal case. */
+function insertEmote(emote) {
+  // The name is what counts against the limit; the picture is only how it is shown here.
+  if (composerText().length + emote.name.length + 1 > MAX_MESSAGE) {
+    toast("Meddelandet får inte plats med fler emotes.", "error");
+    return;
+  }
+
+  el.composerInput.focus();
+  // "hej" + Kappa must not send "hejKappa": Twitch would read that as one word and neither half
+  // would mean anything.
+  if (needsLeadingSpace()) insertAtCaret(document.createTextNode(" "));
+  // The trailing space is what keeps the next one from being typed onto the end of this name.
+  const spacer = document.createTextNode(" ");
+  insertAtCaret(emoteImage(emote.name, emote.id));
+  insertAtCaret(spacer);
+  placeCaret(spacer, 1);
+  updateComposerEmpty();
+}
+
+function needsLeadingSpace() {
+  const caret = caretInText();
+  if (caret) return caret.offset > 0 && !/\s/.test(caret.node.nodeValue[caret.offset - 1]);
+  // Not inside a run of text, so this is going on the end: what the field already says decides.
+  const text = composerText();
+  return text.length > 0 && !/\s$/.test(text);
+}
+
+el.emoteBtn.addEventListener("click", toggleEmotePanel);
+el.emoteSearch.addEventListener("input", renderEmotes);
+el.emoteSearch.addEventListener("keydown", (event) => {
+  // The search box lives inside the composer's form, where Enter would send whatever the message
+  // field happens to hold.
+  if (event.key === "Enter") event.preventDefault();
+  if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeEmotePanel(); el.composerInput.focus(); }
 });
 
 /* ------------------------------------------------------------------- toast */
@@ -1293,6 +1897,24 @@ function applyAuth(auth) {
   state.auth = auth;
   el.raidBtn.hidden = !auth.canRaid;
   el.composer.hidden = !auth.canSend;
+  // A logout takes the field away mid-sentence; the panels hanging above it would otherwise be
+  // left floating over the chat with nothing under them.
+  if (el.composer.hidden) closeComposerPanels();
+
+  /* An emote list belongs to one account in one channel, and this frame is the only thing that says
+     when either changes: a login, a logout, a channel switch, and – the one that is easy to miss –
+     the room id arriving after the picker has already been opened and filled from the global list
+     alone. Comparing the pair is what makes all four the same case. */
+  const owner = `${auth.login}@${auth.room || ""}`;
+  if (owner !== state.emoteOwner) {
+    state.emoteOwner = owner;
+    forgetEmotes();
+    /* Fetched before anyone asks for it, once the room is known. The list is not only the picker's:
+       a line of our own arrives with no emote spans, and this is what turns its words back into
+       pictures – which has to be ready by the time the message is written, not by the time somebody
+       thinks to open the picker. Waiting for the room means one call instead of two. */
+    if (auth.canSend && auth.room) loadEmotes();
+  }
 }
 
 /* The speaker button is baked into each message, so turning pronunciation on or off in the app
@@ -1306,6 +1928,10 @@ function applySpeech(enabled) {
 /* ------------------------------------------------------------------ chrome */
 
 document.addEventListener("click", (event) => {
+  // The emote panel has no backdrop of its own – it is a small thing above a field, not a dialog –
+  // so anything pressed outside the composer is what closes it.
+  if (!el.emotePanel.hidden && !event.target.closest("#composer")) closeEmotePanel();
+
   const closer = event.target.closest("[data-close]");
   if (closer) { $(closer.dataset.close).hidden = true; return; }
   // Tapping the dimmed area behind a sheet closes it.
@@ -1313,7 +1939,7 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeSheets();
+  if (event.key === "Escape") { closeSheets(); closeComposerPanels(); }
 });
 
 if (!KEY) {

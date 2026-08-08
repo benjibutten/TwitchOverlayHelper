@@ -39,8 +39,25 @@
 <button id="jumpBtn" class="jump" type="button" hidden>↓ <span id="jumpCount">0</span> nya</button>
 
 <form id="composer" class="composer" hidden>
-  <input id="composerInput" class="composer-input" type="text" maxlength="480" autocomplete="off"
-         autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skriv ett meddelande …">
+  <!-- Both panels hang above the field rather than below it: the field sits at the bottom edge of
+       the dock, and a list opening downwards would have nowhere to go. -->
+  <div id="mentionList" class="suggest" role="listbox" aria-label="Chattare att nämna" hidden></div>
+
+  <div id="emotePanel" class="emote-panel" hidden aria-label="Emotes">
+    <input id="emoteSearch" class="field emote-search" type="search" placeholder="Sök emote …" autocomplete="off"
+           autocorrect="off" autocapitalize="off" spellcheck="false">
+    <div id="emoteBody" class="emote-body"></div>
+    <p id="emoteNote" class="emote-note" hidden></p>
+  </div>
+
+  <!-- Editable markup rather than an input: an emote is a picture, and a text field can only ever
+       hold its name. What is typed here is still only ever text and images – see composerText(). -->
+  <div id="composerInput" class="composer-input" contenteditable="true" role="textbox"
+       aria-multiline="false" aria-label="Skriv ett meddelande" data-empty="true"
+       data-placeholder="Skriv ett meddelande …"
+       autocorrect="off" autocapitalize="off" spellcheck="false"></div>
+  <button id="emoteBtn" class="icon-btn composer-emote" type="button" title="Emotes" aria-label="Emotes"
+          aria-expanded="false">🙂</button>
   <button id="composerSend" class="composer-send" type="submit" title="Skicka">Skicka</button>
 </form>
 
@@ -69,7 +86,7 @@
       <button class="action" type="button" data-act="timeout" data-seconds="60">⏱ 1 minut</button>
       <button class="action" type="button" data-act="timeout" data-seconds="600">⏱ 10 minuter</button>
       <button class="action" type="button" data-act="timeout" data-seconds="3600">⏱ 1 timme</button>
-      <button class="action" type="button" data-act="delete">🗑 Ta bort meddelandet</button>
+      <button id="sheetDelete" class="action" type="button" data-act="delete">🗑 Ta bort meddelandet</button>
       <button class="action action-danger" type="button" data-act="ban">🚫 Banna för alltid</button>
       <button class="action action-quiet" type="button" data-act="profile">👤 Öppna profilen</button>
     </div>

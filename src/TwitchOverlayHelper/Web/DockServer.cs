@@ -27,6 +27,7 @@ public sealed class DockServerContext
     public required NameSpeechService Speech { get; init; }
     public required PetCatalog Pets { get; init; }
     public required NicknameBook Nicknames { get; init; }
+    public required UsableEmoteCatalog Emotes { get; init; }
 }
 
 /// <summary>
@@ -236,6 +237,23 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
 
         app.MapPost("/api/chat/unpin", async (PinMessageRequest request) =>
             await RunAsync(() => context.Api.UnpinMessageAsync(RequireBroadcaster(), request.MessageId)).ConfigureAwait(false));
+
+        // What the emote picker may offer. Behind a login for the same reason the composer is: the
+        // point of the list is to type something into the chat, and Twitch decides what this account
+        // may send. Answered from the app's own copy, which is the same one our echoed lines are
+        // drawn from – so the picker and the column can never disagree about what an emote is.
+        app.MapGet("/api/emotes", async () =>
+        {
+            if (!context.Session.IsLoggedIn) return Problem("Du är inte inloggad på Twitch.");
+            try
+            {
+                EmoteCatalog catalog = await context.Emotes
+                    .GetAsync(context.Hub.BroadcasterId, context.Session.UserId).ConfigureAwait(false);
+                return Results.Json(catalog, DockJson.Options);
+            }
+            catch (Exception ex) when (ex is TwitchApiException or TwitchAuthException or HttpRequestException)
+            { return Problem(ex.Message); }
+        });
 
         app.MapGet("/api/raid/candidates", async () =>
         {

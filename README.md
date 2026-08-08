@@ -16,7 +16,7 @@ Appen kör en lokal webbserver som serverar en chatt byggd för läsbarhet. Adre
 - **Smeknamn**: klicka på ett namn och ge chattaren ett namn du känner igen. Det visas bredvid Twitch-namnet i både docken och overlayen. Se [Smeknamn på chattare](#smeknamn-på-chattare).
 - Moderering med stora knappar: klicka på ett namn för timeout, ban eller att ta bort meddelandet. Ban kräver bekräftelse och åtgärder går att ångra direkt i notisen.
 - Raid-väljare som listar de kanaler du följer som är live just nu.
-- Skrivfält för att svara i chatten.
+- Skrivfält för att svara i chatten, med **@-förslag** och **emote-väljare**. Se [Skriva i chatten](#skriva-i-chatten).
 - Docken innehåller inga inställningar – allt utseende styrs från appen under **Ändra chattens läsbarhet** och slår igenom direkt. Docken visar exempelmeddelanden innan chatten är ansluten, så det går att ställa in läsbarheten i lugn och ro.
 
 Moderering fungerar i alla kanaler där du är moderator, inte bara i din egen. Raid går däremot bara att starta från din egen kanal – Twitch tillåter inget annat – så raid-knappen döljs när du tittar på någon annans chatt.
@@ -43,12 +43,33 @@ Resten kommer via EventSub och kräver inloggning, rätt behörighet och – fö
 | Timeout, ban, ta bort meddelande | Ja | Kanaler där du är moderator |
 | Raid | Ja | Bara din egen kanal |
 | Skriva i chatten | Ja | Alla kanaler |
+| Dina egna emotes i emote-väljaren | Ja (`user:read:emotes`) | Alla kanaler |
 
 Saknas något slutar det alltid med *färre kort* – aldrig med en chatt som slutar läsa. Appen skriver under **5. Logga in för moderering** vilka extra händelser som är påslagna just nu, och skiljer på de två orsakerna till att något inte syns: en behörighet du inte gett, och en kanal som inte är din. En sparad inloggning från innan en behörighet fanns fixas med knappen **Logga in igen** – en förnyad token ger tillbaka gamla behörigheter, aldrig nya.
 
 Power-upen *förstorad emote* ritas i full storlek på en egen rad. Meddelandeeffekter (`animation-id`) kommer över IRC och visas som en markör i alla kanaler, även utloggad – animationen i sig återges inte.
 
 Varje typ går att stänga av för sig: overlayens val ligger under **Händelser i overlayen** i appen, dockens under **Ändra chattens läsbarhet → Händelser i chatten**. De är separata, eftersom en overlay ovanpå ett spel tål mindre än en dock man läser i lugn och ro. Att stänga av en typ tar bort korten som redan står kvar; att slå på den igen gäller det som händer sedan (docken hämtar tillbaka historiken vid omladdning). Reglagen styr bara korten – en belöning triggar fortfarande pets, och en cheer är fortfarande en markör på meddelandet den kom med.
+
+## Skriva i chatten
+
+Skrivfältet längst ner i docken syns när du är inloggad. Två saker gör det snabbare att svara utan att lämna docken – båda öppnar sig **ovanför** fältet, eftersom fältet sitter i underkanten och en lista nedåt inte har någonstans att ta vägen.
+
+Ett skickat meddelande väntar på Twitchs svar innan det visas: kommer bekräftelsen läggs raden in i chatten som vilken annan som helst, och nekar Twitch den – slowmode, följarläge, en timeout, en dubblett – får du Twitchs egen förklaring och texten tillbaka i rutan i stället för en tom ruta och en rad som aldrig kom fram. Egna rader som Twitch inte gav något meddelande-ID får inga knappar för att nåla fast åt tittarna eller ta bort, eftersom de knapparna behöver just det ID:t.
+
+**@-förslag.** Skriv `@` så listas de som nyligen sagt något, senast först. Listan kommer ur chatten som redan rullat förbi, så den kräver varken inloggning eller extra anrop, och den söker på Twitch-namnet, visningsnamnet **och smeknamnet du satt** – tre stammisar vars namn börjar likadant är precis det som gör en @-lista svår, och namnet du känner igen är det som skiljer dem åt. Pilarna flyttar markeringen, Tabb eller Enter väljer, Esc stänger. Det som skrivs in är Twitch-namnet när visningsnamnet bara är samma namn med versaler, annars inloggningsnamnet – det är det Twitch känner igen som en mention för konton vars visningsnamn står i ett annat skriftsystem. Byter docken kanal glöms listan bort direkt: namnen i det förra rummet är inte de som är här nu.
+
+**Emote-väljare.** 🙂-knappen visar vad du faktiskt får skicka i just den här kanalen, i fyra avdelningar: *nyligen använda*, *kanalens emotes*, *dina emotes* och *globala*. Den översta är genvägen till dem du själv använder ofta – den samlas ur **dina egna rader**, inte ur chatten i stort: en emote som rullar förbi tillhör den som skrev den, och överst i din egen väljare vore den mest en inbjudan att skicka något som når chatten som lösa bokstäver. Sökrutan letar bland allihop. Väljaren stannar öppen när du klickar, så tre emotes i rad är tre klick.
+
+En vald emote hamnar i skrivfältet **som bild**, inte som sitt namn – annars säger fältet ingenting om du träffade rätt, vilket är hela poängen med en väljare. Det som skickas är fortfarande bara text; namnet läses tillbaka av bilden när du trycker skicka.
+
+Raden du själv skrev kommer tillbaka från Twitch utan att någon talat om vilka ord som var emotes – Twitch räknar ut det på vägen till tittarna och berättar det för alla **utom avsändaren**. Appen fyller därför i det själv, mot samma kontrollerade lista, innan meddelandet går ut till vyerna. Det sker i appen och inte i docken just för att båda ska visa samma sak: annars vore overlayen ovanpå spelet den enda vy som fortfarande stavade ut `Kappa` med bokstäver.
+
+Genomgående gäller att en emote du inte får skicka aldrig erbjuds – den skulle hamna i chatten som lösa bokstäver i stället för som en bild, och det märks först när meddelandet redan är ute. Det är inte gratis att veta: Twitch har ingen fråga som lyder "får det här kontot skicka den här emoten här", så svaret sätts ihop av tre listor. Kanalens lista innehåller allt kanalen har, prenumerationsnivåer inkluderat, oavsett om du får använda det; din personliga lista är precis vad du får skriva. Kanalens lista visas bara när den går att hålla mot din personliga – eller när det är **din egen kanal**, där du alltid får använda dina egna emotes.
+
+Går den inte att kontrollera visas den inte alls, och väljaren säger rakt ut varför i stället för att gissa. Det gäller två fall: behörigheten `user:read:emotes` saknas (en inloggning från innan den fanns), eller att din egen emote-lista är så lång att den slog i hämtningstaket – en lista som slutade i förtid går att läsa ur men inte att utesluta med. I det första fallet räcker knappen **Logga in igen** i appen; tills dess visas bara de globala emotes, som alla får skicka.
+
+Listan hämtas en gång per kanal och konto, och slängs så fort något av dem ändras.
 
 ## Smeknamn på chattare
 
@@ -91,7 +112,8 @@ Om DeepSeek inte svarar läses namnet upp som det står, med en notis om varför
 - Valfri kantlinje runt texten som håller den läsbar utan bakgrund.
 - Liveinställningar för textstorlek, radavstånd, typsnitt och antal meddelanden.
 - Händelsekort för subs, raids, meddelanden från streamern, belöningar, shoutouts, power-ups och hypetåg – med reglage per typ i varje vy. Se [Händelser i chatten](#händelser-i-chatten).
-- **Kantljus**: ett mjukt, klickigenom ljus som tonar in längs skärmens kanter när mods skriver ett kommando (standard `!psst`, bara streamern och mods kan trigga det) eller när en ny chattare skriver sitt första meddelande – varsin färg, styrka och varaktighet, med testknappar i appen.
+- **Kantljus**: ett mjukt, klickigenom ljus som tonar in längs skärmens kanter när mods skriver ett kommando (standard `!psst`, bara streamern och mods kan trigga det) eller när en ny chattare skriver sitt första meddelande – varsin färg, styrka och varaktighet, med testknappar i appen. Flera träffar tätt inpå varandra blir aldrig flera samtidiga ljus: ett mod-anrop går alltid fram och kan aldrig knuffas undan av ett välkomnande, välkomnanden är tysta i 15 sekunder efter ett visat ljus, och ett ljus som redan lyser hålls kvar i stället för att blinka om – som mest dubbelt så länge som det är inställt på, så kanterna slocknar alltid till slut även mitt i en raid.
+- @-förslag och emote-väljare i dockens skrivfält. Se [Skriva i chatten](#skriva-i-chatten).
 - Twitch-metadata för broadcaster, moderator, VIP, subscriber med lokala markörer.
 - Riktiga Twitch-badge-bilder när Client ID och OAuth-token anges.
 - Automatisk återanslutning, PING/PONG-hantering och tydligt stopp vid nekad inloggning.
@@ -111,7 +133,7 @@ Skriv kanalnamnet och välj **Anslut**. Använd **Redigera overlay** för att pl
 
 ## Twitch-inloggning (valfritt)
 
-Anonym anslutning räcker för att läsa chatten, se subs, raids och meddelanden och få rollinformation via IRC-taggar. Inloggning behövs för timeout, ban, raid, för att skriva i chatten, för Twitchs egna badgebilder och för de händelser som går över EventSub – belöningar, shoutouts, power-ups och hypetåg. Tabellen under [Händelser i chatten](#händelser-i-chatten) visar vad som kräver vad, och vad som bara fungerar i din egen kanal.
+Anonym anslutning räcker för att läsa chatten, se subs, raids och meddelanden och få rollinformation via IRC-taggar. Inloggning behövs för timeout, ban, raid, för att skriva i chatten, för emote-väljaren, för Twitchs egna badgebilder och för de händelser som går över EventSub – belöningar, shoutouts, power-ups och hypetåg. Tabellen under [Händelser i chatten](#händelser-i-chatten) visar vad som kräver vad, och vad som bara fungerar i din egen kanal.
 
 Inloggningen sker med **Device Code Flow**: registrera en egen app på [dev.twitch.tv](https://dev.twitch.tv/console/apps) med klienttypen **Public**, klistra in dess Client ID i appen och välj **Logga in med Twitch**. Du får en kod att skriva in på `twitch.tv/activate` – ingen client secret och ingen redirect-URI behövs.
 

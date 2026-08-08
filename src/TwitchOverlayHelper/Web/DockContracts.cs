@@ -45,7 +45,9 @@ internal sealed record DockMessage(
     string? RewardLabel = null,
     DockReply? Reply = null,
     int? GiantEmote = null,
-    string? MessageEffect = null);
+    string? MessageEffect = null,
+    /// <summary>Set only when the id is a local invention, so the dock hides pin and delete.</summary>
+    bool? LocalEcho = null);
 
 /// <summary>
 /// A sub, raid or announcement as the dock sees it. The headline is worded once on this side so
@@ -98,7 +100,13 @@ internal sealed record DockNickname(string UserId, string Login, string? Text);
 
 internal sealed record DockStatus(string Text, string State);
 
-internal sealed record DockAuth(bool LoggedIn, string Login, bool CanSend, bool CanRaid, string? Error);
+/// <summary>
+/// Who the dock is writing as, and where. <paramref name="Room"/> is the joined channel's Twitch id
+/// – empty until it is known – and rides along because it is the other half of what makes a cached
+/// emote list valid: that list belongs to one account in one channel, and a switch of either has to
+/// throw it away. It is published on every change to both, so the dock needs nothing else to notice.
+/// </summary>
+internal sealed record DockAuth(bool LoggedIn, string Login, bool CanSend, bool CanRaid, string Room, string? Error);
 
 internal sealed record DockHello(
     string Type,
@@ -179,7 +187,10 @@ internal static class DockMapper
             // Which span to blow up is decided on this side, so the dock and the overlay enlarge the
             // same emote rather than each applying the convention on its own.
             message.GigantifiedEmoteIndex >= 0 ? message.GigantifiedEmoteIndex : (int?)null,
-            message.MessageEffectId);
+            message.MessageEffectId,
+            // Sent only when it is true: every ordinary line would otherwise carry a "no" that says
+            // nothing, and there is one of these per message during a raid.
+            message.IsLocalEcho ? true : null);
     }
 
     /// <summary>

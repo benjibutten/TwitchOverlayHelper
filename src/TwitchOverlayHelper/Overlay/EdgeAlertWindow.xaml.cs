@@ -43,8 +43,12 @@ public partial class EdgeAlertWindow : Window
     /// <summary>
     /// Lights the edges once. Deliberately blind to <see cref="EdgeAlertStyle.Enabled"/> – the chat
     /// triggers check it, while the settings window's test buttons preview a switched-off alert.
+    ///
+    /// <para><paramref name="seconds"/> overrides the style's own length, and is how a glow that is
+    /// being held open runs out its remaining time rather than starting a fresh full-length one on
+    /// top of itself. Omitted by the test buttons, which are previewing the setting itself.</para>
     /// </summary>
-    public void Play(EdgeAlertStyle style, double edgeWidth)
+    public void Play(EdgeAlertStyle style, double edgeWidth, double? seconds = null)
     {
         if (_closed) return;
 
@@ -68,9 +72,15 @@ public partial class EdgeAlertWindow : Window
         EnsureTopmost();
 
         int token = ++_playToken;
+        // Read before the new animation replaces the old one: while a glow is already lit this is
+        // where it currently stands, and starting from there is what turns a second alert into the
+        // light staying on rather than a blink. Zero whenever nothing is playing.
         DoubleAnimationUsingKeyFrames animation = BuildAnimation(
+            GlowRoot.Opacity,
             Math.Clamp(style.Intensity, 0.15, 1),
-            Math.Clamp(style.DurationSeconds, 2, 20));
+            // The floor is well under the shortest setting on purpose: a glow one second from its
+            // ceiling should fade out in that second rather than be rounded back up past it.
+            Math.Clamp(seconds ?? style.DurationSeconds, 0.4, 20));
         animation.Completed += (_, _) =>
         {
             if (token != _playToken) return;
@@ -85,17 +95,25 @@ public partial class EdgeAlertWindow : Window
     /// Fade in quickly enough to be noticed, breathe between full and about two thirds while the
     /// light stays, and take the longest part of the time fading away – an arrival should be felt,
     /// a departure should not.
+    ///
+    /// <paramref name="from"/> is where the light already is. Starting from black every time is what
+    /// makes several alerts in a row read as flickering, so a glow that is already up keeps its
+    /// brightness and only has its clock reset: the fade-in shrinks towards nothing the closer the
+    /// light already is to full.
     /// </summary>
-    private static DoubleAnimationUsingKeyFrames BuildAnimation(double peak, double totalSeconds)
+    private static DoubleAnimationUsingKeyFrames BuildAnimation(double from, double peak, double totalSeconds)
     {
+        // Capped at half the run as well: a glow with a second left to live must still reach its
+        // peak before it starts leaving, or the keyframes would run past the end of the animation.
+        double fadeIn = Math.Min(Math.Max(0.05, FadeInSeconds * (1 - Math.Clamp(from / peak, 0, 1))), totalSeconds * 0.5);
         double fadeOut = Math.Min(1.8, totalSeconds * 0.4);
         var softIn = new SineEase { EasingMode = EasingMode.EaseOut };
         var softInOut = new SineEase { EasingMode = EasingMode.EaseInOut };
 
         var animation = new DoubleAnimationUsingKeyFrames();
-        animation.KeyFrames.Add(new DiscreteDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-        animation.KeyFrames.Add(new EasingDoubleKeyFrame(peak, At(FadeInSeconds), softIn));
-        for (double t = FadeInSeconds + PulseSeconds / 2; t + PulseSeconds / 2 <= totalSeconds - fadeOut; t += PulseSeconds)
+        animation.KeyFrames.Add(new DiscreteDoubleKeyFrame(from, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        animation.KeyFrames.Add(new EasingDoubleKeyFrame(peak, At(fadeIn), softIn));
+        for (double t = fadeIn + PulseSeconds / 2; t + PulseSeconds / 2 <= totalSeconds - fadeOut; t += PulseSeconds)
         {
             animation.KeyFrames.Add(new EasingDoubleKeyFrame(peak * 0.65, At(t), softInOut));
             animation.KeyFrames.Add(new EasingDoubleKeyFrame(peak, At(t + PulseSeconds / 2), softInOut));

@@ -2,6 +2,17 @@ using TwitchOverlayHelper.Models;
 
 namespace TwitchOverlayHelper.Twitch;
 
+/// <summary>
+/// How the logged-in account looks in the joined channel, as Twitch describes it in USERSTATE.
+/// It is the only description we ever get of ourselves: our own messages never come back down the
+/// connection that sent them, so a line written from the dock has to be dressed in this.
+/// </summary>
+/// <param name="MessageId">
+/// Twitch's id for the message this USERSTATE answers, when it sends one at all. Nullable rather
+/// than assumed: without it the line is ours to show but not ours to pin or delete through Helix.
+/// </param>
+internal sealed record UserState(string? MessageId, string? DisplayName, string? Color, IReadOnlyList<ChatBadge> Badges);
+
 internal static class IrcMessageParser
 {
     public static bool TryParseChatMessage(string line, out ChatMessage? message)
@@ -126,6 +137,62 @@ internal static class IrcMessageParser
         if (start < 0) return string.Empty;
         int end = prefix.IndexOf('!', start);
         return end > start ? prefix[(start + 1)..end].ToLowerInvariant() : string.Empty;
+    }
+
+    /// <summary>
+    /// Parses USERSTATE, which Twitch sends when we join a channel and again after every line we
+    /// send that it accepts. Two things make it worth reading: it says how we look in this room, and
+    /// its arrival is the only confirmation that a message actually went out – a line Twitch refuses
+    /// is answered with a NOTICE and no USERSTATE at all.
+    /// </summary>
+    public static bool TryParseUserState(string line, out UserState? state)
+    {
+        state = null;
+        if (!line.StartsWith('@')) return false;
+
+        int tagEnd = line.IndexOf(' ');
+        if (tagEnd < 0) return false;
+        if (line.IndexOf(" USERSTATE #", tagEnd, StringComparison.Ordinal) < 0) return false;
+
+        var tags = ParseTags(line[1..tagEnd]);
+        state = new UserState(
+            EmptyToNull(tags.GetValueOrDefault("id")),
+            EmptyToNull(tags.GetValueOrDefault("display-name")),
+            EmptyToNull(tags.GetValueOrDefault("color")),
+            ParseBadges(tags.GetValueOrDefault("badges")));
+        return true;
+    }
+
+    /// <summary>
+    /// A NOTICE saying a line we sent was not delivered – banned, timed out, slow mode, followers
+    /// only, a duplicate, the rate limit. Twitch marks exactly those with a msg-id in the
+    /// <c>msg_*</c> family, and answers a refused PRIVMSG with this and nothing else: no USERSTATE
+    /// ever follows, so without reading it a send can only sit out its timeout.
+    ///
+    /// <para>The same NOTICE command also carries things about the room – "slow mode on",
+    /// "this room is now in emote-only mode" – which say nothing about our message. The msg-id is
+    /// what tells the two apart, so a notice without one is not a refusal.</para>
+    /// </summary>
+    public static bool TryParseSendRefusal(string line, out string? reason)
+    {
+        reason = null;
+        if (!line.StartsWith('@')) return false;
+
+        int tagEnd = line.IndexOf(' ');
+        if (tagEnd < 0) return false;
+        int notice = line.IndexOf(" NOTICE ", tagEnd, StringComparison.Ordinal);
+        if (notice < 0) return false;
+
+        var tags = ParseTags(line[1..tagEnd]);
+        string id = tags.GetValueOrDefault("msg-id") ?? string.Empty;
+        // "unrecognized_cmd" is the same answer for a line beginning with a slash: nothing was said.
+        if (!id.StartsWith("msg_", StringComparison.Ordinal) && id != "unrecognized_cmd") return false;
+
+        int text = line.IndexOf(" :", notice, StringComparison.Ordinal);
+        reason = text >= 0 ? line[(text + 2)..].Trim() : string.Empty;
+        // Twitch's own wording is the useful part; the msg-id is the fallback when there is none.
+        if (reason.Length == 0) reason = id;
+        return true;
     }
 
     /// <summary>Parses CLEARMSG and CLEARCHAT so deletions, timeouts and bans become visible.</summary>

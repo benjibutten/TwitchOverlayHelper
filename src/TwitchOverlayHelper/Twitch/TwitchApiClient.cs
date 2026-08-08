@@ -22,6 +22,27 @@ public sealed class TwitchNotPermittedException(string message) : TwitchApiExcep
 /// <summary>One channel point reward as the channel has it configured.</summary>
 public sealed record CustomReward(string Id, string Title, int Cost);
 
+/// <summary>
+/// One emote the picker can offer. <paramref name="Group"/> is where it came from – "channel",
+/// "yours" or "global" – which is what the dock sorts the picker into; the image is built from the
+/// id by the same CDN pattern the chat lines already use, so no URL is carried over the wire.
+/// </summary>
+public sealed record UsableEmote(string Id, string Name, string Group);
+
+/// <summary>
+/// What the emote picker can offer right now.
+/// </summary>
+/// <param name="MissingScope">
+/// The personal half is absent because the login predates the scope – a different thing from having
+/// no emotes.
+/// </param>
+/// <param name="ChannelChecked">
+/// Whether the channel's own emotes could be held against what this account may send. False means
+/// they were left out rather than guessed at, which is worth saying: the picker then looks emptier
+/// than the channel is, and the reason is fixable from the app.
+/// </param>
+public sealed record EmoteCatalog(IReadOnlyList<UsableEmote> Emotes, bool MissingScope, bool ChannelChecked);
+
 /// <summary>Helix calls behind the dock's moderation buttons. Every call needs the moderator's own user id.</summary>
 public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session)
 {
@@ -184,6 +205,139 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
                 reward.TryGetProperty("cost", out JsonElement cost) && cost.ValueKind == JsonValueKind.Number ? cost.GetInt32() : 0));
         }
         return result;
+    }
+
+    /// <summary>One emote endpoint's answer, and whether the page cap cut it short.</summary>
+    private sealed record EmotePage(IReadOnlyList<UsableEmote> Emotes, bool Truncated)
+    {
+        public static readonly EmotePage Empty = new([], false);
+    }
+
+    /// <summary>
+    /// Everything the logged-in user may type into this channel's chat.
+    ///
+    /// <para>Three calls, because Twitch has no endpoint for "what may this account send here".
+    /// Only the personal one needs a scope, so a login granted before that scope existed still gets
+    /// a working picker – two thirds of one – instead of an error.</para>
+    ///
+    /// <para><b>The channel's list is not a permission list.</b> <c>chat/emotes</c> answers with
+    /// every emote the channel has, subscriber tiers included, whether or not this account may use
+    /// one – and an emote that may not be sent arrives in chat as loose words rather than as a
+    /// picture. So where the personal list is known it decides, and the channel's list is narrowed
+    /// to what appears in it. Two cases keep the whole list: your own channel, where a broadcaster
+    /// may always use their own emotes, and a personal list long enough to have hit the page cap,
+    /// which cannot be used to rule anything out.</para>
+    ///
+    /// <para>Claiming a name is not the same as drawing it: the dock draws the channel first and the
+    /// global set last, but nearly every global emote is in the personal list too, so letting
+    /// "yours" claim them would file Kappa under the reader's own emotes.</para>
+    /// </summary>
+    public async Task<EmoteCatalog> GetUsableEmotesAsync(string broadcasterId, CancellationToken cancellationToken = default)
+    {
+        // A channel we have not joined yet simply contributes nothing – the rest of the picker is
+        // still worth showing, and the dock asks again once the room is known.
+        EmotePage channel = broadcasterId.Length > 0
+            ? await ReadEmotesAsync(
+                $"https://api.twitch.tv/helix/chat/emotes?broadcaster_id={Uri.EscapeDataString(broadcasterId)}",
+                "channel", 1, cancellationToken).ConfigureAwait(false)
+            : EmotePage.Empty;
+
+        bool missingScope = !session.HasScope(TwitchAuth.EmotesScope);
+        EmotePage yours = EmotePage.Empty;
+        if (!missingScope)
+        {
+            // Named with the channel as well: that is what adds this channel's follower emotes to
+            // the answer. Someone subscribed to a hundred channels has a long list, so it is paged
+            // – and capped, because a picker nobody can scroll through is not a better picker. The
+            // page size is Twitch's own: this endpoint takes user_id, broadcaster_id and after, and
+            // asking it for a "first" it does not document would be relying on it being ignored.
+            string url = $"https://api.twitch.tv/helix/chat/emotes/user?user_id={Uri.EscapeDataString(session.UserId)}";
+            if (broadcasterId.Length > 0) url += $"&broadcaster_id={Uri.EscapeDataString(broadcasterId)}";
+            try
+            {
+                yours = await ReadEmotesAsync(url, "yours", 10, cancellationToken).ConfigureAwait(false);
+            }
+            catch (TwitchNotPermittedException)
+            {
+                // The token says it has the scope and Twitch says otherwise – treat it as the same
+                // "log in again" answer rather than failing the whole picker.
+                missingScope = true;
+            }
+        }
+
+        EmotePage global = await ReadEmotesAsync("https://api.twitch.tv/helix/chat/emotes/global", "global", 1, cancellationToken).ConfigureAwait(false);
+
+        // A broadcaster may always use their own emotes, so their channel needs no checking at all.
+        bool ownChannel = broadcasterId.Length > 0 && string.Equals(broadcasterId, session.UserId, StringComparison.Ordinal);
+        // Anywhere else the personal list is the only thing that can say what may be sent. Without
+        // it – no scope, or a list that stopped at the page cap – there is nothing to check against.
+        bool channelChecked = ownChannel || (!missingScope && !yours.Truncated);
+
+        IReadOnlyList<UsableEmote> channelEmotes;
+        if (ownChannel)
+        {
+            channelEmotes = channel.Emotes;
+        }
+        else if (channelChecked)
+        {
+            var allowed = new HashSet<string>(yours.Emotes.Select(emote => emote.Name), StringComparer.Ordinal);
+            foreach (UsableEmote emote in global.Emotes) allowed.Add(emote.Name);
+            channelEmotes = channel.Emotes.Where(emote => allowed.Contains(emote.Name)).ToArray();
+        }
+        else
+        {
+            // Left out rather than guessed at. Showing them and hoping is how a subscriber emote
+            // gets offered to somebody who is not subscribed: it goes into the box as a picture,
+            // reaches the chat as loose words, and the first sign anything was wrong is the message
+            // itself. A smaller picker and a line saying why is the honest version of not knowing.
+            channelEmotes = [];
+        }
+
+        var byName = new HashSet<string>(StringComparer.Ordinal);
+        var ordered = new List<UsableEmote>();
+
+        void Take(IEnumerable<UsableEmote> emotes)
+        {
+            foreach (UsableEmote emote in emotes)
+            {
+                if (emote.Id.Length == 0 || emote.Name.Length == 0) continue;
+                if (!byName.Add(emote.Name)) continue;
+                ordered.Add(emote);
+            }
+        }
+
+        Take(channelEmotes);
+        Take(global.Emotes);
+        Take(yours.Emotes);
+        return new EmoteCatalog(ordered, missingScope, channelChecked);
+    }
+
+    /// <summary>Reads one emote endpoint, following its cursor for at most <paramref name="maxPages"/> pages.</summary>
+    private async Task<EmotePage> ReadEmotesAsync(string url, string group, int maxPages, CancellationToken cancellationToken)
+    {
+        var result = new List<UsableEmote>();
+        string? cursor = null;
+        bool truncated = false;
+
+        for (int page = 0; page < maxPages; page++)
+        {
+            string pageUrl = cursor is null ? url : $"{url}{(url.Contains('?') ? '&' : '?')}after={Uri.EscapeDataString(cursor)}";
+            using var request = new HttpRequestMessage(HttpMethod.Get, pageUrl);
+            JsonElement json = await SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (!json.TryGetProperty("data", out JsonElement data) || data.ValueKind != JsonValueKind.Array) break;
+            foreach (JsonElement emote in data.EnumerateArray())
+                result.Add(new UsableEmote(ReadString(emote, "id"), ReadString(emote, "name"), group));
+
+            cursor = json.TryGetProperty("pagination", out JsonElement pagination) && pagination.ValueKind == JsonValueKind.Object
+                ? ReadString(pagination, "cursor")
+                : string.Empty;
+            if (string.IsNullOrEmpty(cursor)) break;
+            // More was on offer than we took. Said out loud because a list that stops early is safe
+            // to read from and unsafe to rule things out with.
+            truncated = page == maxPages - 1;
+        }
+        return new EmotePage(result, truncated);
     }
 
     private async Task<JsonElement> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

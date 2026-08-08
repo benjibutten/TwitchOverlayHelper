@@ -318,17 +318,87 @@ body[data-nameline="false"] .msg-text { display: inline; }
 }
 
 /* ---------- composer ---------- */
-.composer { display: flex; gap: 5px; padding: 6px; border-top: 1px solid var(--line); background: var(--surface); flex: 0 0 auto; }
+.composer { position: relative; display: flex; gap: 5px; padding: 6px; border-top: 1px solid var(--line); background: var(--surface); flex: 0 0 auto; }
+/* One line that scrolls sideways rather than a box that grows: the composer sits under the chat and
+   a field that gets taller takes the rows above it away mid-sentence. */
 .composer-input {
   flex: 1 1 auto; min-width: 0; font-family: inherit; font-size: 15px;
   padding: 9px 10px; border-radius: 8px; border: 1px solid var(--line);
   background: var(--bg); color: var(--text);
+  min-height: 38px; max-height: 38px; overflow-x: auto; overflow-y: hidden;
+  white-space: nowrap; line-height: 18px; outline: none;
 }
+.composer-input:focus { border-color: var(--accent); }
+/* Kept on an attribute rather than on :empty – a browser leaves a stray <br> behind when the last
+   character is deleted, and an editor holding one is not empty as far as CSS is concerned. */
+.composer-input[data-empty="true"]::before {
+  content: attr(data-placeholder); color: var(--muted); pointer-events: none;
+}
+/* Sized to the line rather than to the reading size: the field is chrome, and an emote that makes
+   the row taller than the box would be clipped. */
+.composer-input img { height: 22px; width: auto; vertical-align: -6px; margin: 0 1px; }
 .composer-send {
   border: none; background: var(--accent); color: #fff; border-radius: 8px;
   padding: 9px 13px; font-family: inherit; font-size: 14px; cursor: pointer;
 }
 .composer-send:disabled { opacity: 0.5; cursor: default; }
+.composer-emote { flex: 0 0 auto; font-size: 17px; padding: 6px 8px; }
+
+/* ---------- @-suggestions ---------- */
+/* Sized in fixed pixels, not in the reading size: this is a list you glance at and pick from with
+   the keyboard, and a reader who has turned the chat up to 30px still wants it to fit on screen. */
+.suggest {
+  position: absolute; left: 6px; right: 6px; bottom: calc(100% - 6px);
+  max-height: 218px; overflow-y: auto; z-index: 5;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 -6px 18px rgba(0,0,0,0.18);
+  padding: 4px;
+}
+.suggest-item {
+  display: flex; align-items: baseline; gap: 7px; width: 100%;
+  padding: 7px 8px; border: none; border-radius: 7px; background: transparent;
+  font-family: inherit; font-size: 14px; color: var(--text); text-align: left; cursor: pointer;
+}
+.suggest-item:hover { background: var(--surface-alt); }
+/* Highlighting the current row rather than moving focus: the caret has to stay in the field, so the
+   list can never be what the browser considers focused. */
+.suggest-item[aria-selected="true"] { background: var(--accent); color: #fff; }
+.suggest-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggest-login { color: var(--muted); font-size: 12px; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggest-item[aria-selected="true"] .suggest-login,
+.suggest-item[aria-selected="true"] .suggest-nick { color: #f2ecff; }
+.suggest-nick {
+  flex: 0 0 auto; font-size: 12px; color: var(--mention-line);
+  border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px;
+}
+
+/* ---------- emote picker ---------- */
+.emote-panel {
+  position: absolute; left: 6px; right: 6px; bottom: calc(100% - 6px);
+  z-index: 5; display: flex; flex-direction: column; gap: 6px;
+  max-height: 280px; padding: 7px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 -6px 18px rgba(0,0,0,0.18);
+}
+.emote-search { flex: 0 0 auto; font-size: 14px; }
+.emote-body { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+.emote-group { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 6px 2px 3px; }
+.emote-group:first-child { margin-top: 0; }
+.emote-grid { display: flex; flex-wrap: wrap; gap: 2px; }
+.emote-pick {
+  border: none; background: transparent; border-radius: 7px; cursor: pointer;
+  padding: 3px; line-height: 0;
+}
+.emote-pick:hover { background: var(--surface-alt); }
+.emote-pick img { width: 30px; height: 30px; object-fit: contain; }
+/* Not a footnote: when it is showing, whole sections of the picker are absent and this is the only
+   thing on screen that says why – and what to do about it. */
+.emote-note {
+  margin: 0; flex: 0 0 auto; font-size: 12px; line-height: 1.45;
+  color: var(--text); background: var(--surface-alt);
+  border-left: 3px solid var(--mention-line); border-radius: 0 7px 7px 0; padding: 7px 9px;
+}
+.emote-empty { font-size: 13px; color: var(--muted); padding: 10px 2px; }
 
 /* ---------- toast ---------- */
 .toast {
