@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
+using TwitchOverlayHelper.Interop;
 using TwitchOverlayHelper.Settings;
 using TwitchOverlayHelper.Speech;
 
@@ -21,6 +22,7 @@ public partial class SpeechSettingsWindow : Window
     public SpeechSettingsWindow(AppSettings settings, SpeechSecretStore secrets, NameSpeechService speech, Action onChanged)
     {
         InitializeComponent();
+        DarkTitleBar.Enable(this);
         _settings = settings;
         _secrets = secrets;
         _speech = speech;

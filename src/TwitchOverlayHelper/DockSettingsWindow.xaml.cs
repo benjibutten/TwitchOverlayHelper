@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using TwitchOverlayHelper.Interop;
 using TwitchOverlayHelper.Settings;
 
 namespace TwitchOverlayHelper;
@@ -17,6 +18,7 @@ public partial class DockSettingsWindow : Window
     public DockSettingsWindow(AppSettings settings, Action onChanged)
     {
         InitializeComponent();
+        DarkTitleBar.Enable(this);
         _settings = settings;
         _onChanged = onChanged;
         Populate();

@@ -216,8 +216,8 @@ body[data-nameline="false"] .msg-text { display: inline; }
    nickname is the place you just read it. */
 .msg-nick {
   flex: 0 0 auto; cursor: pointer; font-family: inherit;
-  font-size: 0.6em; font-weight: 700; line-height: 1; letter-spacing: 0.01em;
-  padding: 3px 7px; border-radius: 999px;
+  font-size: 0.76em; font-weight: 700; line-height: 1; letter-spacing: 0.01em;
+  padding: 4px 9px; border-radius: 999px;
   border: 1px solid var(--line); background: var(--surface-alt); color: var(--muted);
   max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }

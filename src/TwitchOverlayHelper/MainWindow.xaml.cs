@@ -105,6 +105,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        DarkTitleBar.Enable(this);
         VersionText.Text = AppVersion.DisplayText;
         _settings = _settingsStore.Load();
         _nicknames = _nicknameStore.Load();

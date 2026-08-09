@@ -1,355 +1,557 @@
 <Window x:Class="TwitchOverlayHelper.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Twitch Overlay Helper" Width="1040" Height="760" MinWidth="900" MinHeight="650"
+        Title="Twitch Overlay Helper" Width="1160" Height="800" MinWidth="980" MinHeight="640"
         Icon="pack://application:,,,/Assets/app.ico"
         Background="{StaticResource PageBrush}" Foreground="{StaticResource TextBrush}" WindowStartupLocation="CenterScreen">
-    <Grid Margin="28">
-        <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-
-        <!-- One scroll region for the whole page so the heading can be scrolled past
-             instead of permanently occupying the top of a short window. -->
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,10,0">
-            <Grid>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="1.05*" /><ColumnDefinition Width="24" /><ColumnDefinition Width="0.95*" /></Grid.ColumnDefinitions>
-                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="18" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-
-                <StackPanel Grid.ColumnSpan="3">
-                    <TextBlock Text="TWITCH OVERLAY HELPER" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" FontSize="12" />
-                    <TextBlock Text="Läs chatten utan att lämna spelet" FontSize="23" FontWeight="SemiBold" Margin="0,3,0,0" />
-                </StackPanel>
-
-                <StackPanel Grid.Row="2">
-                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20">
-                    <StackPanel>
-                        <TextBlock Text="1. Anslut chatten" FontSize="19" FontWeight="SemiBold" />
-                        <TextBlock Text="Kanalnamn eller Twitch-länk" Foreground="{StaticResource MutedTextBrush}" Margin="0,16,0,6" />
-                        <TextBox x:Name="ChannelBox" ToolTip="Exempel: twitch eller https://twitch.tv/twitch" />
-                        <Grid Margin="0,13,0,0"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                            <Button x:Name="ConnectButton" Content="Anslut" Click="ConnectButton_Click" />
-                            <Button x:Name="DisconnectButton" Grid.Column="2" Content="Koppla från" Background="#343B50" Click="DisconnectButton_Click" IsEnabled="False" />
-                        </Grid>
-                        <Border Background="#10141F" CornerRadius="8" Padding="11" Margin="0,12,0,0">
-                            <DockPanel><Ellipse x:Name="StatusDot" Width="9" Height="9" Fill="#6B7280" Margin="0,0,9,0" /><TextBlock x:Name="StatusText" Text="Inte ansluten" Foreground="#C8C5D3" /></DockPanel>
-                        </Border>
-                    </StackPanel>
-                </Border>
-
-                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
-                    <StackPanel>
-                        <TextBlock Text="2. Placera overlayen" FontSize="19" FontWeight="SemiBold" />
-                        <TextBlock Text="Lås upp för att dra i den lila raden och ändra storlek i hörnet." TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" Margin="0,7,0,14" />
-                        <Button x:Name="EditButton" Content="Redigera overlay" Click="EditButton_Click" />
-                        <Button x:Name="VisibilityButton" Content="Dölj overlay" Background="#343B50" Margin="0,10,0,0" Click="VisibilityButton_Click" />
-                    </StackPanel>
-                </Border>
-
-                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
-                    <StackPanel>
-                        <TextBlock Text="3. Snabbtangenter" FontSize="19" FontWeight="SemiBold" />
-                        <TextBlock Text="Fungerar globalt – även när spelet har fokus." Foreground="{StaticResource MutedTextBrush}" Margin="0,7,0,14" />
-
-                        <TextBlock Text="Visa/dölj overlay" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,5" />
-                        <Grid Margin="0,0,0,12">
-                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="8" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <Border Background="#10141F" BorderBrush="#343B50" BorderThickness="1" CornerRadius="8" Padding="11,8">
-                                <TextBlock x:Name="ToggleHotkeyLabel" Text="Ctrl + F9" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" />
-                            </Border>
-                            <Button x:Name="RecordToggleHotkeyButton" Grid.Column="2" Content="⌨ Ändra" Background="#343B50" Padding="13,8" Click="RecordToggleHotkey_Click" />
-                        </Grid>
-
-                        <TextBlock Text="Redigera overlay" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,5" />
+    <Window.Resources>
+        <!-- The settings used to be one endless scroll of two columns; a rail turns it into six short
+             pages you can point at instead of hunt through. TabControl keeps every control alive in
+             the name scope even while its page is hidden, so the code-behind never has to know. -->
+        <Style x:Key="NavRail" TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
                         <Grid>
-                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="8" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <Border Background="#10141F" BorderBrush="#343B50" BorderThickness="1" CornerRadius="8" Padding="11,8">
-                                <TextBlock x:Name="EditHotkeyLabel" Text="Ctrl + F10" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" />
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Width="216" Background="#111521"
+                                    BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="0,0,1,0">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                    <StackPanel IsItemsHost="True" Margin="12,16" />
+                                </ScrollViewer>
                             </Border>
-                            <Button x:Name="RecordEditHotkeyButton" Grid.Column="2" Content="⌨ Ändra" Background="#343B50" Padding="13,8" Click="RecordEditHotkey_Click" />
+                            <!-- The name matters: TabItemAutomationPeer looks up PART_SelectedContentHost to
+                                 hand the open page's controls to screen readers. Rename it and the whole
+                                 settings surface disappears from the accessibility tree. -->
+                            <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Column="1" ContentSource="SelectedContent" />
                         </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
-                        <TextBlock x:Name="HotkeyHint" Text="Välj Ändra och tryck sedan önskad tangentkombination. Esc avbryter." TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,12,0,0" />
-                    </StackPanel>
-                </Border>
-
-                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
-                    <StackPanel>
-                        <TextBlock Text="4. Chatt i OBS" FontSize="19" FontWeight="SemiBold" />
-                        <TextBlock Text="Lägg till adressen som en Custom Browser Dock i OBS (Vy → Dockor → Anpassade webbläsardockor)."
-                                   TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" Margin="0,7,0,12" LineHeight="20" />
-                        <Border Background="#10141F" BorderBrush="#343B50" BorderThickness="1" CornerRadius="8" Padding="11,9">
-                            <TextBox x:Name="DockUrlBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
-                                     Foreground="{StaticResource PrimaryBrush}" FontFamily="Consolas" Padding="0" />
+        <!-- Tag carries the glyph: an icon column makes the rail scannable without reading it. -->
+        <Style x:Key="NavItem" TargetType="TabItem">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="10" Padding="11,10" Margin="0,2">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="26" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="{TemplateBinding Tag}" FontSize="14" VerticalAlignment="Center" />
+                                <ContentPresenter Grid.Column="1" ContentSource="Header" VerticalAlignment="Center"
+                                                  TextBlock.Foreground="{TemplateBinding Foreground}" TextBlock.FontSize="14" />
+                            </Grid>
                         </Border>
-                        <Grid Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                            <Button x:Name="CopyDockUrlButton" Content="Kopiera adress" Click="CopyDockUrl_Click" />
-                            <Button x:Name="OpenDockButton" Grid.Column="2" Content="Förhandsgranska" Background="#343B50" Click="OpenDock_Click" />
-                        </Grid>
-                        <Button x:Name="DockAppearanceButton" Content="Ändra chattens läsbarhet" Background="#343B50" Margin="0,10,0,0" Click="DockAppearance_Click" />
-                        <Border Background="#10141F" CornerRadius="8" Padding="11" Margin="0,12,0,0">
-                            <DockPanel><Ellipse x:Name="DockStatusDot" Width="9" Height="9" Fill="#6B7280" Margin="0,0,9,0" VerticalAlignment="Center" />
-                                <TextBlock x:Name="DockStatusText" Text="Servern startar …" Foreground="#C8C5D3" TextWrapping="Wrap" /></DockPanel>
-                        </Border>
-                        <TextBlock Text="Adressen innehåller en hemlig nyckel och fungerar bara från den här datorn. Dela den inte."
-                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,10,0,0" LineHeight="18" />
-                    </StackPanel>
-                </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#1A2030" />
+                                <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#2A1F49" />
+                                <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
-                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
-                    <StackPanel>
-                        <TextBlock Text="5. Logga in för moderering" FontSize="19" FontWeight="SemiBold" />
-                        <TextBlock Text="Krävs för timeout, ban, raid och för att kunna skriva i chatten från docken. Chatten går att läsa utan inloggning."
-                                   TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" Margin="0,7,0,12" LineHeight="20" />
-                        <Border Background="#10141F" BorderBrush="#343B50" BorderThickness="1" CornerRadius="8" Padding="13" Margin="0,0,0,13">
-                            <StackPanel>
-                                <TextBlock Text="Så skapar du ett Client ID" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold" FontSize="13" />
-                                <TextBlock TextWrapping="Wrap" Foreground="#B8B4C6" FontSize="12" LineHeight="19" Margin="0,7,0,0">
-                                    1. Öppna dev.twitch.tv/console/apps och välj Registrera din applikation.<LineBreak />
-                                    2. Namn: valfritt. OAuth Redirect URL: http://localhost<LineBreak />
-                                    3. Kategori: Chat Bot. <Run FontWeight="Bold">Klienttyp måste vara Public.</Run><LineBreak />
-                                    4. Kopiera appens Client ID hit nedan.
-                                </TextBlock>
-                                <Button x:Name="OpenDevConsoleButton" Content="Öppna dev.twitch.tv" Background="#343B50" Padding="12,7" HorizontalAlignment="Left" Margin="0,11,0,0" Click="OpenDevConsole_Click" />
-                            </StackPanel>
-                        </Border>
-                        <TextBlock Text="Client ID" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,5" />
-                        <TextBox x:Name="ClientIdBox" TextChanged="ClientId_TextChanged" />
-                        <Button x:Name="LoginButton" Content="Logga in med Twitch" Margin="0,12,0,0" Click="Login_Click" />
-                        <Border x:Name="DeviceCodeCard" Background="#10141F" BorderBrush="#5A3FA0" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,12,0,0" Visibility="Collapsed">
-                            <StackPanel>
-                                <TextBlock x:Name="DeviceCodeHint" Text="Gå till twitch.tv/activate och skriv in koden:" TextWrapping="Wrap" Foreground="#C8C5D3" />
-                                <TextBlock x:Name="DeviceCodeText" Text="" FontSize="30" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"
-                                           HorizontalAlignment="Center" Margin="0,10,0,0" />
-                            </StackPanel>
-                        </Border>
-                        <TextBlock x:Name="LoginStatusText" Text="Inte inloggad." TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,10,0,0" LineHeight="18" />
-                        <TextBlock x:Name="EventStatusText" Text="" TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,6,0,0" LineHeight="18" />
-                        <Button x:Name="ReauthorizeButton" Content="Logga in igen för att slå på detta" Background="#343B50" Margin="0,8,0,0"
-                                Visibility="Collapsed" Click="Reauthorize_Click"
-                                ToolTip="En förnyad inloggning ger tillbaka de behörigheter du redan gett – nya måste godkännas på nytt" />
-                    </StackPanel>
-                </Border>
+        <!-- Every page is the same frame: scroll region, generous gutter, two columns inside.
+             BasedOn is load-bearing: a keyed style replaces the implicit one outright rather than
+             adding to it, so without this the pages would fall back to the stock scroll template. -->
+        <Style x:Key="Page" TargetType="ScrollViewer" BasedOn="{StaticResource {x:Type ScrollViewer}}">
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="Padding" Value="26,22,20,26" />
+        </Style>
+        <Style x:Key="Column" TargetType="StackPanel">
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+        <Style x:Key="StackedCard" TargetType="Border" BasedOn="{StaticResource Card}">
+            <Setter Property="Margin" Value="0,16,0,0" />
+        </Style>
+    </Window.Resources>
 
-                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
-                    <StackPanel>
-                        <TextBlock Text="6. Uppläsning av namn (valfritt)" FontSize="19" FontWeight="SemiBold" />
-                        <TextBlock Text="Lägger en högtalarknapp bredvid varje namn i OBS-docken. Ett klick läser upp hur namnet troligen sägs, här på datorn. Kräver en API-nyckel till DeepSeek och en till ElevenLabs – utan dem syns ingen knapp."
-                                   TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" Margin="0,7,0,12" LineHeight="20" />
-                        <Button x:Name="SpeechSettingsButton" Content="Ställ in uppläsning" Background="#343B50" Click="SpeechSettings_Click" />
-                        <Border Background="#10141F" CornerRadius="8" Padding="11" Margin="0,12,0,0">
-                            <TextBlock x:Name="SpeechStatusText" Text="Inte konfigurerat – ingen knapp visas i docken." Foreground="#C8C5D3" TextWrapping="Wrap" />
-                        </Border>
-                    </StackPanel>
-                </Border>
+    <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
 
-                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
-                    <StackPanel>
-                        <TextBlock Text="7. Pets på streamen (channel points)" FontSize="19" FontWeight="SemiBold" />
-                        <TextBlock Text="Små figurer som går omkring längst ned i bild. När en tittare löser in en channel points-belöning skriver de namnet på den pet de vill ha – blaze, uggla, spöke… – och just den dyker upp, busar och interagerar med de andra. Lägg till adressen som en Browser Source i OBS, över spelet."
-                                   TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" Margin="0,7,0,12" LineHeight="20" />
-                        <Border Background="#10141F" BorderBrush="#343B50" BorderThickness="1" CornerRadius="8" Padding="11,9">
-                            <TextBox x:Name="PetsUrlBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
-                                     Foreground="{StaticResource PrimaryBrush}" FontFamily="Consolas" Padding="0" />
-                        </Border>
-                        <Grid Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                            <Button x:Name="CopyPetsUrlButton" Content="Kopiera adress" IsEnabled="False" Click="CopyPetsUrl_Click" />
-                            <Button x:Name="OpenPetsButton" Grid.Column="2" Content="Förhandsgranska" Background="#343B50" IsEnabled="False" Click="OpenPets_Click" />
-                        </Grid>
-
-                        <CheckBox x:Name="PetsEnabledCheck" Content="Aktivera pets" Margin="0,14,0,0" Checked="PetSetting_Changed" Unchecked="PetSetting_Changed" />
-                        <CheckBox x:Name="PetNamesCheck" Content="Visa namnskylt under varje pet" Margin="0,8,0,0" Checked="PetSetting_Changed" Unchecked="PetSetting_Changed"
-                                  ToolTip="Skylten visar namnet på tittaren som löste in peten. Stäng av för en renare overlay." />
-
-                        <DockPanel Margin="0,12,0,0"><TextBlock Text="Storlek" /><TextBlock x:Name="PetScaleValue" Text="100 %" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
-                        <Slider x:Name="PetScaleSlider" Minimum="0.4" Maximum="2.5" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="PetSetting_Changed"
-                                ToolTip="Hur stora robotarna är i overlayen – ändringen syns direkt" />
-
-                        <Grid Margin="0,12,0,0"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                            <StackPanel>
-                                <TextBlock Text="Standardtid (minuter)" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,5" />
-                                <TextBox x:Name="PetLifetimeInput" TextChanged="PetLifetime_TextChanged" LostKeyboardFocus="PetLifetime_LostKeyboardFocus"
-                                         ToolTip="1–60 minuter. Används för !pet och för belöningar utan egen tid i listan nedan." />
-                            </StackPanel>
-                            <StackPanel Grid.Column="2">
-                                <TextBlock Text="Max antal samtidigt" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,5" />
-                                <TextBox x:Name="PetMaxInput" TextChanged="PetMax_TextChanged" LostKeyboardFocus="PetMax_LostKeyboardFocus" ToolTip="1–20. När det är fullt får den äldsta roboten gå hem." />
-                            </StackPanel>
-                        </Grid>
-
-                        <TextBlock Text="Belöningar som ger pets" Foreground="{StaticResource MutedTextBrush}" Margin="0,14,0,5" />
-                        <Grid Margin="0,0,0,4">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="1.5*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="58" /><ColumnDefinition Width="6" /><ColumnDefinition Width="34" /></Grid.ColumnDefinitions>
-                            <TextBlock Text="Namn" Foreground="#8F8B9E" FontSize="11" />
-                            <TextBlock Grid.Column="2" Text="Belönings-ID" Foreground="#8F8B9E" FontSize="11" />
-                            <TextBlock Grid.Column="4" Text="Min" Foreground="#8F8B9E" FontSize="11" />
-                        </Grid>
-                        <ItemsControl x:Name="PetRewardList">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0,0,0,6">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="1.5*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="58" /><ColumnDefinition Width="6" /><ColumnDefinition Width="34" /></Grid.ColumnDefinitions>
-                                        <TextBox Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
-                                                 ToolTip="Din egen anteckning, t.ex. Pet 5 min. Syns aldrig på streamen." />
-                                        <TextBox Grid.Column="2" Text="{Binding RewardId, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed" FontFamily="Consolas"
-                                                 ToolTip="Belöningens ID från Twitch. Lämna tomt så gäller raden alla övriga inlösen." />
-                                        <TextBox Grid.Column="4" Text="{Binding Minutes, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
-                                                 LostKeyboardFocus="PetRewardMinutes_LostKeyboardFocus" ToolTip="1–60 minuter" />
-                                        <Button Grid.Column="6" Content="✕" Background="#343B50" Padding="0,7" Click="RemovePetReward_Click"
-                                                ToolTip="Ta bort raden" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <TextBlock x:Name="PetRewardEmptyText" Text="Inga belöningar tillagda – varje channel points-inlösen med textfält ger en pet på standardtiden."
-                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,0,0,4" />
-                        <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                            <Button x:Name="AddPetRewardButton" Content="+ Lägg till belöning" Background="#343B50" Click="AddPetReward_Click" />
-                            <Button x:Name="UseLastRewardButton" Grid.Column="2" Content="Använd senaste inlösta" Background="#343B50" IsEnabled="False" Click="UseLastReward_Click"
-                                    ToolTip="Lägger till en rad med ID:t från den senaste inlösen i chatten" />
-                        </Grid>
-                        <TextBlock x:Name="LastRewardText" Text="Ingen inlösen har synts i chatten ännu." TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,8,0,0" LineHeight="18" />
-
-                        <TextBlock Text="Standardpet" Foreground="{StaticResource MutedTextBrush}" Margin="0,12,0,5" />
-                        <ComboBox x:Name="PetDefaultBox" SelectionChanged="PetDefault_Changed"
-                                  ToolTip="Vilken pet som ges när tittarens text inte matchar något namn" />
-
-                        <Border Background="#10141F" BorderBrush="#343B50" BorderThickness="1" CornerRadius="8" Padding="11" Margin="0,12,0,0">
-                            <StackPanel>
-                                <TextBlock Text="Tillgängliga pets" Foreground="#C8C5D3" FontWeight="SemiBold" />
-                                <TextBlock x:Name="PetListText" Text="" TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,6,0,0" LineHeight="19" />
-                            </StackPanel>
-                        </Border>
-
-                        <Grid Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                            <Button x:Name="OpenPetsFolderButton" Content="Öppna pets-mappen" Background="#343B50" Click="OpenPetsFolder_Click"
-                                    ToolTip="Alla pets ligger här: en mapp per pet med pet.json och body.svg" />
-                            <Button x:Name="ReloadPetsButton" Grid.Column="2" Content="Ladda om pets" Background="#343B50" Click="ReloadPets_Click"
-                                    ToolTip="Läser in pets-mappen igen utan att starta om appen" />
-                        </Grid>
-                        <TextBlock Text="Alla pets ligger i pets-mappen, även de som följer med appen – en mapp per pet med pet.json och body.svg. Ändra färg, namn eller rita en helt egen och klicka Ladda om pets. En pet du kläckt med Codex hatch-pet kopieras hit rakt av: har mappen en spritesheet.webp (9 rader × 8 rutor à 192×208) används den i stället."
-                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,8,0,0" LineHeight="18" />
-
-                        <Button x:Name="SpawnTestPetButton" Content="🐣 Spawna testpet" Margin="0,12,0,0" Click="SpawnTestPet_Click"
-                                ToolTip="Varje klick visar nästa pet i listan" />
-                        <TextBlock Text="Viktigt: belöningen i Twitch måste kräva att tittaren skriver ett meddelande – tysta belöningar syns aldrig i chatten. Du och dina moderatorer kan också testa med !pet eller !pet namn, t.ex. !pet boo."
-                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,10,0,0" LineHeight="18" />
-                    </StackPanel>
-                </Border>
-
+        <!-- The connection state used to live inside the first card, which meant it vanished the
+             moment you scrolled past it. Up here it is true on every page. -->
+        <Border Grid.Row="0" Background="#111521" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="0,0,0,1" Padding="26,15">
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="TWITCH OVERLAY HELPER" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" FontSize="11" />
+                    <TextBlock Text="Läs chatten utan att lämna spelet" FontSize="20" FontWeight="SemiBold" Margin="0,2,0,0" />
                 </StackPanel>
-
-                <StackPanel Grid.Row="2" Grid.Column="2" VerticalAlignment="Top">
-                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22">
-                <StackPanel>
-                    <TextBlock Text="Overlayens läsbarhet" FontSize="19" FontWeight="SemiBold" />
-                    <TextBlock Text="Ändringar syns direkt i overlayen." Foreground="{StaticResource MutedTextBrush}" Margin="0,6,0,18" />
-
-                    <DockPanel><TextBlock Text="Textstorlek" /><TextBlock x:Name="FontSizeValue" Text="22 px" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
-                    <Slider x:Name="FontSizeSlider" Minimum="16" Maximum="36" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,15" ValueChanged="Setting_ValueChanged" />
-                    <DockPanel><TextBlock Text="Radavstånd" /><TextBlock x:Name="LineSpacingValue" Text="1,42×" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
-                    <Slider x:Name="LineSpacingSlider" Minimum="1.15" Maximum="1.8" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,15" ValueChanged="Setting_ValueChanged" />
-                    <DockPanel><TextBlock Text="Rutans bakgrund" /><TextBlock x:Name="OpacityValue" Text="72 %" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
-                    <Slider x:Name="OpacitySlider" Minimum="0" Maximum="0.95" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,15" ValueChanged="Setting_ValueChanged" ToolTip="0 % tar bort rutans bakgrund helt" />
-                    <DockPanel><TextBlock Text="Meddelandebakgrund" /><TextBlock x:Name="MessageOpacityValue" Text="19 %" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
-                    <Slider x:Name="MessageOpacitySlider" Minimum="0" Maximum="0.80" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,17" ValueChanged="Setting_ValueChanged" ToolTip="0 % tar bort bakgrunden bakom varje meddelande" />
-
-                    <TextBlock Text="Typsnitt" Margin="0,0,0,6" /><ComboBox x:Name="FontFamilyBox" SelectionChanged="Setting_ValueChanged">
-                        <ComboBoxItem Content="Verdana" /><ComboBoxItem Content="Segoe UI" /><ComboBoxItem Content="Arial" /><ComboBoxItem Content="Comic Sans MS" />
-                    </ComboBox>
-
-                    <Separator Background="#343B50" Margin="0,20" />
-                    <CheckBox x:Name="BadgesCheck" Content="Visa badges och rollikoner" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
-                    <CheckBox x:Name="NameColorsCheck" Content="Använd Twitch-namnfärger" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
-                    <CheckBox x:Name="TimestampCheck" Content="Visa klockslag" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
-                    <CheckBox x:Name="MentionsCheck" Content="Markera meddelanden till mig" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
-                    <CheckBox x:Name="EmotesCheck" Content="Visa emotes som bilder" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
-                    <CheckBox x:Name="GiantEmotesCheck" Content="Visa förstorade emotes i full storlek" ToolTip="Power-upen “Gigantify an Emote” gör en emote tre gånger så stor. Av: emoten visas i vanlig storlek med en markör i stället." Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
-                    <CheckBox x:Name="OutlineCheck" Content="Kantlinje runt texten" ToolTip="Gör texten läsbar även utan bakgrund" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
-
-                    <Separator Background="#343B50" Margin="0,20" />
-                    <TextBlock Text="Händelser i overlayen" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,4" />
-                    <TextBlock Text="Subs, raids och annat får ett eget kort bland meddelandena. Overlayen ligger ovanpå ett spel, så här är det ofta värt att välja ut några få. Avstängt tar bort korten som står kvar och gäller allt som händer sedan; docken har egna reglage under Ändra chattens läsbarhet."
-                               TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,0,0,10" />
-                    <CheckBox x:Name="EventSubsCheck" Content="Prenumerationer och gåvor" ToolTip="Nya subs, resubs, gift subs och gåvor som fortsätter som betald sub" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
-                    <CheckBox x:Name="EventRaidsCheck" Content="Raids" ToolTip="Raids in i kanalen och raids härifrån" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
-                    <CheckBox x:Name="EventAnnouncementsCheck" Content="Meddelanden från streamern" ToolTip="/announce – färgade meddelanden från streamern eller en moderator" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
-                    <CheckBox x:Name="EventBitsCheck" Content="Bits-märken och firanden" ToolTip="Nytt bits-märke och power-upen Celebration. Vanliga cheers är markörer på meddelandet och påverkas inte." Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
-                    <CheckBox x:Name="EventMilestonesCheck" Content="Tittarstreaks och nya chattare" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
-                    <CheckBox x:Name="EventRewardsCheck" Content="Inlösta belöningar utan text" ToolTip="Belöningar med textfält syns som meddelandet de skapade och påverkas inte. Pets triggar oavsett." Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
-                    <CheckBox x:Name="EventShoutoutsCheck" Content="Shoutouts" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
-                    <CheckBox x:Name="EventHypeCheck" Content="Hypetåg" ToolTip="Två kort: ett när tåget startar och ett när det tar slut. Mätaren däremellan finns bara i docken." Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
-                    <CheckBox x:Name="EventOtherCheck" Content="Övriga händelser" ToolTip="Sådant Twitch skickar som vi inte har ett eget kort för – visas med Twitchs egen text" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
-
-                    <TextBlock Text="Max antal meddelanden" Margin="0,17,0,6" />
-                    <TextBox x:Name="MaxMessagesInput" TextChanged="MaxMessages_TextChanged" LostKeyboardFocus="MaxMessages_LostKeyboardFocus" ToolTip="Ange ett tal mellan 1 och 200" />
-                    <TextBlock Text="De senaste meddelandena behålls i overlayen. När gränsen nås tas det äldsta bort. Hur många som ryms samtidigt beror också på overlayens höjd och textstorlek. (1–200)"
-                               TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,7,0,0" />
-
-                    <Separator Background="#343B50" Margin="0,20" />
-                    <TextBlock Text="Windows" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,6" />
-                    <CheckBox x:Name="StartWithWindowsCheck"
-                              Content="Starta med Windows"
-                              ToolTip="Startar minimerad i aktivitetsfältets meddelandefält när du loggar in"
-                              Checked="StartWithWindows_Changed"
-                              Unchecked="StartWithWindows_Changed" />
-                    <TextBlock Text="Appen startar i bakgrunden utan att öppna inställningsfönstret."
-                               TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,4,0,0" />
-
-                    <Border Background="#171F2B" BorderBrush="#293649" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,21,0,0">
-                        <StackPanel>
-                            <TextBlock Text="Dyslexivänlig grundprofil" Foreground="#78E1D5" FontWeight="SemiBold" />
-                            <TextBlock Text="Verdana, 22 px och generöst radavstånd minskar visuell trängsel. Varje chattare får en egen tydligt avskild yta." TextWrapping="Wrap" Foreground="#B8C2CF" Margin="0,6,0,0" LineHeight="20" />
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
+                <Border Grid.Column="1" Background="{StaticResource SunkenBrush}" BorderBrush="{StaticResource LineBrush}"
+                        BorderThickness="1" CornerRadius="20" Padding="14,9" VerticalAlignment="Center">
+                    <DockPanel>
+                        <Ellipse x:Name="StatusDot" Width="9" Height="9" Fill="#6B7280" Margin="0,0,9,0" VerticalAlignment="Center" />
+                        <TextBlock x:Name="StatusText" Text="Inte ansluten" Foreground="#C8C5D3" VerticalAlignment="Center" />
+                    </DockPanel>
                 </Border>
-
-                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22" Margin="0,16,0,0">
-                <StackPanel>
-                    <TextBlock Text="Kantljus" FontSize="19" FontWeight="SemiBold" />
-                    <TextBlock Text="Ett mjukt ljus tonar in längs skärmens kanter och tonar ut igen – helt klickigenom, precis som overlayen. Mods kan kalla på din uppmärksamhet med ett kommando, och nya chattare kan hälsas med en egen färg så att du ser dem direkt."
-                               TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" Margin="0,7,0,16" LineHeight="20" />
-
-                    <CheckBox x:Name="EdgeModEnabledCheck" Content="Ljus när mods kallar på dig"
-                              ToolTip="Bara streamern och moderatorer kan trigga ljuset – kommandot gör ingenting när någon annan skriver det"
-                              Checked="EdgeSetting_Changed" Unchecked="EdgeSetting_Changed" />
-                    <TextBlock Text="Kommando" Foreground="{StaticResource MutedTextBrush}" Margin="0,10,0,5" />
-                    <TextBox x:Name="EdgeModCommandBox" TextChanged="EdgeModCommand_TextChanged" LostKeyboardFocus="EdgeModCommand_LostKeyboardFocus"
-                             ToolTip="Ett ord som börjar med ! – text efteråt går bra, t.ex. “!psst kolla chatten”" />
-                    <DockPanel Margin="0,10,0,0"><TextBlock Text="Färg" VerticalAlignment="Center" Margin="0,0,10,0" /><ComboBox x:Name="EdgeModColorBox" SelectionChanged="EdgeSetting_Changed" /></DockPanel>
-                    <DockPanel Margin="0,10,0,0"><TextBlock Text="Styrka" /><TextBlock x:Name="EdgeModIntensityValue" Text="70 %" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
-                    <Slider x:Name="EdgeModIntensitySlider" Minimum="0.15" Maximum="1" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed" />
-                    <DockPanel Margin="0,10,0,0"><TextBlock Text="Varaktighet" /><TextBlock x:Name="EdgeModDurationValue" Text="6 s" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
-                    <Slider x:Name="EdgeModDurationSlider" Minimum="2" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed" />
-                    <Button x:Name="EdgeModTestButton" Content="Testa mod-ljuset" Background="#343B50" Margin="0,10,0,0" Click="EdgeModTest_Click" />
-
-                    <Separator Background="#343B50" Margin="0,18" />
-
-                    <CheckBox x:Name="EdgeNewEnabledCheck" Content="Ljus när en ny chattare skriver"
-                              ToolTip="Samma ögonblick som meddelandet med NY-markören – någon skriver i kanalen för första gången"
-                              Checked="EdgeSetting_Changed" Unchecked="EdgeSetting_Changed" />
-                    <DockPanel Margin="0,10,0,0"><TextBlock Text="Färg" VerticalAlignment="Center" Margin="0,0,10,0" /><ComboBox x:Name="EdgeNewColorBox" SelectionChanged="EdgeSetting_Changed" /></DockPanel>
-                    <DockPanel Margin="0,10,0,0"><TextBlock Text="Styrka" /><TextBlock x:Name="EdgeNewIntensityValue" Text="70 %" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
-                    <Slider x:Name="EdgeNewIntensitySlider" Minimum="0.15" Maximum="1" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed" />
-                    <DockPanel Margin="0,10,0,0"><TextBlock Text="Varaktighet" /><TextBlock x:Name="EdgeNewDurationValue" Text="6 s" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
-                    <Slider x:Name="EdgeNewDurationSlider" Minimum="2" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed" />
-                    <Button x:Name="EdgeNewTestButton" Content="Testa ny chattare-ljuset" Background="#343B50" Margin="0,10,0,0" Click="EdgeNewTest_Click" />
-
-                    <Separator Background="#343B50" Margin="0,18" />
-
-                    <DockPanel><TextBlock Text="Ljusets bredd" /><TextBlock x:Name="EdgeWidthValue" Text="160 px" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
-                    <Slider x:Name="EdgeWidthSlider" Minimum="60" Maximum="320" TickFrequency="10" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed"
-                            ToolTip="Hur långt in från kanten ljuset når – gäller båda färgerna" />
-                    <TextBlock Text="Ljuset visas på huvudskärmen och går aldrig att klicka på. Testa-knapparna visar exakt hur det kommer se ut."
-                               TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,10,0,0" />
-                </StackPanel>
-                </Border>
-                </StackPanel>
             </Grid>
-        </ScrollViewer>
+        </Border>
 
-        <DockPanel Grid.Row="1" Margin="0,18,0,0">
-            <TextBlock x:Name="VersionText" DockPanel.Dock="Right" Foreground="#5F5B6E" FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0" />
-            <TextBlock Text="Tips: lås overlayen när den ligger rätt – då blir den helt klickigenom och stjäl aldrig fokus från spelet." Foreground="#858193" TextTrimming="CharacterEllipsis" />
-        </DockPanel>
+        <TabControl Grid.Row="1" Style="{StaticResource NavRail}">
+            <TabControl.Resources>
+                <Style TargetType="TabItem" BasedOn="{StaticResource NavItem}" />
+            </TabControl.Resources>
+
+            <!-- ============================== Anslut ============================== -->
+            <TabItem Header="Anslut" Tag="🔗">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="22" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+
+                        <StackPanel Style="{StaticResource Column}">
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Anslut chatten" Style="{StaticResource CardTitle}" />
+                                    <TextBlock Text="Kanalnamn eller Twitch-länk" Style="{StaticResource FieldLabel}" Margin="0,16,0,6" />
+                                    <TextBox x:Name="ChannelBox" ToolTip="Exempel: twitch eller https://twitch.tv/twitch" />
+                                    <Grid Margin="0,13,0,0">
+                                        <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                        <Button x:Name="ConnectButton" Content="Anslut" Click="ConnectButton_Click" />
+                                        <Button x:Name="DisconnectButton" Grid.Column="2" Content="Koppla från" Background="#343B50" Click="DisconnectButton_Click" IsEnabled="False" />
+                                    </Grid>
+                                    <TextBlock Text="Anslutningens läge visas alltid uppe till höger, oavsett vilken sida du står på."
+                                               Style="{StaticResource Hint}" Margin="0,12,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource StackedCard}" Background="#171F2B" BorderBrush="#293649">
+                                <StackPanel>
+                                    <TextBlock Text="Dyslexivänlig grundprofil" Foreground="#78E1D5" FontWeight="SemiBold" />
+                                    <TextBlock Text="Verdana, 22 px och generöst radavstånd minskar visuell trängsel. Varje chattare får en egen tydligt avskild yta."
+                                               TextWrapping="Wrap" Foreground="#B8C2CF" Margin="0,6,0,0" LineHeight="20" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2" Style="{StaticResource Column}">
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Logga in för moderering" Style="{StaticResource CardTitle}" />
+                                    <TextBlock Text="Krävs för timeout, ban, raid och för att kunna skriva i chatten från docken. Chatten går att läsa utan inloggning."
+                                               Style="{StaticResource Lead}" Margin="0,7,0,12" />
+                                    <Border Style="{StaticResource Sunken}" Padding="13" Margin="0,0,0,13">
+                                        <StackPanel>
+                                            <TextBlock Text="Så skapar du ett Client ID" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold" FontSize="13" />
+                                            <TextBlock TextWrapping="Wrap" Foreground="#B8B4C6" FontSize="12" LineHeight="19" Margin="0,7,0,0">
+                                                1. Öppna dev.twitch.tv/console/apps och välj Registrera din applikation.<LineBreak />
+                                                2. Namn: valfritt. OAuth Redirect URL: http://localhost<LineBreak />
+                                                3. Kategori: Chat Bot. <Run FontWeight="Bold">Klienttyp måste vara Public.</Run><LineBreak />
+                                                4. Kopiera appens Client ID hit nedan.
+                                            </TextBlock>
+                                            <Button x:Name="OpenDevConsoleButton" Content="Öppna dev.twitch.tv" Background="#343B50" Padding="12,7" HorizontalAlignment="Left" Margin="0,11,0,0" Click="OpenDevConsole_Click" />
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="Client ID" Style="{StaticResource FieldLabel}" />
+                                    <TextBox x:Name="ClientIdBox" TextChanged="ClientId_TextChanged" />
+                                    <Button x:Name="LoginButton" Content="Logga in med Twitch" Margin="0,12,0,0" Click="Login_Click" />
+                                    <Border x:Name="DeviceCodeCard" Style="{StaticResource Sunken}" BorderBrush="#5A3FA0" Padding="14" Margin="0,12,0,0" Visibility="Collapsed">
+                                        <StackPanel>
+                                            <TextBlock x:Name="DeviceCodeHint" Text="Gå till twitch.tv/activate och skriv in koden:" TextWrapping="Wrap" Foreground="#C8C5D3" />
+                                            <TextBlock x:Name="DeviceCodeText" Text="" FontSize="30" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"
+                                                       HorizontalAlignment="Center" Margin="0,10,0,0" />
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock x:Name="LoginStatusText" Text="Inte inloggad." Style="{StaticResource Hint}" Margin="0,10,0,0" />
+                                    <TextBlock x:Name="EventStatusText" Text="" Style="{StaticResource Hint}" Margin="0,6,0,0" />
+                                    <Button x:Name="ReauthorizeButton" Content="Logga in igen för att slå på detta" Background="#343B50" Margin="0,8,0,0"
+                                            Visibility="Collapsed" Click="Reauthorize_Click"
+                                            ToolTip="En förnyad inloggning ger tillbaka de behörigheter du redan gett – nya måste godkännas på nytt" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============================== Overlay ============================== -->
+            <TabItem Header="Overlay" Tag="🖥">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="22" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+
+                        <StackPanel Style="{StaticResource Column}">
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Placera overlayen" Style="{StaticResource CardTitle}" />
+                                    <TextBlock Text="Lås upp för att dra i den lila raden och ändra storlek i hörnet." Style="{StaticResource Lead}" Margin="0,7,0,14" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                        <Button x:Name="EditButton" Content="Redigera overlay" Click="EditButton_Click" />
+                                        <Button x:Name="VisibilityButton" Grid.Column="2" Content="Dölj overlay" Background="#343B50" Click="VisibilityButton_Click" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource StackedCard}">
+                                <StackPanel>
+                                    <TextBlock Text="Läsbarhet" Style="{StaticResource CardTitle}" />
+                                    <TextBlock Text="Ändringar syns direkt i overlayen." Style="{StaticResource Lead}" Margin="0,6,0,18" />
+
+                                    <DockPanel><TextBlock Text="Textstorlek" /><TextBlock x:Name="FontSizeValue" Text="22 px" Style="{StaticResource ValueBadge}" /></DockPanel>
+                                    <Slider x:Name="FontSizeSlider" Minimum="16" Maximum="36" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,15" ValueChanged="Setting_ValueChanged" />
+                                    <DockPanel><TextBlock Text="Radavstånd" /><TextBlock x:Name="LineSpacingValue" Text="1,42×" Style="{StaticResource ValueBadge}" /></DockPanel>
+                                    <Slider x:Name="LineSpacingSlider" Minimum="1.15" Maximum="1.8" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,15" ValueChanged="Setting_ValueChanged" />
+                                    <DockPanel><TextBlock Text="Rutans bakgrund" /><TextBlock x:Name="OpacityValue" Text="72 %" Style="{StaticResource ValueBadge}" /></DockPanel>
+                                    <Slider x:Name="OpacitySlider" Minimum="0" Maximum="0.95" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,15" ValueChanged="Setting_ValueChanged" ToolTip="0 % tar bort rutans bakgrund helt" />
+                                    <DockPanel><TextBlock Text="Meddelandebakgrund" /><TextBlock x:Name="MessageOpacityValue" Text="19 %" Style="{StaticResource ValueBadge}" /></DockPanel>
+                                    <Slider x:Name="MessageOpacitySlider" Minimum="0" Maximum="0.80" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,17" ValueChanged="Setting_ValueChanged" ToolTip="0 % tar bort bakgrunden bakom varje meddelande" />
+
+                                    <TextBlock Text="Typsnitt" Style="{StaticResource FieldLabel}" Margin="0,0,0,6" />
+                                    <ComboBox x:Name="FontFamilyBox" SelectionChanged="Setting_ValueChanged">
+                                        <ComboBoxItem Content="Verdana" /><ComboBoxItem Content="Segoe UI" /><ComboBoxItem Content="Arial" /><ComboBoxItem Content="Comic Sans MS" />
+                                    </ComboBox>
+
+                                    <Border Style="{StaticResource Rule}" />
+
+                                    <CheckBox x:Name="BadgesCheck" Content="Visa badges och rollikoner" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                    <CheckBox x:Name="NameColorsCheck" Content="Använd Twitch-namnfärger" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                    <CheckBox x:Name="TimestampCheck" Content="Visa klockslag" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                    <CheckBox x:Name="MentionsCheck" Content="Markera meddelanden till mig" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                    <CheckBox x:Name="EmotesCheck" Content="Visa emotes som bilder" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                    <CheckBox x:Name="GiantEmotesCheck" Content="Visa förstorade emotes i full storlek" ToolTip="Power-upen “Gigantify an Emote” gör en emote tre gånger så stor. Av: emoten visas i vanlig storlek med en markör i stället." Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                    <CheckBox x:Name="OutlineCheck" Content="Kantlinje runt texten" ToolTip="Gör texten läsbar även utan bakgrund" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2" Style="{StaticResource Column}">
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Händelser i overlayen" Style="{StaticResource CardTitle}" />
+                                    <TextBlock Text="Subs, raids och annat får ett eget kort bland meddelandena. Overlayen ligger ovanpå ett spel, så här är det ofta värt att välja ut några få. Avstängt tar bort korten som står kvar och gäller allt som händer sedan; docken har egna reglage under Ändra chattens läsbarhet."
+                                               Style="{StaticResource Lead}" Margin="0,7,0,14" />
+                                    <CheckBox x:Name="EventSubsCheck" Content="Prenumerationer och gåvor" ToolTip="Nya subs, resubs, gift subs och gåvor som fortsätter som betald sub" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                    <CheckBox x:Name="EventRaidsCheck" Content="Raids" ToolTip="Raids in i kanalen och raids härifrån" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                    <CheckBox x:Name="EventAnnouncementsCheck" Content="Meddelanden från streamern" ToolTip="/announce – färgade meddelanden från streamern eller en moderator" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                    <CheckBox x:Name="EventBitsCheck" Content="Bits-märken och firanden" ToolTip="Nytt bits-märke och power-upen Celebration. Vanliga cheers är markörer på meddelandet och påverkas inte." Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                    <CheckBox x:Name="EventMilestonesCheck" Content="Tittarstreaks och nya chattare" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                    <CheckBox x:Name="EventRewardsCheck" Content="Inlösta belöningar utan text" ToolTip="Belöningar med textfält syns som meddelandet de skapade och påverkas inte. Pets triggar oavsett." Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                    <CheckBox x:Name="EventShoutoutsCheck" Content="Shoutouts" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                    <CheckBox x:Name="EventHypeCheck" Content="Hypetåg" ToolTip="Två kort: ett när tåget startar och ett när det tar slut. Mätaren däremellan finns bara i docken." Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                    <CheckBox x:Name="EventOtherCheck" Content="Övriga händelser" ToolTip="Sådant Twitch skickar som vi inte har ett eget kort för – visas med Twitchs egen text" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource StackedCard}">
+                                <StackPanel>
+                                    <TextBlock Text="Max antal meddelanden" Style="{StaticResource SubTitle}" />
+                                    <TextBox x:Name="MaxMessagesInput" Margin="0,10,0,0" TextChanged="MaxMessages_TextChanged" LostKeyboardFocus="MaxMessages_LostKeyboardFocus" ToolTip="Ange ett tal mellan 1 och 200" />
+                                    <TextBlock Text="De senaste meddelandena behålls i overlayen. När gränsen nås tas det äldsta bort. Hur många som ryms samtidigt beror också på overlayens höjd och textstorlek. (1–200)"
+                                               Style="{StaticResource Hint}" Margin="0,8,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============================== Kantljus ============================== -->
+            <TabItem Header="Kantljus" Tag="💡">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <StackPanel>
+                        <TextBlock Text="Ett mjukt ljus tonar in längs skärmens kanter och tonar ut igen – helt klickigenom, precis som overlayen. Mods kan kalla på din uppmärksamhet med ett kommando, och nya chattare kan hälsas med en egen färg så att du ser dem direkt."
+                                   Style="{StaticResource Lead}" Margin="0,0,0,16" />
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="22" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="När mods kallar på dig" Style="{StaticResource CardTitle}" />
+                                    <CheckBox x:Name="EdgeModEnabledCheck" Content="Slå på mod-ljuset" Margin="0,12,0,0"
+                                              ToolTip="Bara streamern och moderatorer kan trigga ljuset – kommandot gör ingenting när någon annan skriver det"
+                                              Checked="EdgeSetting_Changed" Unchecked="EdgeSetting_Changed" />
+                                    <TextBlock Text="Kommando" Style="{StaticResource FieldLabel}" Margin="0,12,0,5" />
+                                    <TextBox x:Name="EdgeModCommandBox" TextChanged="EdgeModCommand_TextChanged" LostKeyboardFocus="EdgeModCommand_LostKeyboardFocus"
+                                             ToolTip="Ett ord som börjar med ! – text efteråt går bra, t.ex. “!psst kolla chatten”" />
+                                    <TextBlock Text="Färg" Style="{StaticResource FieldLabel}" Margin="0,12,0,5" />
+                                    <ComboBox x:Name="EdgeModColorBox" SelectionChanged="EdgeSetting_Changed" />
+                                    <DockPanel Margin="0,14,0,0"><TextBlock Text="Styrka" /><TextBlock x:Name="EdgeModIntensityValue" Text="70 %" Style="{StaticResource ValueBadge}" /></DockPanel>
+                                    <Slider x:Name="EdgeModIntensitySlider" Minimum="0.15" Maximum="1" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed" />
+                                    <DockPanel Margin="0,10,0,0"><TextBlock Text="Varaktighet" /><TextBlock x:Name="EdgeModDurationValue" Text="6 s" Style="{StaticResource ValueBadge}" /></DockPanel>
+                                    <Slider x:Name="EdgeModDurationSlider" Minimum="2" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed" />
+                                    <Button x:Name="EdgeModTestButton" Content="Testa mod-ljuset" Background="#343B50" Margin="0,14,0,0" Click="EdgeModTest_Click" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Grid.Column="2" Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="När en ny chattare skriver" Style="{StaticResource CardTitle}" />
+                                    <CheckBox x:Name="EdgeNewEnabledCheck" Content="Slå på ny chattare-ljuset" Margin="0,12,0,0"
+                                              ToolTip="Samma ögonblick som meddelandet med NY-markören – någon skriver i kanalen för första gången"
+                                              Checked="EdgeSetting_Changed" Unchecked="EdgeSetting_Changed" />
+                                    <TextBlock Text="Färg" Style="{StaticResource FieldLabel}" Margin="0,12,0,5" />
+                                    <ComboBox x:Name="EdgeNewColorBox" SelectionChanged="EdgeSetting_Changed" />
+                                    <DockPanel Margin="0,14,0,0"><TextBlock Text="Styrka" /><TextBlock x:Name="EdgeNewIntensityValue" Text="70 %" Style="{StaticResource ValueBadge}" /></DockPanel>
+                                    <Slider x:Name="EdgeNewIntensitySlider" Minimum="0.15" Maximum="1" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed" />
+                                    <DockPanel Margin="0,10,0,0"><TextBlock Text="Varaktighet" /><TextBlock x:Name="EdgeNewDurationValue" Text="6 s" Style="{StaticResource ValueBadge}" /></DockPanel>
+                                    <Slider x:Name="EdgeNewDurationSlider" Minimum="2" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed" />
+                                    <Button x:Name="EdgeNewTestButton" Content="Testa ny chattare-ljuset" Background="#343B50" Margin="0,14,0,0" Click="EdgeNewTest_Click" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Border Style="{StaticResource StackedCard}">
+                            <StackPanel>
+                                <TextBlock Text="Gäller båda färgerna" Style="{StaticResource SubTitle}" />
+                                <DockPanel Margin="0,12,0,0"><TextBlock Text="Ljusets bredd" /><TextBlock x:Name="EdgeWidthValue" Text="160 px" Style="{StaticResource ValueBadge}" /></DockPanel>
+                                <Slider x:Name="EdgeWidthSlider" Minimum="60" Maximum="320" TickFrequency="10" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed"
+                                        ToolTip="Hur långt in från kanten ljuset når – gäller båda färgerna" />
+                                <TextBlock Text="Ljuset visas på huvudskärmen och går aldrig att klicka på. Testa-knapparna visar exakt hur det kommer se ut."
+                                           Style="{StaticResource Hint}" Margin="0,10,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============================== OBS-dock ============================== -->
+            <TabItem Header="OBS-dock" Tag="🌐">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="22" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+
+                        <StackPanel Style="{StaticResource Column}">
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Chatt i OBS" Style="{StaticResource CardTitle}" />
+                                    <TextBlock Text="Lägg till adressen som en Custom Browser Dock i OBS (Vy → Dockor → Anpassade webbläsardockor)."
+                                               Style="{StaticResource Lead}" Margin="0,7,0,12" />
+                                    <Border Style="{StaticResource Sunken}" Padding="11,9">
+                                        <TextBox x:Name="DockUrlBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                                 Foreground="{StaticResource PrimaryBrush}" FontFamily="Consolas" Padding="0" />
+                                    </Border>
+                                    <Grid Margin="0,10,0,0">
+                                        <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                        <Button x:Name="CopyDockUrlButton" Content="Kopiera adress" Click="CopyDockUrl_Click" />
+                                        <Button x:Name="OpenDockButton" Grid.Column="2" Content="Förhandsgranska" Background="#343B50" Click="OpenDock_Click" />
+                                    </Grid>
+                                    <Button x:Name="DockAppearanceButton" Content="Ändra chattens läsbarhet" Background="#343B50" Margin="0,10,0,0" Click="DockAppearance_Click" />
+                                    <Border Style="{StaticResource Sunken}" BorderThickness="0" Margin="0,12,0,0">
+                                        <DockPanel>
+                                            <Ellipse x:Name="DockStatusDot" Width="9" Height="9" Fill="#6B7280" Margin="0,0,9,0" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="DockStatusText" Text="Servern startar …" Foreground="#C8C5D3" TextWrapping="Wrap" />
+                                        </DockPanel>
+                                    </Border>
+                                    <TextBlock Text="Adressen innehåller en hemlig nyckel och fungerar bara från den här datorn. Dela den inte."
+                                               Style="{StaticResource Hint}" Margin="0,10,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2" Style="{StaticResource Column}">
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Uppläsning av namn" Style="{StaticResource CardTitle}" />
+                                    <TextBlock Text="Valfritt" Foreground="{StaticResource HintTextBrush}" FontSize="12" Margin="0,3,0,0" />
+                                    <TextBlock Text="Lägger en högtalarknapp bredvid varje namn i OBS-docken. Ett klick läser upp hur namnet troligen sägs, här på datorn. Kräver en API-nyckel till DeepSeek och en till ElevenLabs – utan dem syns ingen knapp."
+                                               Style="{StaticResource Lead}" Margin="0,9,0,12" />
+                                    <Button x:Name="SpeechSettingsButton" Content="Ställ in uppläsning" Background="#343B50" Click="SpeechSettings_Click" />
+                                    <Border Style="{StaticResource Sunken}" BorderThickness="0" Margin="0,12,0,0">
+                                        <TextBlock x:Name="SpeechStatusText" Text="Inte konfigurerat – ingen knapp visas i docken." Foreground="#C8C5D3" TextWrapping="Wrap" />
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============================== Pets ============================== -->
+            <TabItem Header="Pets" Tag="🐾">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <StackPanel>
+                        <TextBlock Text="Små figurer som går omkring längst ned i bild. När en tittare löser in en channel points-belöning skriver de namnet på den pet de vill ha – blaze, uggla, spöke… – och just den dyker upp, busar och interagerar med de andra. Lägg till adressen som en Browser Source i OBS, över spelet."
+                                   Style="{StaticResource Lead}" Margin="0,0,0,16" />
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="22" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+
+                            <StackPanel Style="{StaticResource Column}">
+                                <Border Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Adress till OBS" Style="{StaticResource SubTitle}" />
+                                        <Border Style="{StaticResource Sunken}" Padding="11,9" Margin="0,10,0,0">
+                                            <TextBox x:Name="PetsUrlBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                                     Foreground="{StaticResource PrimaryBrush}" FontFamily="Consolas" Padding="0" />
+                                        </Border>
+                                        <Grid Margin="0,10,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                            <Button x:Name="CopyPetsUrlButton" Content="Kopiera adress" IsEnabled="False" Click="CopyPetsUrl_Click" />
+                                            <Button x:Name="OpenPetsButton" Grid.Column="2" Content="Förhandsgranska" Background="#343B50" IsEnabled="False" Click="OpenPets_Click" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource StackedCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="Inställningar" Style="{StaticResource SubTitle}" />
+                                        <CheckBox x:Name="PetsEnabledCheck" Content="Aktivera pets" Margin="0,12,0,0" Checked="PetSetting_Changed" Unchecked="PetSetting_Changed" />
+                                        <CheckBox x:Name="PetNamesCheck" Content="Visa namnskylt under varje pet" Checked="PetSetting_Changed" Unchecked="PetSetting_Changed"
+                                                  ToolTip="Skylten visar namnet på tittaren som löste in peten. Stäng av för en renare overlay." />
+
+                                        <DockPanel Margin="0,14,0,0"><TextBlock Text="Storlek" /><TextBlock x:Name="PetScaleValue" Text="100 %" Style="{StaticResource ValueBadge}" /></DockPanel>
+                                        <Slider x:Name="PetScaleSlider" Minimum="0.4" Maximum="2.5" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="PetSetting_Changed"
+                                                ToolTip="Hur stora robotarna är i overlayen – ändringen syns direkt" />
+
+                                        <Grid Margin="0,14,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="Standardtid (minuter)" Style="{StaticResource FieldLabel}" />
+                                                <TextBox x:Name="PetLifetimeInput" TextChanged="PetLifetime_TextChanged" LostKeyboardFocus="PetLifetime_LostKeyboardFocus"
+                                                         ToolTip="1–60 minuter. Används för !pet och för belöningar utan egen tid i listan nedan." />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="Max antal samtidigt" Style="{StaticResource FieldLabel}" />
+                                                <TextBox x:Name="PetMaxInput" TextChanged="PetMax_TextChanged" LostKeyboardFocus="PetMax_LostKeyboardFocus" ToolTip="1–20. När det är fullt får den äldsta roboten gå hem." />
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <TextBlock Text="Standardpet" Style="{StaticResource FieldLabel}" Margin="0,14,0,5" />
+                                        <ComboBox x:Name="PetDefaultBox" SelectionChanged="PetDefault_Changed"
+                                                  ToolTip="Vilken pet som ges när tittarens text inte matchar något namn" />
+
+                                        <Button x:Name="SpawnTestPetButton" Content="🐣 Spawna testpet" Margin="0,14,0,0" Click="SpawnTestPet_Click"
+                                                ToolTip="Varje klick visar nästa pet i listan" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" Style="{StaticResource Column}">
+                                <Border Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Belöningar som ger pets" Style="{StaticResource SubTitle}" />
+                                        <Grid Margin="0,12,0,4">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="1.5*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="58" /><ColumnDefinition Width="6" /><ColumnDefinition Width="34" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Namn" Foreground="{StaticResource HintTextBrush}" FontSize="11" />
+                                            <TextBlock Grid.Column="2" Text="Belönings-ID" Foreground="{StaticResource HintTextBrush}" FontSize="11" />
+                                            <TextBlock Grid.Column="4" Text="Min" Foreground="{StaticResource HintTextBrush}" FontSize="11" />
+                                        </Grid>
+                                        <ItemsControl x:Name="PetRewardList">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,0,0,6">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="1.5*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="58" /><ColumnDefinition Width="6" /><ColumnDefinition Width="34" /></Grid.ColumnDefinitions>
+                                                        <TextBox Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
+                                                                 ToolTip="Din egen anteckning, t.ex. Pet 5 min. Syns aldrig på streamen." />
+                                                        <TextBox Grid.Column="2" Text="{Binding RewardId, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed" FontFamily="Consolas"
+                                                                 ToolTip="Belöningens ID från Twitch. Lämna tomt så gäller raden alla övriga inlösen." />
+                                                        <TextBox Grid.Column="4" Text="{Binding Minutes, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
+                                                                 LostKeyboardFocus="PetRewardMinutes_LostKeyboardFocus" ToolTip="1–60 minuter" />
+                                                        <Button Grid.Column="6" Content="✕" Background="#343B50" Padding="0,7" Click="RemovePetReward_Click"
+                                                                ToolTip="Ta bort raden" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock x:Name="PetRewardEmptyText" Text="Inga belöningar tillagda – varje channel points-inlösen med textfält ger en pet på standardtiden."
+                                                   Style="{StaticResource Hint}" Margin="0,0,0,4" />
+                                        <Grid Margin="0,6,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                            <Button x:Name="AddPetRewardButton" Content="+ Lägg till belöning" Background="#343B50" Click="AddPetReward_Click" />
+                                            <Button x:Name="UseLastRewardButton" Grid.Column="2" Content="Använd senaste inlösta" Background="#343B50" IsEnabled="False" Click="UseLastReward_Click"
+                                                    ToolTip="Lägger till en rad med ID:t från den senaste inlösen i chatten" />
+                                        </Grid>
+                                        <TextBlock x:Name="LastRewardText" Text="Ingen inlösen har synts i chatten ännu." Style="{StaticResource Hint}" Margin="0,8,0,0" />
+                                        <TextBlock Text="Viktigt: belöningen i Twitch måste kräva att tittaren skriver ett meddelande – tysta belöningar syns aldrig i chatten. Du och dina moderatorer kan också testa med !pet eller !pet namn, t.ex. !pet boo."
+                                                   Style="{StaticResource Hint}" Margin="0,10,0,0" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource StackedCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="Tillgängliga pets" Style="{StaticResource SubTitle}" />
+                                        <TextBlock x:Name="PetListText" Text="" Style="{StaticResource Hint}" Margin="0,8,0,0" LineHeight="19" />
+                                        <Grid Margin="0,14,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                            <Button x:Name="OpenPetsFolderButton" Content="Öppna pets-mappen" Background="#343B50" Click="OpenPetsFolder_Click"
+                                                    ToolTip="Alla pets ligger här: en mapp per pet med pet.json och body.svg" />
+                                            <Button x:Name="ReloadPetsButton" Grid.Column="2" Content="Ladda om pets" Background="#343B50" Click="ReloadPets_Click"
+                                                    ToolTip="Läser in pets-mappen igen utan att starta om appen" />
+                                        </Grid>
+                                        <TextBlock Text="Alla pets ligger i pets-mappen, även de som följer med appen – en mapp per pet med pet.json och body.svg. Ändra färg, namn eller rita en helt egen och klicka Ladda om pets. En pet du kläckt med Codex hatch-pet kopieras hit rakt av: har mappen en spritesheet.webp (9 rader × 8 rutor à 192×208) används den i stället."
+                                                   Style="{StaticResource Hint}" Margin="0,10,0,0" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============================== Program ============================== -->
+            <TabItem Header="Program" Tag="⚙">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="22" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+
+                        <StackPanel Style="{StaticResource Column}">
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Snabbtangenter" Style="{StaticResource CardTitle}" />
+                                    <TextBlock Text="Fungerar globalt – även när spelet har fokus." Style="{StaticResource Lead}" Margin="0,7,0,14" />
+
+                                    <TextBlock Text="Visa/dölj overlay" Style="{StaticResource FieldLabel}" />
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="8" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <Border Style="{StaticResource Sunken}" Padding="11,8">
+                                            <TextBlock x:Name="ToggleHotkeyLabel" Text="Ctrl + F9" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" />
+                                        </Border>
+                                        <Button x:Name="RecordToggleHotkeyButton" Grid.Column="2" Content="⌨ Ändra" Background="#343B50" Padding="13,8" Click="RecordToggleHotkey_Click" />
+                                    </Grid>
+
+                                    <TextBlock Text="Redigera overlay" Style="{StaticResource FieldLabel}" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="8" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <Border Style="{StaticResource Sunken}" Padding="11,8">
+                                            <TextBlock x:Name="EditHotkeyLabel" Text="Ctrl + F10" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" />
+                                        </Border>
+                                        <Button x:Name="RecordEditHotkeyButton" Grid.Column="2" Content="⌨ Ändra" Background="#343B50" Padding="13,8" Click="RecordEditHotkey_Click" />
+                                    </Grid>
+
+                                    <TextBlock x:Name="HotkeyHint" Text="Välj Ändra och tryck sedan önskad tangentkombination. Esc avbryter." Style="{StaticResource Hint}" Margin="0,12,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2" Style="{StaticResource Column}">
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="Windows" Style="{StaticResource CardTitle}" />
+                                    <CheckBox x:Name="StartWithWindowsCheck"
+                                              Content="Starta med Windows"
+                                              Margin="0,12,0,0"
+                                              ToolTip="Startar minimerad i aktivitetsfältets meddelandefält när du loggar in"
+                                              Checked="StartWithWindows_Changed"
+                                              Unchecked="StartWithWindows_Changed" />
+                                    <TextBlock Text="Appen startar i bakgrunden utan att öppna inställningsfönstret."
+                                               Style="{StaticResource Hint}" Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <Border Grid.Row="2" Background="#111521" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="0,1,0,0" Padding="26,12">
+            <DockPanel>
+                <TextBlock x:Name="VersionText" DockPanel.Dock="Right" Foreground="#5F5B6E" FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0" />
+                <TextBlock Text="Tips: lås overlayen när den ligger rätt – då blir den helt klickigenom och stjäl aldrig fokus från spelet."
+                           Foreground="#858193" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+        </Border>
     </Grid>
 </Window>
