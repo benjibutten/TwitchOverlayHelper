@@ -8,6 +8,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using TwitchOverlayHelper.Diagnostics;
+using TwitchOverlayHelper.History;
 using TwitchOverlayHelper.Interop;
 using TwitchOverlayHelper.Models;
 using TwitchOverlayHelper.Nicknames;
@@ -28,6 +29,16 @@ public partial class MainWindow : Window
 
     private readonly SettingsStore _settingsStore = new();
     /// <summary>
+    /// Last time's chat, so restarting the app mid-stream does not wipe the column. Only ever holds
+    /// what this app saw – Twitch offers no way to ask for chat that happened while we were away.
+    /// </summary>
+    private readonly ChatHistoryStore _historyStore = new();
+    private long _lastSavedHistoryVersion;
+    /// <summary>Whether the last history write failed, so the retries are logged once, not per tick.</summary>
+    private bool _historySaveFailing;
+    /// <summary>Which channel the one-shot fetch of older lines has already been done for.</summary>
+    private string? _backfilledChannel;
+    /// <summary>
     /// Nicknames are the one thing in the app the user typed by hand and cannot get back from
     /// Twitch, so they get a file of their own and are written the moment they change – with a
     /// dated copy kept beside every save.
@@ -43,6 +54,11 @@ public partial class MainWindow : Window
     private readonly System.Net.Http.HttpClient _speechHttpClient = new() { Timeout = TimeSpan.FromSeconds(30) };
     private readonly TwitchSession _session;
     private readonly TwitchApiClient _apiClient;
+    /// <summary>
+    /// The lines said before we connected. The only thing in the app that asks anyone other than
+    /// Twitch, because Twitch has nothing to ask – see <see cref="RecentMessagesClient"/>.
+    /// </summary>
+    private readonly RecentMessagesClient _recentMessages;
     /// <summary>
     /// What we may send in this channel. Asked for once when the room becomes known, because it is
     /// needed the moment a line is written rather than the moment somebody opens the picker.
@@ -83,6 +99,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _chatFlushTimer;
     private readonly DispatcherTimer _settingsApplyTimer;
     private readonly DispatcherTimer _settingsSaveTimer;
+    private readonly DispatcherTimer _historySaveTimer;
     private readonly System.Windows.Forms.NotifyIcon _trayIcon;
     private HwndSource? _hwndSource;
     private Button? _recordingButton;
@@ -114,6 +131,7 @@ public partial class MainWindow : Window
         SyncStartWithWindows();
         _session = new TwitchSession(_httpClient);
         _apiClient = new TwitchApiClient(_httpClient, _session);
+        _recentMessages = new RecentMessagesClient(_httpClient);
         _emotes = new UsableEmoteCatalog(_apiClient);
         // Our own line arrives with no emote spans; this is what puts them back, before either view
         // has seen the message.
@@ -146,7 +164,11 @@ public partial class MainWindow : Window
         _settingsSaveTimer.Tick += (_, _) => { _settingsSaveTimer.Stop(); SaveSettingsNow(); };
         _trayIcon = CreateTrayIcon();
         _overlay.PlacementChanged += SaveSettings;
-        _overlay.AddWelcomeMessages();
+        // Written on a timer rather than per message: chat arrives in bursts, and a file write per
+        // line during a raid would be the app's busiest piece of disk work for no gain.
+        _historySaveTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(20) };
+        _historySaveTimer.Tick += (_, _) => SaveChatHistory();
+        _historySaveTimer.Start();
         PopulateControls();
         _loading = false;
         if (_settings.OverlayVisible) _overlay.Show();
@@ -170,11 +192,113 @@ public partial class MainWindow : Window
         UpdateLoginUi();
         UpdateLoginButtonState();
         ApplySpeechConfiguration();
-        // Sample lines so the dock shows what the reading settings look like before anything is connected.
-        _hub.ShowSamples();
+        RestoreChatHistory();
         _ = StartDockServerAsync();
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
+    }
+
+    /// <summary>
+    /// Puts back what was on screen last time, or shows the sample lines when there is nothing worth
+    /// putting back. Twitch cannot help here – it sends no history on join – so this is limited to
+    /// the lines this app saw itself, from this channel, within
+    /// <see cref="ChatHistoryStore.MaxAge"/>.
+    ///
+    /// <para>The restored lines go straight into the two views and never through
+    /// <see cref="OnChatMessage"/>. That is the whole point: replaying them through the normal path
+    /// would spawn yesterday's pets again, read the names out loud again, welcome the same first-time
+    /// chatters again and light the edges for a "!psst" that was answered hours ago.</para>
+    /// </summary>
+    private void RestoreChatHistory()
+    {
+        IReadOnlyList<ChatTimelineItem> history = _historyStore.Load(_settings.Channel, DateTimeOffset.Now);
+        if (history.Count == 0)
+        {
+            // Sample lines so the dock shows what the reading settings look like before anything is connected.
+            _overlay.AddWelcomeMessages();
+            _hub.ShowSamples();
+            return;
+        }
+
+        _overlay.AddItems(history);
+        _hub.ReplaceHistory(history);
+        _lastSavedHistoryVersion = _hub.HistoryVersion;
+        AppLog.Info($"Återställde {history.Count} rader från förra körningen i #{_settings.Channel}.");
+    }
+
+    /// <summary>
+    /// Asks the recent-messages service for what was said before we joined, and weaves it into what
+    /// is already on screen. This is the only part of the chat that does not come from Twitch, and
+    /// the only one that can be switched off.
+    ///
+    /// <para>Once per channel per run: it answers with the same stretch of chat every time, so
+    /// fetching again on each reconnect would cost a request to redraw the same lines.</para>
+    ///
+    /// <para>Like the saved history, nothing fetched here goes through <see cref="OnChatMessage"/> –
+    /// these lines were already said, already answered, and already reacted to.</para>
+    /// </summary>
+    private async Task BackfillRecentMessagesAsync(string channel)
+    {
+        if (!_settings.FetchRecentMessages || channel.Length == 0) return;
+        if (string.Equals(_backfilledChannel, channel, StringComparison.OrdinalIgnoreCase)) return;
+        // Marked before the await: a reconnect landing while this is in flight must not start a
+        // second fetch of the same thing.
+        _backfilledChannel = channel;
+
+        IReadOnlyList<ChatTimelineItem> fetched;
+        try
+        {
+            fetched = await _recentMessages.GetAsync(channel, ChatHistoryStore.MaxItems);
+        }
+        catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or TaskCanceledException)
+        {
+            // Somebody else's free service being unreachable is not this app's problem to report.
+            AppLog.Warn($"Kunde inte hämta tidigare meddelanden för #{channel}: {ex.Message}");
+            // Nothing was drawn, so this channel is not done – a reconnect may as well try again.
+            // Only if the marker is still ours: a channel switch during the request has already
+            // handed it to the new room, and clearing it there would fetch that room twice.
+            if (string.Equals(_backfilledChannel, channel, StringComparison.OrdinalIgnoreCase)) _backfilledChannel = null;
+            return;
+        }
+        // The request outlived the channel it was about. Lines from a room we have left would go to
+        // the overlay, the dock and – on the next tick – the history file, all under the new
+        // channel's name, and the disk copy would still be there tomorrow.
+        if (!string.Equals(_settings.Channel, channel, StringComparison.OrdinalIgnoreCase))
+        {
+            AppLog.Info($"Hoppade över {fetched.Count} hämtade rader för #{channel} – kanalen är nu #{_settings.Channel}.");
+            return;
+        }
+        if (fetched.Count == 0) return;
+
+        IReadOnlyList<ChatTimelineItem> merged = ChatHistoryMerge.Combine(
+            _hub.SnapshotHistory(), fetched, ChatHistoryStore.MaxItems, ChatHistoryStore.MaxAge, DateTimeOffset.Now);
+        _overlay.ReplaceItems(merged);
+        _hub.ReplaceHistory(merged);
+        AppLog.Info($"Hämtade {fetched.Count} tidigare rader för #{channel}; chatten visar nu {merged.Count}.");
+    }
+
+    /// <summary>
+    /// Writes the history to disk when it has actually changed. The version check is what keeps a
+    /// quiet chat – or a minimised app nobody is talking in – from rewriting the same file every
+    /// twenty seconds all evening.
+    /// </summary>
+    private void SaveChatHistory()
+    {
+        if (_settings.Channel.Length == 0) return;
+        long version = _hub.HistoryVersion;
+        if (version == _lastSavedHistoryVersion) return;
+        // Only a write that happened counts as saved. Marking it either way turns a file locked for
+        // one second – a backup tool, a virus scanner – into a history that is never written again
+        // until the next line arrives, and the version check then hides that it ever went wrong.
+        if (!_historyStore.Save(_settings.Channel, _hub.SnapshotHistory(), DateTimeOffset.Now))
+        {
+            if (!_historySaveFailing) AppLog.Warn("Chatthistoriken kunde inte skrivas till disk. Försöker igen.");
+            _historySaveFailing = true;
+            return;
+        }
+        if (_historySaveFailing) AppLog.Info("Chatthistoriken kunde skrivas igen.");
+        _historySaveFailing = false;
+        _lastSavedHistoryVersion = version;
     }
 
     private async Task StartDockServerAsync()
@@ -619,6 +743,9 @@ public partial class MainWindow : Window
     {
         _hub.BroadcasterId = roomId;
         _hub.PublishAuth(_chatClient.CanSend);
+        // First, so the chat reads on from where it left off as early as possible – and before the
+        // slower Twitch calls below have a chance to hold it up.
+        await BackfillRecentMessagesAsync(_settings.Channel);
         // Which channel we are in decides what EventSub can carry, so it can only start once the
         // room id is known – not at login, and not when the socket opens.
         await RestartEventSubAsync(roomId);
@@ -995,6 +1122,7 @@ public partial class MainWindow : Window
     private void PopulateControls()
     {
         ChannelBox.Text = _settings.Channel;
+        RecentMessagesCheck.IsChecked = _settings.FetchRecentMessages;
         ClientIdBox.Text = _settings.ClientId;
         FontSizeSlider.Value = _settings.FontSize;
         LineSpacingSlider.Value = _settings.LineSpacing;
@@ -1195,6 +1323,15 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Another channel's chat must not survive into this one – not on screen, and not on disk
+        // waiting for the next restart to put it back.
+        if (!string.Equals(_settings.Channel, channel, StringComparison.OrdinalIgnoreCase))
+        {
+            _historyStore.Clear();
+            // The new channel has its own older lines, and they have not been fetched yet.
+            _backfilledChannel = null;
+        }
+
         _settings.Channel = channel;
         _settings.ClientId = ClientIdBox.Text.Trim();
         _lastBadgeRoom = null;
@@ -1309,6 +1446,18 @@ public partial class MainWindow : Window
         edge.NewChatterAlert.DurationSeconds = EdgeNewDurationSlider.Value;
         edge.EdgeWidth = EdgeWidthSlider.Value;
         UpdateValueLabels();
+        SaveSettings();
+    }
+
+    /// <summary>
+    /// Switching it on mid-session does not fetch anything by itself – the fetch belongs to a
+    /// connection, and there is nothing to weave into a chat that is already running. It takes
+    /// effect on the next connect, which is also when the channel name would be sent.
+    /// </summary>
+    private void RecentMessages_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _settings.FetchRecentMessages = RecentMessagesCheck.IsChecked == true;
         SaveSettings();
     }
 
@@ -1514,10 +1663,13 @@ public partial class MainWindow : Window
         _chatFlushTimer.Stop();
         _settingsApplyTimer.Stop();
         _settingsSaveTimer.Stop();
+        _historySaveTimer.Stop();
         _badgeLoadCancellation?.Cancel();
         _badgeLoadCancellation?.Dispose();
         _badgeLoadCancellation = null;
         SaveSettingsNow();
+        // The last twenty seconds of chat would otherwise be the one gap a clean shutdown leaves.
+        SaveChatHistory();
         GlobalHotkeys.Unregister(this, ToggleHotkeyId);
         GlobalHotkeys.Unregister(this, EditHotkeyId);
         _hwndSource?.RemoveHook(WndProc);

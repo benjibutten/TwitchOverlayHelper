@@ -26,10 +26,7 @@ internal static class IrcMessageParser
 
         int commandAt = line.IndexOf(" PRIVMSG #", tagEnd, StringComparison.Ordinal);
         if (commandAt < 0) return false;
-        int textAt = line.IndexOf(" :", commandAt + 10, StringComparison.Ordinal);
-        if (textAt < 0) return false;
-
-        string text = line[(textAt + 2)..];
+        if (ReadTrailing(line, commandAt + 10) is not { } text) return false;
         bool isAction = TryUnwrapAction(ref text);
         string login = ParseLogin(line[tagEnd..commandAt]);
         string displayName = tags.GetValueOrDefault("display-name") ?? (login.Length > 0 ? login : "Okänd");
@@ -261,10 +258,9 @@ internal static class IrcMessageParser
         var tags = ParseTags(line[1..tagEnd]);
         string msgId = tags.GetValueOrDefault("msg-id") ?? string.Empty;
 
-        // The trailing " :text" is the chatter's own words and is absent for most notice types.
-        int messageAt = line.IndexOf(" :", commandAt + command.Length, StringComparison.Ordinal);
+        // The trailing text is the chatter's own words and is absent for most notice types.
         string? message = null;
-        if (messageAt >= 0 && EmptyToNull(line[(messageAt + 2)..]) is { } raw)
+        if (ReadTrailing(line, commandAt + command.Length) is { } trailing && EmptyToNull(trailing) is { } raw)
         {
             TryUnwrapAction(ref raw);
             message = raw;
@@ -378,6 +374,25 @@ internal static class IrcMessageParser
             else result[part] = string.Empty;
         }
         return result;
+    }
+
+    /// <summary>
+    /// What was said, taken from after the channel name. Null when the line carries no text at all.
+    ///
+    /// <para>The leading ":" is optional here on purpose. IRC only requires it when the trailing
+    /// parameter contains a space, and Twitch's own connection always sends it – but the
+    /// recent-messages service rebuilds its stored lines without it for single-word messages, and
+    /// insisting on the colon quietly dropped about one fetched line in eight. Everything else about
+    /// the line is identical, so the colon is stripped when present and not missed when absent.</para>
+    /// </summary>
+    /// <param name="channelAt">Index of the first character of the channel name.</param>
+    private static string? ReadTrailing(string line, int channelAt)
+    {
+        int channelEnd = line.IndexOf(' ', channelAt);
+        if (channelEnd < 0) return null;
+
+        string trailing = line[(channelEnd + 1)..];
+        return trailing.StartsWith(':') ? trailing[1..] : trailing;
     }
 
     private static IReadOnlyList<ChatBadge> ParseBadges(string? raw)

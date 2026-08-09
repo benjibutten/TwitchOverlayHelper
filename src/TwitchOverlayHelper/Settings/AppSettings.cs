@@ -21,6 +21,15 @@ public sealed class AppSettings
     public bool EmphasizeMentions { get; set; } = true;
     public bool ShowEmotes { get; set; } = true;
     /// <summary>
+    /// Whether to ask recent-messages.robotty.de for the lines said before the app connected, so a
+    /// restart mid-stream comes back to a chat that reads on rather than starting from nothing.
+    ///
+    /// <para>A switch of its own because it is the one thing in the app that talks to somebody other
+    /// than Twitch: turning it on sends the channel name to a community service on every connect.
+    /// Off means the chat is filled only from what this app saw itself.</para>
+    /// </summary>
+    public bool FetchRecentMessages { get; set; } = true;
+    /// <summary>
     /// Draws an emote a Gigantify power-up enlarged at its full size. On by default – someone spent
     /// bits to make it big – but the overlay sits over a game, so it is worth being able to turn
     /// off: the emote then stays at reading size with a "⚡ förstorad" marker.

@@ -34,10 +34,14 @@ public sealed class ChatHub(
     // its own rather than riding along on the history's.
     private readonly Lock _hypeTrainLock = new();
 
+    private long _historyVersion;
     private HypeTrainState? _hypeTrain;
     private string _statusText = "Inte ansluten";
     private string _statusState = "idle";
-    private string _channel = string.Empty;
+    // Starts on the channel we were in last time rather than on nothing. The saved history is put
+    // back before anything connects, and an empty channel here would make the first connect look
+    // like a channel switch – which throws that history away the moment the stream starts.
+    private string _channel = settings.Channel;
     private bool _showingSamples;
 
     public int ClientCount => _clients.Count;
@@ -67,10 +71,14 @@ public sealed class ChatHub(
         // where the samples have never been replaced.
         ClearHypeTrain();
 
-        // Samples are not anyone's chat, so they stay until the first real message replaces them.
-        if (_showingSamples) return;
-        lock (_historyLock) _history.Clear();
-        Send(DockJson.Serialize(new DockEnvelope<object?>("clear", null)));
+        lock (_historyLock)
+        {
+            // Samples are not anyone's chat, so they stay until the first real message replaces them.
+            if (_showingSamples) return;
+            _history.Clear();
+            _historyVersion++;
+            Send(DockJson.Serialize(new DockEnvelope<object?>("clear", null)));
+        }
     }
 
     /// <summary>
@@ -90,14 +98,24 @@ public sealed class ChatHub(
 
     public void PublishMessage(ChatMessage message)
     {
-        Remember(ChatTimelineItem.Of(message));
-        Send(DockJson.Serialize(new DockEnvelope<DockMessage>("message", ToDock(message))));
+        // The queue and the frame under one lock, here and everywhere below: a dock's stream has to
+        // arrive in the order the history was built. Publishing outside the lock lets a line land in
+        // the middle of another writer's redraw, where it is either drawn in the wrong place or
+        // wiped by a clear that was decided before it existed.
+        lock (_historyLock)
+        {
+            Remember(ChatTimelineItem.Of(message));
+            Send(DockJson.Serialize(new DockEnvelope<DockMessage>("message", ToDock(message))));
+        }
     }
 
     public void PublishEvent(ChatEvent chatEvent)
     {
-        Remember(ChatTimelineItem.Of(chatEvent));
-        Send(DockJson.Serialize(new DockEnvelope<DockEvent>("event", DockMapper.ToDock(chatEvent))));
+        lock (_historyLock)
+        {
+            Remember(ChatTimelineItem.Of(chatEvent));
+            Send(DockJson.Serialize(new DockEnvelope<DockEvent>("event", DockMapper.ToDock(chatEvent))));
+        }
     }
 
     /// <summary>
@@ -145,25 +163,79 @@ public sealed class ChatHub(
             {
                 _history.Clear();
                 foreach (ChatTimelineItem item in items) _history.Enqueue(item);
+                // The rewritten line has to survive a restart too. Without this the marker is only
+                // ever written to disk if some later message happens to bump the version for us,
+                // and in a quiet chat that never comes.
+                _historyVersion++;
             }
+            Send(DockJson.Serialize(new DockEnvelope<DockMessage>("messageUpdate", ToDock(message))));
         }
-        Send(DockJson.Serialize(new DockEnvelope<DockMessage>("messageUpdate", ToDock(message))));
     }
 
+    /// <summary>Adds one item to the timeline. Callers hold <see cref="_historyLock"/>.</summary>
     private void Remember(ChatTimelineItem item)
     {
         // The first real line replaces the sample lines that showed what the dock looks like.
         if (_showingSamples)
         {
             _showingSamples = false;
-            lock (_historyLock) _history.Clear();
+            _history.Clear();
             Send(DockJson.Serialize(new DockEnvelope<object?>("clear", null)));
         }
 
+        _history.Enqueue(item);
+        while (_history.Count > HistoryLimit) _history.Dequeue();
+        _historyVersion++;
+    }
+
+    /// <summary>
+    /// Counts how many times the history has changed. Read by the code that writes it to disk, so a
+    /// quiet chat costs nothing: no new lines, no new version, no file written.
+    /// </summary>
+    public long HistoryVersion { get { lock (_historyLock) return _historyVersion; } }
+
+    /// <summary>
+    /// The history as it stands, for saving. Sample lines are never handed out – they are a preview
+    /// of the settings, and restoring them tomorrow as though they were chat would be a small lie
+    /// told every morning.
+    /// </summary>
+    public IReadOnlyList<ChatTimelineItem> SnapshotHistory()
+    {
+        lock (_historyLock) return _showingSamples ? [] : _history.ToArray();
+    }
+
+    /// <summary>
+    /// Replaces the whole timeline – a saved history at startup, or that history rebuilt once the
+    /// fetched lines from before we connected have been woven into it.
+    ///
+    /// <para>Open docks are cleared and redrawn, which is what makes the second case work: by then a
+    /// dock may already be showing live lines, and the fetched ones belong above them rather than
+    /// appended underneath. At startup there is no dock connected yet, so the same call sends
+    /// nothing.</para>
+    /// </summary>
+    public void ReplaceHistory(IReadOnlyList<ChatTimelineItem> items)
+    {
+        if (items.Count == 0) return;
         lock (_historyLock)
         {
-            _history.Enqueue(item);
+            _history.Clear();
+            foreach (ChatTimelineItem item in items) _history.Enqueue(item);
             while (_history.Count > HistoryLimit) _history.Dequeue();
+            _historyVersion++;
+            // Restored lines are real chat, so the samples must not come back over them – and the next
+            // real message must not wipe them the way it wipes a preview.
+            _showingSamples = false;
+
+            // Redrawn from the queue rather than from the argument, and inside the same lock: the
+            // dock is then shown exactly the timeline a reconnect would replay, and a live line
+            // arriving mid-redraw waits its turn instead of being clear-ed off the open page.
+            Send(DockJson.Serialize(new DockEnvelope<object?>("clear", null)));
+            foreach (ChatTimelineItem item in _history)
+            {
+                Send(item.Event is { } chatEvent
+                    ? DockJson.Serialize(new DockEnvelope<DockEvent>("event", DockMapper.ToDock(chatEvent)))
+                    : DockJson.Serialize(new DockEnvelope<DockMessage>("message", ToDock(item.Message!))));
+            }
         }
     }
 
@@ -175,8 +247,10 @@ public sealed class ChatHub(
             ChatTimelineItem[] kept = _history.Where(item => !IsAffected(item, moderation)).ToArray();
             _history.Clear();
             foreach (ChatTimelineItem item in kept) _history.Enqueue(item);
+            // A deleted line has to stay deleted across a restart too, so this counts as a change.
+            _historyVersion++;
+            Send(DockJson.Serialize(new DockEnvelope<DockModerationPayload>("moderation", DockMapper.ToDock(moderation))));
         }
-        Send(DockJson.Serialize(new DockEnvelope<DockModerationPayload>("moderation", DockMapper.ToDock(moderation))));
     }
 
     /// <summary>
@@ -285,16 +359,17 @@ public sealed class ChatHub(
             Message = "tack för alla mysiga kvällar!"
         };
 
-        _showingSamples = true;
         lock (_historyLock)
         {
+            _showingSamples = true;
             _history.Clear();
             foreach (ChatMessage sample in samples) _history.Enqueue(ChatTimelineItem.Of(sample));
             _history.Enqueue(ChatTimelineItem.Of(sampleEvent));
+
+            foreach (ChatMessage sample in samples)
+                Send(DockJson.Serialize(new DockEnvelope<DockMessage>("message", ToDock(sample))));
+            Send(DockJson.Serialize(new DockEnvelope<DockEvent>("event", DockMapper.ToDock(sampleEvent))));
         }
-        foreach (ChatMessage sample in samples)
-            Send(DockJson.Serialize(new DockEnvelope<DockMessage>("message", ToDock(sample))));
-        Send(DockJson.Serialize(new DockEnvelope<DockEvent>("event", DockMapper.ToDock(sampleEvent))));
     }
 
     private static ChatMessage Sample(string id, string name, string text, string color, ChatBadge[] badges, DateTimeOffset at) =>

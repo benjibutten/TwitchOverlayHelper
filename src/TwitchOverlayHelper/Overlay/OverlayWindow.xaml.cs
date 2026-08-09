@@ -105,6 +105,19 @@ public partial class OverlayWindow : Window
     }
 
     /// <summary>
+    /// Throws away what is on screen and draws this instead. Used when history arrives out of order
+    /// with what is already up – lines fetched from before we connected belong above the live ones,
+    /// and there is no way to put them there by adding.
+    /// </summary>
+    public void ReplaceItems(IReadOnlyList<ChatTimelineItem> items)
+    {
+        ClearMessages();
+        foreach (ChatTimelineItem item in items.Where(IsShown).TakeLast(_settings.MaxMessages))
+            MessagePanel.Children.Add(CreateCard(item));
+        ChatScroller.ScrollToEnd();
+    }
+
+    /// <summary>
     /// Whether this line is one the overlay has been asked to draw. Chat messages always are – the
     /// switches are about event cards, which is where a quiet overlay over a game earns its keep.
     /// </summary>

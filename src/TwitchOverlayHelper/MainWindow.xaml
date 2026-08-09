@@ -125,6 +125,11 @@
                                     </Grid>
                                     <TextBlock Text="Anslutningens läge visas alltid uppe till höger, oavsett vilken sida du står på."
                                                Style="{StaticResource Hint}" Margin="0,12,0,0" />
+                                    <CheckBox x:Name="RecentMessagesCheck" Content="Hämta chatt från innan appen startade" Margin="0,14,0,0"
+                                              Checked="RecentMessages_Changed" Unchecked="RecentMessages_Changed"
+                                              ToolTip="Fyller chatten med det som sagts den senaste stunden, så en omstart mitt i sändningen inte börjar från tomt." />
+                                    <TextBlock Text="Twitch kan inte lämna ut gammal chatt, så raderna hämtas från recent-messages.robotty.de – samma tjänst som Chatterino använder. Kanalnamnet skickas dit vid varje anslutning. Stäng av om du hellre vill det."
+                                               Style="{StaticResource Hint}" Margin="0,6,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Border>
 
