@@ -1,5 +1,8 @@
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Threading;
+using TwitchOverlayHelper.Diagnostics;
 
 namespace TwitchOverlayHelper;
 
@@ -15,6 +18,7 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        InstallCrashHandlers();
         bool startMinimized = e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase);
 
         // Create the activation event before claiming the mutex. This removes the startup
@@ -29,6 +33,7 @@ public partial class App : Application
 
         if (!isFirstInstance)
         {
+            AppLog.Info("En instans kör redan – den här startades bara för att lyfta fram fönstret.");
             if (!startMinimized)
                 _activateExistingInstanceEvent.Set();
 
@@ -57,8 +62,42 @@ public partial class App : Application
             MainWindow.Show();
     }
 
+    /// <summary>
+    /// The three ways an exception can end this process without anyone being told, wired to the log
+    /// before anything else runs. Until this existed the app simply vanished: no window, no dialog,
+    /// no tray icon, nothing on disk – which is indistinguishable from someone having closed it.
+    /// </summary>
+    private void InstallCrashHandlers()
+    {
+        AppLog.StartSession();
+
+        // An exception in a UI callback – a click, a timer tick, anything posted with BeginInvoke.
+        // Marked handled on purpose: this app's job is to keep running while someone is live, and a
+        // stray exception in one callback is not a reason to take the overlay off the stream. It is
+        // written down instead, which is the part that was missing.
+        DispatcherUnhandledException += (_, args) =>
+        {
+            AppLog.Error("Ohanterat fel på UI-tråden (appen fortsätter köra).", args.Exception);
+            args.Handled = true;
+        };
+
+        // Nothing can stop this one – the process is already on its way down. Logged so the next
+        // run's file starts with the reason the previous one ended.
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            AppLog.Error("Ohanterat fel – appen avslutas.", args.ExceptionObject as Exception);
+
+        // A Task that failed with nobody awaiting it. Harmless in itself, but it is often the first
+        // sign of the thing that kills the app a moment later.
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            AppLog.Error("Fel i en task som ingen väntade på.", args.Exception);
+            args.SetObserved();
+        };
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
+        AppLog.Info($"Appen avslutas normalt (kod {e.ApplicationExitCode}).");
         _activationWaitHandle?.Unregister(null);
         _activationWaitHandle = null;
 

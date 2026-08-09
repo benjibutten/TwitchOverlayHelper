@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using TwitchOverlayHelper.Diagnostics;
 using TwitchOverlayHelper.Interop;
 using TwitchOverlayHelper.Models;
 using TwitchOverlayHelper.Nicknames;
@@ -162,7 +163,7 @@ public partial class MainWindow : Window
         _eventSubClient.StatusChanged += status => RunOnUi(() => SetEventStatus(status));
         _eventSubClient.CoverageChanged += coverage => RunOnUi(() => ApplyEventCoverage(coverage));
         _chatClient.StatusChanged += status => RunOnUi(() => SetStatus(status));
-        _chatClient.RoomDiscovered += room => RunOnUi(async () => await OnRoomDiscoveredAsync(room));
+        _chatClient.RoomDiscovered += room => RunOnUi(() => _ = PrepareRoomAsync(room));
         _chatClient.ConnectionStopped += () => RunOnUi(() => SetConnectionButtons(false));
         _session.StateChanged += () => RunOnUi(UpdateLoginUi);
 
@@ -594,6 +595,26 @@ public partial class MainWindow : Window
         finally { _reconnecting = false; }
     }
 
+    /// <summary>
+    /// <see cref="OnRoomDiscoveredAsync"/> with a net under it. This runs on every connect *and every
+    /// reconnect*, and it calls Twitch over the network several times – so a stalled request during a
+    /// network blip is an ordinary Tuesday, not an exceptional case. It used to be started from an
+    /// async void lambda, which means an exception here had nowhere to go but the dispatcher, and the
+    /// process ended mid-stream with nothing written down anywhere.
+    ///
+    /// <para>Everything it sets up is optional: badges, reward names, the emote picker, the extra
+    /// events. Losing them costs a little polish, and is never worth losing the chat over.</para>
+    /// </summary>
+    private async Task PrepareRoomAsync(string roomId)
+    {
+        try { await OnRoomDiscoveredAsync(roomId); }
+        catch (Exception ex)
+        {
+            AppLog.Error($"Kunde inte förbereda kanalen (rum {roomId}). Chatten fortsätter ändå.", ex);
+            SetStatus("Chat ansluten • extra funktioner kunde inte laddas: " + ex.Message, true);
+        }
+    }
+
     private async Task OnRoomDiscoveredAsync(string roomId)
     {
         _hub.BroadcasterId = roomId;
@@ -615,8 +636,10 @@ public partial class MainWindow : Window
         // Another channel's emotes drawn onto our own lines would be worse than none at all.
         _emotes.Forget();
         if (!_session.IsLoggedIn) return;
+        // TaskCanceledException belongs in this list: that is what HttpClient throws when a call runs
+        // past its 15 second timeout, and a timeout is the most ordinary way for any of this to fail.
         try { await _emotes.GetAsync(roomId, _session.UserId); }
-        catch (Exception ex) when (ex is TwitchApiException or TwitchAuthException or System.Net.Http.HttpRequestException)
+        catch (Exception ex) when (ex is TwitchApiException or TwitchAuthException or System.Net.Http.HttpRequestException or TaskCanceledException)
         {
             // Not worth surfacing: without the list our own lines read as they were typed, which is
             // exactly how they read before any of this existed. The dock says so where it matters.
@@ -664,7 +687,7 @@ public partial class MainWindow : Window
     private async Task LoadRewardNamesAsync(string broadcasterId)
     {
         try { _rewards.RememberAll(await _apiClient.GetCustomRewardsAsync(broadcasterId)); }
-        catch (Exception ex) when (ex is TwitchApiException or TwitchAuthException or System.Net.Http.HttpRequestException)
+        catch (Exception ex) when (ex is TwitchApiException or TwitchAuthException or System.Net.Http.HttpRequestException or TaskCanceledException)
         {
             // Not worth surfacing: without the list the names are learned from the redemptions
             // themselves, one reward at a time.
@@ -732,6 +755,10 @@ public partial class MainWindow : Window
     {
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("Öppna inställningar", null, (_, _) => RestoreFromTray());
+        // Reachable from the tray on purpose: the log is worth having exactly when the main window is
+        // not what the user is looking at, and asking someone to find %LOCALAPPDATA% over voice chat
+        // is how a log nobody reads stays unread.
+        menu.Items.Add("Visa loggar", null, (_, _) => AppLog.OpenFolder());
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("Avsluta", null, (_, _) => ExitApplication());
 
@@ -808,7 +835,41 @@ public partial class MainWindow : Window
         // The edge glow. A mod calling outranks the welcome: when a moderator's very first message
         // is the command, the streamer is being called, not introduced to their own mod.
         if (_settings.EdgeAlerts.TriggersModAlert(message)) RaiseEdgeAlert(EdgeAlertKind.ModCall);
-        else if (_settings.EdgeAlerts.TriggersNewChatterAlert(message)) RaiseEdgeAlert(EdgeAlertKind.NewChatter);
+        else
+        {
+            ExplainMissedModCall(message);
+            if (_settings.EdgeAlerts.TriggersNewChatterAlert(message)) RaiseEdgeAlert(EdgeAlertKind.NewChatter);
+        }
+    }
+
+    /// <summary>
+    /// Writes down why a line that *was* the call command still did not light the edges. There are
+    /// only ever two answers – the alert is switched off, or the sender is not a moderator – and
+    /// neither of them shows up anywhere on screen, which is what makes "I wrote it and nothing
+    /// happened" impossible to tell apart from a broken feature.
+    ///
+    /// <para>Silent for anything that is not the command, so ordinary chat costs one comparison.</para>
+    /// </summary>
+    private void ExplainMissedModCall(ChatMessage message)
+    {
+        EdgeAlertSettings edge = _settings.EdgeAlerts;
+        string text = message.Text.Trim();
+        if (text.Length == 0 || text[0] != '!') return;
+
+        string command = EdgeAlertSettings.CleanCommand(edge.ModCommand);
+        bool isTheCommand = text.Equals(command, StringComparison.OrdinalIgnoreCase)
+            || text.StartsWith(command + " ", StringComparison.OrdinalIgnoreCase);
+        if (!isTheCommand) return;
+
+        // The badges are quoted raw rather than summarised: if Twitch did not send the moderator
+        // badge, that is the finding, and a "nej" of our own would hide it.
+        string badges = message.Badges.Count == 0
+            ? "inga"
+            : string.Join(", ", message.Badges.Select(badge => badge.SetId));
+        string reason = !edge.ModAlert.Enabled
+            ? "mod-ljuset är avstängt i inställningarna"
+            : "avsändaren är varken moderator eller broadcaster";
+        AppLog.Info($"\"{text}\" från {message.DisplayName} tände inte kanterna: {reason}. Badges: {badges}.");
     }
 
     /// <summary>
@@ -824,7 +885,12 @@ public partial class MainWindow : Window
         // The length comes from the scheduler, not from the setting: a glow being held open has only
         // the rest of its ceiling to run, and playing a full alert on top of it is what would keep
         // the edges lit past the limit during a busy chat.
-        if (_edgeScheduler.PlayFor(kind, style.DurationSeconds, DateTimeOffset.UtcNow) is not { } lit) return;
+        if (_edgeScheduler.PlayFor(kind, style.DurationSeconds, DateTimeOffset.UtcNow) is not { } lit)
+        {
+            AppLog.Info($"Kantljuset ({kind}) hoppades över – ett ljus pågår redan eller taket är nått.");
+            return;
+        }
+        AppLog.Info($"Kantljuset tänds ({kind}) i {lit.TotalSeconds:0.0} s.");
         RunOnUi(() => _edgeAlerts.Play(style, _settings.EdgeAlerts.EdgeWidth, lit.TotalSeconds));
     }
 
@@ -1353,6 +1419,10 @@ public partial class MainWindow : Window
 
     private void SetStatus(string text, bool error = false)
     {
+        // Every connect, drop and retry passes through here, so the log gets the chat's whole story
+        // with timestamps – which is what tells a dead connection apart from a quiet chat afterwards.
+        if (error) AppLog.Warn("Chattstatus: " + text);
+        else AppLog.Info("Chattstatus: " + text);
         StatusText.Text = text;
         bool live = text.StartsWith("Live", StringComparison.Ordinal);
         StatusDot.Fill = new SolidColorBrush(error ? Color.FromRgb(239, 68, 68) : live ? Color.FromRgb(34, 197, 94) : Color.FromRgb(245, 158, 11));
@@ -1421,10 +1491,20 @@ public partial class MainWindow : Window
         _settingsApplyTimer.Start();
     }
 
+    /// <summary>
+    /// Hands work to the UI thread. The guard is not decoration: almost everything here is posted
+    /// from a socket read loop, and an exception in one of these callbacks lands on the dispatcher
+    /// with no caller left to catch it – which used to end the process without a word.
+    /// </summary>
     private void RunOnUi(Action action)
     {
         if (_closing || Dispatcher.HasShutdownStarted) return;
-        _ = Dispatcher.BeginInvoke(action, DispatcherPriority.Background);
+        Action guarded = () =>
+        {
+            try { action(); }
+            catch (Exception ex) { AppLog.Error("Fel i en åtgärd på UI-tråden.", ex); }
+        };
+        _ = Dispatcher.BeginInvoke(guarded, DispatcherPriority.Background);
     }
 
     private async void MainWindow_Closed(object? sender, EventArgs e)
