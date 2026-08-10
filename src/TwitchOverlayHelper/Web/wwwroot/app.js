@@ -117,13 +117,19 @@ function handle(frame) {
     // A train that is still running when OBS restarts should be there when the dock comes back.
     applyHypeTrain(frame.hypeTrain || null);
 
-    // History is already read; it should appear at once rather than trickle through the pacer.
-    // The app keeps every event in its history, so a kind switched back on is here again after a
-    // reload even though the cards already on screen were not brought back when it was switched on.
-    frame.history
-      .filter((item) => item.type !== "event" || showsEvent(item.event))
-      .forEach((item) => appendItem(item.type === "event" ? evt(item.event) : msg(item.message), true));
-    scrollToEnd();
+    drawHistory(frame.history);
+    return;
+  }
+  /* The whole timeline again, because the app rebuilt it: lines fetched from before we connected
+     have been woven in above the live ones, or an earlier sitting was just put away. Sent as one
+     frame rather than as messages so it lands at once – dropped into the pacer it would trickle back
+     onto the page for a minute at the reader's chosen speed. Pins are left alone: the channel has
+     not changed, so a line somebody nailed to the strip is still worth keeping. */
+  if (frame.type === "history") {
+    el.chat.replaceChildren();
+    state.queue.length = 0;
+    state.missed = 0;
+    drawHistory(frame.payload);
     return;
   }
   if (frame.type === "message") { state.queue.push(msg(frame.payload)); return; }
@@ -156,6 +162,19 @@ function handle(frame) {
   // rather than to a message, so it has to reach the lines that are already on screen.
   if (frame.type === "nickname") { rememberNickname(frame.payload); redrawNicknames(); return; }
   if (frame.type === "badgesLoaded") { location.reload(); }
+}
+
+/* Lines the app has already read, drawn at once rather than trickled through the pacer: they are
+   history, not something arriving now. The app keeps every event in its timeline, so a kind switched
+   back on is here again after a reload even though the cards already on screen were not brought back
+   when it was switched on. */
+function drawHistory(items) {
+  items
+    .filter((item) => item.type !== "event" || showsEvent(item.event))
+    .forEach((item) => appendItem(item.type === "event" ? evt(item.event) : msg(item.message), true));
+  syncSessionSplit();
+  updateJump();
+  scrollToEnd();
 }
 
 /* ------------------------------------------------------ pacing and scrolling */
@@ -588,6 +607,9 @@ function rerender(preserveReadingPosition = false) {
   const items = [...el.chat.children].map((node) => node.item)
     .filter((item) => item && (item.kind !== "event" || showsEvent(item.data)));
   el.chat.replaceChildren(...items.map(buildItem));
+  // The marker between two sittings is not one of the items, so a rebuild drops it. It belongs to
+  // where the lines are rather than to the lines themselves, and is put back from them.
+  syncSessionSplit();
   if (!preserveReadingPosition || wasFollowing) scrollToEnd();
   else {
     state.stick = false;
@@ -600,11 +622,109 @@ function appendItem(item, isHistory) {
   const node = buildItem(item);
   el.chat.appendChild(node);
 
-  // Event cards live in the same column, so they count towards the limit like any other line.
-  while (el.chat.childElementCount > state.settings.maxMessages) el.chat.firstElementChild.remove();
+  trimToLimit();
+
+  // Replayed lines are drawn in a run, so their marker is placed once at the end of the run instead.
+  // A live line needs the check of its own: the first "hej" of the evening is exactly the line that
+  // turns everything above it into an earlier sitting.
+  if (!isHistory) syncSessionSplit();
 
   if (!isHistory && node.dataset.mention === "true" && state.settings.pinMentions) pinMessage(item.data, "mention");
   if (follow) scrollToEnd(); else if (!isHistory) state.missed++;
+}
+
+/* Cuts the column back to the reading limit. Counts lines rather than elements, because the marker
+   between two sittings shares the column with them: a limit of 200 that quietly means 199 messages
+   and a signpost is the setting saying one thing and doing another. Event cards do count – they are
+   lines in the same column and take up the same room. A marker left with nothing above it is not
+   removed here but by syncSessionSplit, which is the one place that decides where it belongs. */
+function trimToLimit() {
+  const lines = [...el.chat.children].filter((node) => node.item);
+  for (let i = 0; i < lines.length - state.settings.maxMessages; i++) lines[i].remove();
+}
+
+/* --------------------------------------------------------- earlier sittings */
+
+/* The chat survives a restart now, which means a dock can open onto this morning's lines sitting
+   above tonight's first "hej". Nothing tells us where one sitting ended and the next began – Twitch
+   has no notion of a stream in its chat, and neither has the app – so the quiet between two lines is
+   the only honest signal there is: after six hours nobody is still in the same conversation.
+
+   Where such a gap is found the column gets a marker at that exact point, and the marker carries the
+   button. That is the whole reason it is drawn in the column rather than put up in the top bar: a
+   button that offers to hide "older" chat is worth nothing unless the reader can see where the line
+   is being drawn and how long the quiet was, and then decide. */
+const SESSION_GAP_MS = 6 * 60 * 60 * 1000;
+
+const itemTime = (item) => (item.kind === "event" ? item.data.at : item.data.sentAt);
+
+/* The newest gap only. Two restarts in one day would otherwise leave several boundaries in the
+   column and no way to tell which one "hide the earlier chat" meant. */
+function sessionBoundary() {
+  const lines = [...el.chat.children].filter((node) => node.item);
+  for (let i = lines.length - 1; i > 0; i--) {
+    const quiet = itemTime(lines[i].item) - itemTime(lines[i - 1].item);
+    if (quiet >= SESSION_GAP_MS) return { node: lines[i], older: i, quiet };
+  }
+  return null;
+}
+
+/* Rebuilt from where the lines now are rather than remembered, so it cannot drift: the marker has to
+   survive a reading setting changing, follow the oldest lines as they scroll out of the column, and
+   take itself away when nothing is left above it to hide. */
+function syncSessionSplit() {
+  const existing = el.chat.querySelector(".session-split");
+  const boundary = sessionBoundary();
+  if (!boundary) {
+    if (existing) existing.remove();
+    return;
+  }
+
+  const split = existing || buildSessionSplit();
+  split.dataset.cutoff = String(itemTime(boundary.node.item));
+  split.querySelector(".session-label").textContent = `Nytt pass · ${quietText(boundary.quiet)} tyst`;
+  split.querySelector(".session-hide").textContent =
+    `Dölj ${boundary.older} ${boundary.older === 1 ? "rad" : "rader"} ovanför`;
+  if (split.nextElementSibling !== boundary.node) el.chat.insertBefore(split, boundary.node);
+}
+
+function buildSessionSplit() {
+  const split = document.createElement("div");
+  split.className = "session-split";
+
+  const label = document.createElement("span");
+  label.className = "session-label";
+  split.appendChild(label);
+
+  const hide = document.createElement("button");
+  hide.className = "session-hide";
+  hide.type = "button";
+  hide.addEventListener("click", () => hideEarlierSession(split));
+  split.appendChild(hide);
+  return split;
+}
+
+/* Asked of the app rather than solved by dropping the nodes here. The same lines are on the overlay
+   the viewers see and in the file that puts the chat back after a restart, so hiding them in this one
+   browser would mean meeting them again at the next reload. The app answers with the trimmed timeline
+   for every open dock, and with a count of its own – usually higher than what was on screen, because
+   it keeps more lines than the dock shows. */
+function hideEarlierSession(split) {
+  const cutoff = Number(split.dataset.cutoff);
+  if (!cutoff) return;
+  const hide = split.querySelector(".session-hide");
+  hide.disabled = true;
+  api("/api/chat/trim", { method: "POST", body: JSON.stringify({ before: cutoff }) })
+    .then((result) => toast(`Dolde ${result.removed} ${result.removed === 1 ? "rad" : "rader"} från tidigare pass.`, "info"))
+    // Re-enabled rather than left dead: nothing was hidden, and the marker is still standing there.
+    .catch((error) => { hide.disabled = false; toast(error.message, "error"); });
+}
+
+function quietText(ms) {
+  const hours = Math.round(ms / 3600000);
+  if (hours < 24) return `${hours} timmar`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "ett dygn" : `${days} dygn`;
 }
 
 /* ------------------------------------------------------------ pinned strip */
@@ -1884,7 +2004,7 @@ function applySettings(settings) {
   document.body.dataset.zebra = String(settings.zebraRows);
   document.body.dataset.nameline = String(settings.nameOnOwnLine);
 
-  while (el.chat.childElementCount > settings.maxMessages) el.chat.firstElementChild.remove();
+  trimToLimit();
 
   // Badges, timestamps, link chips and shouting are baked into the markup, so changing them
   // from the app has to rebuild what is already on screen – not just swap CSS variables.

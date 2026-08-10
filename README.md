@@ -11,6 +11,7 @@ Appen kör en lokal webbserver som serverar en chatt byggd för läsbarhet. Adre
 - **Tempobroms** som håller igen hur snabbt nya meddelanden dyker upp, så de hinner läsas när chatten går varmt.
 - **Fastnålade mentions**: meddelanden till dig läggs i en remsa överst så frågor inte scrollar bort.
 - **Nåla fast för hand**: klicka på ett namn och nåla raden i remsan. Fungerar utan inloggning – nålen syns bara för dig. Är du inloggad med modbehörighet kan samma rad nålas i chatten så tittarna ser den.
+- **Chatten ligger kvar över en omstart**, och en avdelare i spalten låter dig dölja ett tidigare pass med en knapp. Se [Chatten ligger kvar](#chatten-ligger-kvar).
 - Länkar kortas till en `🔗 länk`-knapp, VERSALER dämpas och `!kommandon` tonas ner.
 - Paus, zebra-rader, namn på egen rad och val av typsnitt.
 - **Smeknamn**: klicka på ett namn och ge chattaren ett namn du känner igen. Det visas bredvid Twitch-namnet i både docken och overlayen. Se [Smeknamn på chattare](#smeknamn-på-chattare).
@@ -50,6 +51,16 @@ Saknas något slutar det alltid med *färre kort* – aldrig med en chatt som sl
 Power-upen *förstorad emote* ritas i full storlek på en egen rad. Meddelandeeffekter (`animation-id`) kommer över IRC och visas som en markör i alla kanaler, även utloggad – animationen i sig återges inte.
 
 Varje typ går att stänga av för sig: overlayens val ligger under **Händelser i overlayen** i appen, dockens under **Ändra chattens läsbarhet → Händelser i chatten**. De är separata, eftersom en overlay ovanpå ett spel tål mindre än en dock man läser i lugn och ro. Att stänga av en typ tar bort korten som redan står kvar; att slå på den igen gäller det som händer sedan (docken hämtar tillbaka historiken vid omladdning). Reglagen styr bara korten – en belöning triggar fortfarande pets, och en cheer är fortfarande en markör på meddelandet den kom med.
+
+## Chatten ligger kvar
+
+Chatten sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\chat-history.json` och läggs tillbaka när appen startar, så en omstart mitt i strömmen inte lämnar en tom spalt. Det som sparas är bara det appen själv har sett: Twitch skickar ingen historik när man ansluter, och det finns ingen Helix-endpoint för chatt.
+
+- **Som mest 12 timmar bakåt och 200 rader.** Åldern räknas per rad och inte per kalenderdygn – "dagens chatt" hade tömts vid midnatt, vilket är mitt i kvällen för en ström som började nio, och en omstart 00:05 är precis när historiken behövs mest. Rader äldre än så läggs aldrig tillbaka, så det finns ingen historik veckor eller månader bakåt.
+- Historiken hör till en kanal. Byter du kanal slängs den, i stället för att visa fel rums chatt.
+- Är **Hämta tidigare meddelanden** påslaget vävs det som sades innan appen anslöt in ovanför de egna raderna, med samma 12-timmarsgräns.
+
+**Dölj tidigare pass.** Har det varit tyst i mer än sex timmar mellan två rader räknas det som ett nytt pass, och docken ritar en avdelare på just det stället: `Nytt pass · 9 timmar tyst`, med knappen **Dölj N rader ovanför**. Trycker du på den försvinner raderna på riktigt ur chattspalten, ur overlayen och ur filen på disk – så de kommer inte tillbaka vid nästa omladdning eller omstart. Ett undantag: rader du **nålat fast för hand** ligger kvar i remsan överst. En nål är ett eget beslut och tas bara ner för hand – att den överlever att spalten scrollar bort är hela poängen med remsan, och att dölja ett gammalt pass ska inte tysta en fråga du sparat att svara på. Sex timmar är gränsen eftersom tystnaden är det enda ärliga svaret som finns: varken Twitch eller appen vet när en ström började, men ingen är fortfarande i samma samtal efter sex timmar. Avdelaren ritas i spalten och inte i knappraden överst, för en knapp som erbjuder sig att dölja "äldre" chatt är värdelös om man inte ser var gränsen dras.
 
 ## Skriva i chatten
 

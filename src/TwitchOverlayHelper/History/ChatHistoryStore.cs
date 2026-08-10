@@ -59,7 +59,7 @@ public sealed class ChatHistoryStore
             if (snapshot is null || !string.Equals(snapshot.Channel, channel, StringComparison.OrdinalIgnoreCase)) return [];
 
             DateTimeOffset cutoff = now - MaxAge;
-            List<ChatTimelineItem> fresh = snapshot.Items.Where(item => TimeOf(item) is { } at && at >= cutoff).ToList();
+            List<ChatTimelineItem> fresh = snapshot.Items.Where(item => item.At >= cutoff).ToList();
             return fresh.Count > MaxItems ? fresh[^MaxItems..] : fresh;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or NotSupportedException)
@@ -104,8 +104,4 @@ public sealed class ChatHistoryStore
         try { if (File.Exists(_path)) File.Delete(_path); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
-
-    /// <summary>When a timeline item happened, whichever of the two kinds it is.</summary>
-    internal static DateTimeOffset? TimeOf(ChatTimelineItem item) =>
-        item.Message?.SentAt ?? item.Event?.At;
 }

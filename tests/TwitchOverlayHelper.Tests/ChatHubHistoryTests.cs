@@ -31,6 +31,9 @@ public sealed class ChatHubHistoryTests
     private static ChatMessage Message(string id, string text) =>
         new(id, "Kajsa", text, "#A970FF", [], false, false, Now) { UserId = "7", UserLogin = "kajsa" };
 
+    private static ChatMessage MessageAt(string id, DateTimeOffset at) =>
+        new(id, "Kajsa", "hej", "#A970FF", [], false, false, at) { UserId = "7", UserLogin = "kajsa" };
+
     [Fact]
     public void ConnectingToTheChannelTheHistoryCameFromKeepsIt()
     {
@@ -112,5 +115,74 @@ public sealed class ChatHubHistoryTests
         hub.PublishMessageUpdate(Message("borta", "hej") with { GigantifiedEmoteId = "25" });
 
         Assert.Equal(before, hub.HistoryVersion);
+    }
+
+    /// <summary>
+    /// What the dock's earlier-sitting button does: this morning's lines go, tonight's stay. The
+    /// cutoff is the first line of the current sitting, so that line itself has to survive.
+    /// </summary>
+    [Fact]
+    public void HidingTheEarlierSittingKeepsTheCurrentOne()
+    {
+        ChatHub hub = Hub("kanalen");
+        DateTimeOffset evening = Now;
+        hub.ReplaceHistory([
+            ChatTimelineItem.Of(MessageAt("morgon-1", evening.AddHours(-9))),
+            ChatTimelineItem.Of(MessageAt("morgon-2", evening.AddHours(-8))),
+            ChatTimelineItem.Of(MessageAt("kvall-1", evening)),
+        ]);
+
+        Assert.Equal(2, hub.TrimHistoryBefore(evening));
+
+        Assert.Equal(["kvall-1"], hub.SnapshotHistory().Select(item => item.Message?.Id));
+    }
+
+    // Hidden has to stay hidden across a restart, and in a quiet chat nothing else will bump the
+    // version for us – so without this the lines would be back the next time the app starts.
+    [Fact]
+    public void HidingAnEarlierSittingIsAChangeWorthSaving()
+    {
+        ChatHub hub = Hub("kanalen");
+        hub.ReplaceHistory([
+            ChatTimelineItem.Of(MessageAt("morgon", Now.AddHours(-9))),
+            ChatTimelineItem.Of(MessageAt("kvall", Now)),
+        ]);
+        long before = hub.HistoryVersion;
+        int trimmed = 0;
+        hub.HistoryTrimmed += () => trimmed++;
+
+        hub.TrimHistoryBefore(Now);
+
+        Assert.NotEqual(before, hub.HistoryVersion);
+        // The window listens for this to redraw the overlay and write the file at once.
+        Assert.Equal(1, trimmed);
+    }
+
+    // Nothing to hide must stay nothing to hide: a version bump would rewrite the file, and the
+    // announcement would send the overlay through a redraw for no reason at all.
+    [Fact]
+    public void HidingNothingChangesNothing()
+    {
+        ChatHub hub = Hub("kanalen");
+        hub.ReplaceHistory([ChatTimelineItem.Of(MessageAt("kvall", Now))]);
+        long before = hub.HistoryVersion;
+        int trimmed = 0;
+        hub.HistoryTrimmed += () => trimmed++;
+
+        Assert.Equal(0, hub.TrimHistoryBefore(Now.AddHours(-9)));
+
+        Assert.Equal(before, hub.HistoryVersion);
+        Assert.Equal(0, trimmed);
+    }
+
+    // The samples are a preview of the reading settings, all made in the same moment. Trimming them
+    // would empty the column and leave the dock looking broken before anything is even connected.
+    [Fact]
+    public void TheSampleLinesAreNeverTrimmed()
+    {
+        ChatHub hub = Hub("kanalen");
+        hub.ShowSamples();
+
+        Assert.Equal(0, hub.TrimHistoryBefore(DateTimeOffset.Now.AddHours(1)));
     }
 }

@@ -208,6 +208,18 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
                 : Results.Json(saved, DockJson.Options);
         });
 
+        // Putting the earlier sitting away is a reading decision on this machine – nothing on Twitch,
+        // nothing anyone else sees – so it sits outside the login, next to the local pin and the
+        // nicknames. It goes through the app rather than staying in the browser because the same
+        // lines are on the overlay and in the file that survives a restart: hiding them in one of the
+        // three would only mean meeting them again tomorrow.
+        app.MapPost("/api/chat/trim", (TrimHistoryRequest request) =>
+        {
+            if (request.Before <= 0) return Problem("Vet inte var det tidigare passet slutade.");
+            int removed = context.Hub.TrimHistoryBefore(DateTimeOffset.FromUnixTimeMilliseconds(request.Before));
+            return Results.Json(new { removed }, DockJson.Options);
+        });
+
         // The IRC socket stays authenticated until it is torn down, so a logout has to be enforced
         // here too – hiding the composer in the dock is not what makes sending stop.
         app.MapPost("/api/chat/send", async (SendMessageRequest request) =>

@@ -32,14 +32,14 @@ public static class ChatHistoryMerge
         // service gave it, and the content we already had.
         foreach (ChatTimelineItem item in fetched.Concat(mine))
         {
-            if (KeyOf(item) is not { } key) continue;
-            if (TimeOf(item) < cutoff) continue;
+            if (IdOf(item) is not { } key) continue;
+            if (item.At < cutoff) continue;
             if (!byId.ContainsKey(key)) order.Add(key);
             byId[key] = item;
         }
 
         List<ChatTimelineItem> merged = order.Select(key => byId[key])
-            .OrderBy(TimeOf)
+            .OrderBy(item => item.At)
             .ToList();
         return merged.Count > limit ? merged[^limit..] : merged;
     }
@@ -48,12 +48,13 @@ public static class ChatHistoryMerge
     /// What makes a line itself. Twitch's message id is the honest answer and is on everything that
     /// came off the wire; a line without one is ours alone – a local echo – and cannot be a duplicate
     /// of anything the service has, so it is kept under a key of its own.
+    ///
+    /// <para>Shared rather than private because the same question is asked in a second place: before
+    /// the overlay is redrawn, the lines still waiting to be drawn on it have to be told apart from
+    /// the ones the redraw already covers.</para>
     /// </summary>
-    private static string? KeyOf(ChatTimelineItem item) =>
+    internal static string? IdOf(ChatTimelineItem item) =>
         item.Message is { } message ? "m:" + message.Id
         : item.Event is { } chatEvent ? "e:" + chatEvent.Id
         : null;
-
-    private static DateTimeOffset TimeOf(ChatTimelineItem item) =>
-        item.Message?.SentAt ?? item.Event?.At ?? DateTimeOffset.MinValue;
 }

@@ -46,6 +46,14 @@ public sealed class ChatHub(
 
     public int ClientCount => _clients.Count;
 
+    /// <summary>
+    /// Lines were dropped from the timeline by a reader rather than by chat moving on – today only
+    /// the dock's "hide the earlier sitting" button. The window listens, because the overlay draws
+    /// from its own cards and the disk copy from its own file: without this, lines put away in the
+    /// dock would still be on the stream, and back in both after the next restart.
+    /// </summary>
+    public event Action? HistoryTrimmed;
+
     /// <summary>Twitch room id of the joined channel; needed as broadcaster_id for moderation.</summary>
     public string BroadcasterId { get; set; } = string.Empty;
 
@@ -208,10 +216,9 @@ public sealed class ChatHub(
     /// Replaces the whole timeline – a saved history at startup, or that history rebuilt once the
     /// fetched lines from before we connected have been woven into it.
     ///
-    /// <para>Open docks are cleared and redrawn, which is what makes the second case work: by then a
-    /// dock may already be showing live lines, and the fetched ones belong above them rather than
-    /// appended underneath. At startup there is no dock connected yet, so the same call sends
-    /// nothing.</para>
+    /// <para>Open docks are redrawn, which is what makes the second case work: by then a dock may
+    /// already be showing live lines, and the fetched ones belong above them rather than appended
+    /// underneath. At startup there is no dock connected yet, so the same call sends nothing.</para>
     /// </summary>
     public void ReplaceHistory(IReadOnlyList<ChatTimelineItem> items)
     {
@@ -225,19 +232,58 @@ public sealed class ChatHub(
             // Restored lines are real chat, so the samples must not come back over them – and the next
             // real message must not wipe them the way it wipes a preview.
             _showingSamples = false;
-
-            // Redrawn from the queue rather than from the argument, and inside the same lock: the
-            // dock is then shown exactly the timeline a reconnect would replay, and a live line
-            // arriving mid-redraw waits its turn instead of being clear-ed off the open page.
-            Send(DockJson.Serialize(new DockEnvelope<object?>("clear", null)));
-            foreach (ChatTimelineItem item in _history)
-            {
-                Send(item.Event is { } chatEvent
-                    ? DockJson.Serialize(new DockEnvelope<DockEvent>("event", DockMapper.ToDock(chatEvent)))
-                    : DockJson.Serialize(new DockEnvelope<DockMessage>("message", ToDock(item.Message!))));
-            }
+            Redraw();
         }
     }
+
+    /// <summary>
+    /// Drops every line older than <paramref name="cutoff"/>. What the dock's earlier-sitting button
+    /// calls: the chat now survives a restart, so a dock can open onto this morning's lines sitting
+    /// above tonight's first "hej", and putting them away has to mean away – not hidden in one
+    /// browser until the next reload brings them back.
+    /// </summary>
+    /// <returns>
+    /// How many lines went, so the dock can say it out loud. Usually more than the reader could see:
+    /// the dock keeps fewer lines on screen than the timeline holds.
+    /// </returns>
+    public int TrimHistoryBefore(DateTimeOffset cutoff)
+    {
+        int removed;
+        lock (_historyLock)
+        {
+            // The sample lines are a preview of the reading settings rather than anyone's chat, and
+            // they all carry the moment they were made – there is no earlier sitting among them.
+            if (_showingSamples) return 0;
+
+            ChatTimelineItem[] kept = _history.Where(item => item.At >= cutoff).ToArray();
+            removed = _history.Count - kept.Length;
+            if (removed == 0) return 0;
+
+            _history.Clear();
+            foreach (ChatTimelineItem item in kept) _history.Enqueue(item);
+            // Put away has to stay put away across a restart, so this counts as a change worth writing.
+            _historyVersion++;
+            Redraw();
+        }
+        // Outside the lock: the window answers this by reading the history back for the overlay and
+        // for the file, and nothing about that belongs inside a lock the fan-out holds.
+        HistoryTrimmed?.Invoke();
+        return removed;
+    }
+
+    /// <summary>
+    /// Hands every open dock the timeline as it now stands. Callers hold <see cref="_historyLock"/>,
+    /// so what goes out is exactly what a reconnect would replay, and a live line arriving mid-redraw
+    /// waits its turn instead of being wiped by a redraw that was decided before it existed.
+    ///
+    /// <para>One frame rather than a clear followed by the lines again: the dock paces incoming
+    /// messages at the reading speed the user chose, and two hundred lines sent as messages would
+    /// trickle back onto the page for a minute. Deliberately not a clear either – the channel has not
+    /// changed, so the pinned strip has no reason to lose what it is holding.</para>
+    /// </summary>
+    private void Redraw() =>
+        Send(DockJson.Serialize(new DockEnvelope<IReadOnlyList<DockHistoryItem>>(
+            "history", _history.Select(ToDock).ToArray())));
 
     public void PublishModeration(ChatModerationEvent moderation)
     {

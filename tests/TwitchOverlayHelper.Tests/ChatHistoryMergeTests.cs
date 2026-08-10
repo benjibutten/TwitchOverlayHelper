@@ -26,6 +26,19 @@ public sealed class ChatHistoryMergeTests
         Assert.Equal("a", Assert.Single(merged).Message?.Id);
     }
 
+    /// <summary>
+    /// Identity is asked for in two places now – here, and before the overlay is redrawn, to tell the
+    /// lines still waiting to be drawn from the ones the redraw already covers. A message and an event
+    /// that happen to share an id are two different lines, and if the answer let them collide the
+    /// second place would quietly drop a sub notice because a message had the same id.
+    /// </summary>
+    [Fact]
+    public void AMessageAndAnEventAreNeverTheSameLine()
+    {
+        Assert.NotEqual(ChatHistoryMerge.IdOf(Message("x", "hej", 5)), ChatHistoryMerge.IdOf(Event("x", 5)));
+        Assert.Equal(ChatHistoryMerge.IdOf(Message("x", "hej", 5)), ChatHistoryMerge.IdOf(Message("x", "hej igen", 1)));
+    }
+
     [Fact]
     public void OurOwnCopyWinsOverTheFetchedOne()
     {

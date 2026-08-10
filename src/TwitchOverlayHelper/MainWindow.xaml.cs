@@ -174,6 +174,10 @@ public partial class MainWindow : Window
         _loading = false;
         if (_settings.OverlayVisible) _overlay.Show();
 
+        // The dock can put an earlier sitting's lines away. The overlay is showing the same ones and
+        // the file on disk would hand them back at the next start, so both have to follow.
+        _hub.HistoryTrimmed += () => RunOnUi(OnHistoryTrimmed);
+
         // One entry point rather than four handlers: the reward name has to be filled in before the
         // message reaches the views, and that only holds if enrichment happens ahead of the fan-out.
         _chatClient.MessageReceived += OnChatMessage;
@@ -273,9 +277,57 @@ public partial class MainWindow : Window
 
         IReadOnlyList<ChatTimelineItem> merged = ChatHistoryMerge.Combine(
             _hub.SnapshotHistory(), fetched, ChatHistoryStore.MaxItems, ChatHistoryStore.MaxAge, DateTimeOffset.Now);
+        // The fetch took long enough for live lines to have arrived, and some of them are still
+        // waiting to be drawn on the overlay while already being part of what is drawn here.
+        DropPendingAlreadyDrawn(merged);
         _overlay.ReplaceItems(merged);
         _hub.ReplaceHistory(merged);
         AppLog.Info($"Hämtade {fetched.Count} tidigare rader för #{channel}; chatten visar nu {merged.Count}.");
+    }
+
+    /// <summary>
+    /// An earlier sitting was put away from the dock. The overlay keeps its own cards rather than
+    /// reading the hub's timeline, so it is redrawn from what is left; the file is written at once
+    /// rather than at the next tick, because a restart in the twenty seconds in between is exactly
+    /// when it would look as though nothing had been put away at all.
+    /// </summary>
+    private void OnHistoryTrimmed()
+    {
+        IReadOnlyList<ChatTimelineItem> remaining = _hub.SnapshotHistory();
+        DropPendingAlreadyDrawn(remaining);
+        _overlay.ReplaceItems(remaining);
+        AppLog.Info($"Tidigare pass dolt; chatten visar nu {remaining.Count} rader.");
+        SaveChatHistory();
+    }
+
+    /// <summary>
+    /// Takes the lines a redraw of the overlay is about to draw anyway out of the queue of lines
+    /// waiting to be drawn on it. Without this the two accounts are added together: a line that is
+    /// both in the timeline being drawn and still in the queue gets a card from the redraw and
+    /// another one on the next flush.
+    ///
+    /// <para>Matched on identity rather than emptied wholesale, because not everything in this queue
+    /// is in the hub's timeline. A hype train card is drawn on the overlay alone – the dock is handed
+    /// the state and draws a strip instead – so throwing the queue away would lose it for good.</para>
+    ///
+    /// <para>Every line in the timeline was queued for the overlay before it was published to the hub,
+    /// so anything the redraw covers is already in the queue by the time this runs. A line the other
+    /// way around – queued, not yet published – is simply not in the redraw, stays in the queue, and
+    /// is drawn after it. Which is what makes this safe without a lock.</para>
+    /// </summary>
+    private void DropPendingAlreadyDrawn(IReadOnlyList<ChatTimelineItem> drawn)
+    {
+        HashSet<string> ids = new(drawn.Select(ChatHistoryMerge.IdOf).OfType<string>(), StringComparer.Ordinal);
+        List<ChatTimelineItem> keep = [];
+        while (_pendingMessages.TryDequeue(out ChatTimelineItem item))
+        {
+            Interlocked.Decrement(ref _pendingMessageCount);
+            if (ChatHistoryMerge.IdOf(item) is { } id && ids.Contains(id)) continue;
+            keep.Add(item);
+        }
+        // Back on in the order they arrived; none of them has been drawn, so the flush timer still
+        // has work to do and Queue is what keeps it running.
+        foreach (ChatTimelineItem item in keep) Queue(item);
     }
 
     /// <summary>

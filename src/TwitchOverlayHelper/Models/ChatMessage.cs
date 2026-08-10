@@ -285,4 +285,12 @@ public readonly record struct ChatTimelineItem(ChatMessage? Message, ChatEvent? 
 {
     public static ChatTimelineItem Of(ChatMessage message) => new(message, null);
     public static ChatTimelineItem Of(ChatEvent chatEvent) => new(null, chatEvent);
+
+    /// <summary>
+    /// When the line happened, whichever of the two kinds it is. Three things cut a timeline by
+    /// time – what is young enough to restore, how the two accounts of the same chat are woven
+    /// together, and where an earlier sitting ends – and none of them should have to know which half
+    /// of the item is filled in.
+    /// </summary>
+    public DateTimeOffset At => Message?.SentAt ?? Event?.At ?? DateTimeOffset.MinValue;
 }

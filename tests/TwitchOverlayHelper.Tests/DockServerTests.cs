@@ -583,6 +583,59 @@ public sealed class DockServerTests
         client.Dispose();
     }
 
+    /// <summary>
+    /// The earlier-sitting button. It goes through the app rather than hiding nodes in the browser
+    /// precisely so that this happens: the timeline itself loses the lines, which is what keeps them
+    /// off the overlay and out of the file that survives a restart.
+    /// </summary>
+    [Fact]
+    public async Task HidesTheEarlierSittingForEveryDock()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            DateTimeOffset evening = DateTimeOffset.Now;
+            hub.ReplaceHistory([
+                ChatTimelineItem.Of(Line("morgon", evening.AddHours(-9))),
+                ChatTimelineItem.Of(Line("kvall", evening)),
+            ]);
+
+            string[] frames = await FramesAfterHelloAsync(settings, 1, () =>
+            {
+                HttpResponseMessage response = client.PostAsJsonAsync(
+                    $"/api/chat/trim?key={settings.DockAccessKey}",
+                    new { before = evening.ToUnixTimeMilliseconds() }).GetAwaiter().GetResult();
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                using JsonDocument body = JsonDocument.Parse(response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+                Assert.Equal(1, body.RootElement.GetProperty("removed").GetInt32());
+            });
+
+            // One frame with the whole remaining timeline, not a clear followed by the lines again:
+            // replayed as messages they would trickle back in at the reader's chosen pace.
+            using JsonDocument frame = JsonDocument.Parse(frames[0]);
+            Assert.Equal("history", frame.RootElement.GetProperty("type").GetString());
+            JsonElement payload = frame.RootElement.GetProperty("payload");
+            Assert.Equal(1, payload.GetArrayLength());
+            Assert.Equal("kvall", payload[0].GetProperty("message").GetProperty("id").GetString());
+        }
+        client.Dispose();
+    }
+
+    [Fact]
+    public async Task RefusesToHideTheEarlierSittingWithoutAPointToCutAt()
+    {
+        (DockServer server, AppSettings settings, HttpClient client) = await StartAsync();
+        await using (server)
+        {
+            Assert.Contains("Vet inte var", await ErrorOfAsync(await client.PostAsJsonAsync(
+                $"/api/chat/trim?key={settings.DockAccessKey}", new { before = 0 })));
+        }
+        client.Dispose();
+    }
+
+    private static ChatMessage Line(string id, DateTimeOffset at) =>
+        new(id, "Kajsa", "hej", "#A970FF", [], false, false, at) { UserId = "7", UserLogin = "kajsa" };
+
     [Fact]
     public async Task RefusesANicknameWithNobodyToPutItOn()
     {
