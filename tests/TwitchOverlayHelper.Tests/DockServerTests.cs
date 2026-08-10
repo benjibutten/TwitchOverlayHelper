@@ -565,6 +565,56 @@ public sealed class DockServerTests
     }
 
     /// <summary>
+    /// The preview lines are the only thing the stream overlay has to aim at while nothing is
+    /// connected, which is exactly when somebody is dragging the browser source into place in OBS.
+    ///
+    /// <para>They used to arrive as ordinary chat, every one of them carrying the moment the app
+    /// started – and the page drops a replayed line once it is older than the window it would
+    /// honestly replay. A few minutes in, every reload of the source therefore met an empty page,
+    /// and only restarting the whole app brought the lines back. Saying what they are is what lets
+    /// the page leave them alone.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheStreamOverlayIsToldWhenItsLinesAreThePreview()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            hub.ShowSamples();
+
+            using JsonDocument hello = JsonDocument.Parse(await HelloAsync(settings, "stream"));
+            Assert.True(hello.RootElement.GetProperty("samples").GetBoolean());
+            Assert.True(hello.RootElement.GetProperty("history").GetArrayLength() > 0);
+        }
+        client.Dispose();
+    }
+
+    /// <summary>
+    /// Joining the channel is what ends the preview, not the first line somebody happens to write.
+    /// A quiet first quarter of an hour is an ordinary way for a stream to start, and until this the
+    /// invented lines sat in front of the viewers for the whole of it.
+    /// </summary>
+    [Fact]
+    public async Task ConnectingToTheChannelTakesThePreviewDown()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            hub.ShowSamples();
+
+            string[] frames = await FramesAfterHelloAsync(settings, 1, hub.ClearSamples, "stream");
+            using JsonDocument frame = JsonDocument.Parse(frames[0]);
+            Assert.Equal("clear", frame.RootElement.GetProperty("type").GetString());
+
+            // And nothing is left for the next page that opens, either.
+            using JsonDocument hello = JsonDocument.Parse(await HelloAsync(settings, "stream"));
+            Assert.False(hello.RootElement.GetProperty("samples").GetBoolean());
+            Assert.Equal(0, hello.RootElement.GetProperty("history").GetArrayLength());
+        }
+        client.Dispose();
+    }
+
+    /// <summary>
     /// Being disconnected, and why, is something the app knows about itself. The dock says it out
     /// loud in its top bar; the page on the broadcast is not told at all.
     /// </summary>

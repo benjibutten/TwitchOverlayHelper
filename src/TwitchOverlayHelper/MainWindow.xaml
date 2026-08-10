@@ -77,6 +77,20 @@
         <Style x:Key="StackedCard" TargetType="Border" BasedOn="{StaticResource Card}">
             <Setter Property="Margin" Value="0,16,0,0" />
         </Style>
+        <!-- A field holding a number rather than a sentence. Narrower padding than the ordinary
+             input, because what it holds is three or four characters and the padding was eating
+             most of the box: at the settings window's smallest size the value being typed was
+             scrolled out of sight by the caret. Centred for the same reason a price is – there is
+             nothing to line up with on either side. -->
+        <Style x:Key="NumberField" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Padding" Value="8,9" />
+            <Setter Property="TextAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="TableHeading" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource HintTextBrush}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="VerticalAlignment" Value="Bottom" />
+        </Style>
     </Window.Resources>
 
     <Grid>
@@ -457,60 +471,6 @@
                             <StackPanel Grid.Column="2" Style="{StaticResource Column}">
                                 <Border Style="{StaticResource Card}">
                                     <StackPanel>
-                                        <TextBlock Text="Belöningar som ger pets" Style="{StaticResource SubTitle}" />
-                                        <Grid Margin="0,12,0,4">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="18" /><ColumnDefinition Width="4" /><ColumnDefinition Width="*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="1.2*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="42" /><ColumnDefinition Width="6" /><ColumnDefinition Width="56" /><ColumnDefinition Width="6" /><ColumnDefinition Width="30" /><ColumnDefinition Width="6" /><ColumnDefinition Width="30" /></Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="2" Text="Namn" Foreground="{StaticResource HintTextBrush}" FontSize="11" />
-                                            <TextBlock Grid.Column="4" Text="Belönings-ID" Foreground="{StaticResource HintTextBrush}" FontSize="11" />
-                                            <TextBlock Grid.Column="6" Text="Min" Foreground="{StaticResource HintTextBrush}" FontSize="11" />
-                                            <TextBlock Grid.Column="8" Text="Poäng" Foreground="{StaticResource HintTextBrush}" FontSize="11" />
-                                        </Grid>
-                                        <ItemsControl x:Name="PetRewardList">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Grid Margin="0,0,0,6">
-                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="18" /><ColumnDefinition Width="4" /><ColumnDefinition Width="*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="1.2*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="42" /><ColumnDefinition Width="6" /><ColumnDefinition Width="56" /><ColumnDefinition Width="6" /><ColumnDefinition Width="30" /><ColumnDefinition Width="6" /><ColumnDefinition Width="30" /></Grid.ColumnDefinitions>
-                                                        <TextBlock Text="{Binding StatusGlyph}" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="12"
-                                                                   ToolTip="🔒 = skapad av appen och kan återbetalas. — = skapad för hand i Twitch, poängen kan inte lämnas tillbaka." />
-                                                        <TextBox Grid.Column="2" Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
-                                                                 ToolTip="Namnet belöningen får i Twitch när du skapar den härifrån. Används annars bara som din egen anteckning." />
-                                                        <!-- Låst när appen skapat belöningen: ID:t är det enda som binder raden till den belöning
-                                                             Twitch låter oss svara på, och ett ändrat ID skulle lämna 🔒 kvar på en rad som inte
-                                                             längre kan återbetala. Peka om en rad genom att ta bort den och skapa en ny. -->
-                                                        <TextBox Grid.Column="4" Text="{Binding RewardId, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed" FontFamily="Consolas"
-                                                                 IsReadOnly="{Binding Managed}"
-                                                                 ToolTip="Belöningens ID från Twitch. Lämna tomt så gäller raden alla övriga inlösen. Skapade appen belöningen är ID:t låst – ta bort raden och gör en ny för att peka om den." />
-                                                        <TextBox Grid.Column="6" Text="{Binding Minutes, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
-                                                                 LostKeyboardFocus="PetRewardMinutes_LostKeyboardFocus" ToolTip="1–60 minuter" />
-                                                        <TextBox Grid.Column="8" Text="{Binding Cost, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
-                                                                 LostKeyboardFocus="PetRewardCost_LostKeyboardFocus" ToolTip="Vad belöningen ska kosta i channel points när appen skapar den." />
-                                                        <Button Grid.Column="10" Content="⚡" Background="#343B50" Padding="0,7" Click="CreatePetReward_Click"
-                                                                ToolTip="Skapa belöningen i Twitch från den här raden. Bara belöningar appen själv skapat kan återbetalas." />
-                                                        <Button Grid.Column="12" Content="✕" Background="#343B50" Padding="0,7" Click="RemovePetReward_Click"
-                                                                ToolTip="Ta bort raden. Belöningen ligger kvar i Twitch." />
-                                                    </Grid>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                        <TextBlock x:Name="PetRewardEmptyText" Text="Inga belöningar tillagda – varje channel points-inlösen med textfält ger en pet på standardtiden."
-                                                   Style="{StaticResource Hint}" Margin="0,0,0,4" />
-                                        <Grid Margin="0,6,0,0">
-                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                                            <Button x:Name="AddPetRewardButton" Content="+ Lägg till belöning" Background="#343B50" Click="AddPetReward_Click" />
-                                            <Button x:Name="UseLastRewardButton" Grid.Column="2" Content="Använd senaste inlösta" Background="#343B50" IsEnabled="False" Click="UseLastReward_Click"
-                                                    ToolTip="Lägger till en rad med ID:t från den senaste inlösen i chatten" />
-                                        </Grid>
-                                        <TextBlock x:Name="LastRewardText" Text="Ingen inlösen har synts i chatten ännu." Style="{StaticResource Hint}" Margin="0,8,0,0" />
-                                        <TextBlock x:Name="PetRewardStatusText" Text="" Style="{StaticResource Hint}" Margin="0,4,0,0" TextWrapping="Wrap" />
-                                        <TextBlock Text="⚡ skapar belöningen i Twitch åt dig, med kön påslagen så att poängen kan lämnas tillbaka. En pet som aldrig ritades – overlayen nere, gräsmattan full – återbetalas automatiskt, och en som levde klart bokförs som klar. Belöningar du skapat för hand i Twitch fungerar precis som förut, men går aldrig att återbetala härifrån."
-                                                   Style="{StaticResource Hint}" Margin="0,10,0,0" />
-                                        <TextBlock Text="Kräver att belöningen ber tittaren skriva något om arten ska kunna väljas. Du och dina moderatorer kan testa med !pet eller !pet namn, t.ex. !pet boo."
-                                                   Style="{StaticResource Hint}" Margin="0,6,0,0" />
-                                    </StackPanel>
-                                </Border>
-
-                                <Border Style="{StaticResource StackedCard}">
-                                    <StackPanel>
                                         <TextBlock Text="Tillgängliga pets" Style="{StaticResource SubTitle}" />
                                         <TextBlock x:Name="PetListText" Text="" Style="{StaticResource Hint}" Margin="0,8,0,0" LineHeight="19" />
                                         <Grid Margin="0,14,0,0">
@@ -526,6 +486,64 @@
                                 </Border>
                             </StackPanel>
                         </Grid>
+
+                        <!-- Hela sidans bredd, inte en av kolumnerna: raden är en tabell med sex fält,
+                             och ett Twitch-ID är 36 tecken. I en halv kolumn blev varje ruta så smal
+                             att siffran man skrev in låg utanför den synliga delen av fältet. -->
+                        <Border Style="{StaticResource StackedCard}">
+                            <StackPanel>
+                                <TextBlock Text="Belöningar som ger pets" Style="{StaticResource SubTitle}" />
+                                <Grid x:Name="PetRewardHeader" Margin="0,14,0,5">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="20" /><ColumnDefinition Width="6" /><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="1.5*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="78" /><ColumnDefinition Width="8" /><ColumnDefinition Width="96" /><ColumnDefinition Width="8" /><ColumnDefinition Width="40" /><ColumnDefinition Width="6" /><ColumnDefinition Width="40" /></Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="2" Text="Namn" Style="{StaticResource TableHeading}" />
+                                    <TextBlock Grid.Column="4" Text="Belönings-ID" Style="{StaticResource TableHeading}" />
+                                    <TextBlock Grid.Column="6" Text="Minuter" Style="{StaticResource TableHeading}" HorizontalAlignment="Center" />
+                                    <TextBlock Grid.Column="8" Text="Poäng" Style="{StaticResource TableHeading}" HorizontalAlignment="Center" />
+                                </Grid>
+                                <ItemsControl x:Name="PetRewardList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,7">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="20" /><ColumnDefinition Width="6" /><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="1.5*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="78" /><ColumnDefinition Width="8" /><ColumnDefinition Width="96" /><ColumnDefinition Width="8" /><ColumnDefinition Width="40" /><ColumnDefinition Width="6" /><ColumnDefinition Width="40" /></Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding StatusGlyph}" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="12"
+                                                           ToolTip="🔒 = skapad av appen och kan återbetalas. — = skapad för hand i Twitch, poängen kan inte lämnas tillbaka." />
+                                                <TextBox Grid.Column="2" Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
+                                                         ToolTip="Namnet belöningen får i Twitch när du skapar den härifrån. Används annars bara som din egen anteckning." />
+                                                <!-- Låst när appen skapat belöningen: ID:t är det enda som binder raden till den belöning
+                                                     Twitch låter oss svara på, och ett ändrat ID skulle lämna 🔒 kvar på en rad som inte
+                                                     längre kan återbetala. Peka om en rad genom att ta bort den och skapa en ny. -->
+                                                <TextBox Grid.Column="4" Text="{Binding RewardId, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
+                                                         FontFamily="Consolas" FontSize="12" Padding="9,10"
+                                                         IsReadOnly="{Binding Managed}"
+                                                         ToolTip="Belöningens ID från Twitch. Lämna tomt så gäller raden alla övriga inlösen. Skapade appen belöningen är ID:t låst – ta bort raden och gör en ny för att peka om den." />
+                                                <TextBox Grid.Column="6" Style="{StaticResource NumberField}" Text="{Binding Minutes, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
+                                                         LostKeyboardFocus="PetRewardMinutes_LostKeyboardFocus" ToolTip="1–60 minuter" />
+                                                <TextBox Grid.Column="8" Style="{StaticResource NumberField}" Text="{Binding Cost, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
+                                                         LostKeyboardFocus="PetRewardCost_LostKeyboardFocus" ToolTip="Vad belöningen ska kosta i channel points när appen skapar den." />
+                                                <Button Grid.Column="10" Content="⚡" Background="#343B50" Padding="0,8" Click="CreatePetReward_Click"
+                                                        ToolTip="Skapa belöningen i Twitch från den här raden. Bara belöningar appen själv skapat kan återbetalas." />
+                                                <Button Grid.Column="12" Content="✕" Background="#343B50" Padding="0,8" Click="RemovePetReward_Click"
+                                                        ToolTip="Ta bort raden. Belöningen ligger kvar i Twitch." />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock x:Name="PetRewardEmptyText" Text="Inga belöningar tillagda – varje channel points-inlösen med textfält ger en pet på standardtiden."
+                                           Style="{StaticResource Hint}" Margin="0,0,0,4" />
+                                <Grid Margin="0,6,0,0" HorizontalAlignment="Left">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="10" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <Button x:Name="AddPetRewardButton" Content="+ Lägg till belöning" Background="#343B50" Click="AddPetReward_Click" />
+                                    <Button x:Name="UseLastRewardButton" Grid.Column="2" Content="Använd senaste inlösta" Background="#343B50" IsEnabled="False" Click="UseLastReward_Click"
+                                            ToolTip="Lägger till en rad med ID:t från den senaste inlösen i chatten" />
+                                </Grid>
+                                <TextBlock x:Name="LastRewardText" Text="Ingen inlösen har synts i chatten ännu." Style="{StaticResource Hint}" Margin="0,8,0,0" />
+                                <TextBlock x:Name="PetRewardStatusText" Text="" Style="{StaticResource Hint}" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                <TextBlock Text="⚡ skapar belöningen i Twitch åt dig, med kön påslagen så att poängen kan lämnas tillbaka. En pet som aldrig ritades – overlayen nere, gräsmattan full – återbetalas automatiskt, och en som levde klart bokförs som klar. Belöningar du skapat för hand i Twitch fungerar precis som förut, men går aldrig att återbetala härifrån."
+                                           Style="{StaticResource Hint}" Margin="0,10,0,0" />
+                                <TextBlock Text="Kräver att belöningen ber tittaren skriva något om arten ska kunna väljas. Du och dina moderatorer kan testa med !pet eller !pet namn, t.ex. !pet boo."
+                                           Style="{StaticResource Hint}" Margin="0,6,0,0" />
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

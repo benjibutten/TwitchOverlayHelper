@@ -133,8 +133,21 @@ internal sealed record DockHello(
 /// <para>The history is cut to what the overlay could show anyway. A page that draws a dozen lines
 /// has no use for two hundred, and this is the frame that would otherwise be the largest thing the
 /// server ever sends.</para>
+///
+/// <para><paramref name="Samples"/> says the lines are the preview rather than chat, which is the
+/// difference between "put these back if they are still recent" and "draw these and leave them
+/// there".</para>
 /// </summary>
-internal sealed record DockStreamHello(string Type, StreamSettings Stream, IReadOnlyList<DockHistoryItem> History);
+internal sealed record DockStreamHello(
+    string Type, StreamSettings Stream, IReadOnlyList<DockHistoryItem> History, bool Samples);
+
+/// <summary>
+/// The preview lines, as a preview. Its own frame rather than the messages they imitate: a page has
+/// to be able to tell invented lines from chat, or it applies the rules for chat to them – dropping
+/// them for being old, fading them out – and takes down the only thing on screen while nothing is
+/// connected.
+/// </summary>
+internal sealed record DockSamples(string Type, IReadOnlyList<DockHistoryItem> Items);
 
 internal sealed record DockPet(string Id, string Name, string? Color, string Species, long SpawnedAt, long ExpiresAt);
 

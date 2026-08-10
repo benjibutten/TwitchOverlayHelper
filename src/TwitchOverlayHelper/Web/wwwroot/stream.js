@@ -66,7 +66,10 @@ function handle(frame) {
   switch (frame.type) {
     case "hello":
       applySettings(frame.stream);
-      drawHistory(frame.history);
+      if (frame.samples) drawSamples(frame.history); else drawHistory(frame.history);
+      return;
+    case "samples":
+      drawSamples(frame.items);
       return;
     case "streamSettings":
       applySettings(frame.payload);
@@ -257,19 +260,39 @@ function rerender() {
   chat.replaceChildren(...items.map(buildItem));
 }
 
+const itemOf = (item) => (item.type === "event" ? { kind: "event", data: item.event } : { kind: "message", data: item.message });
+
 /* A replay: the page opening, or the server redrawing the timeline after the streamer put an earlier
    sitting away. Never animated – these lines are not arriving, they are already here. */
 function drawHistory(items) {
   if (!items) return;
   const oldest = Date.now() - replayWindow();
   const kept = items
-    .map((item) => (item.type === "event" ? { kind: "event", data: item.event } : { kind: "message", data: item.message }))
+    .map(itemOf)
     .filter((item) => shows(item) && timeOf(item) >= oldest)
     .slice(-settings.maxMessages);
 
   pending.length = 0;
   chat.replaceChildren(...kept.map(buildItem));
   startSweeping();
+}
+
+/* The made-up lines the app shows while nothing is connected, so the overlay can be aimed at
+   something when it is dragged into place in OBS.
+
+   They are not chat and neither rule for chat applies to them. The replay window is skipped because
+   they all carry the moment the app started: half an hour into a session they are older than any
+   window we would honestly allow, and reloading the source – which is most of what placing one
+   consists of – would leave a blank page that only restarting the whole app could fill. The fade is
+   skipped for the same reason from the other end: a preview that has quietly swept itself away is a
+   preview of nothing. Real chat takes them down, and so does connecting to a channel. */
+function drawSamples(items) {
+  if (!items) return;
+  const kept = items.map(itemOf).filter(shows).slice(-settings.maxMessages);
+  for (const item of kept) item.sample = true;
+
+  pending.length = 0;
+  chat.replaceChildren(...kept.map(buildItem));
 }
 
 /* ------------------------------------------------------------------ leaving
@@ -297,10 +320,12 @@ function sweep() {
   // A snapshot: with animations off, retiring a line removes it there and then, and a live
   // collection would hand us the next node twice and skip one.
   for (const node of [...chat.children]) {
-    if (node.dataset.leaving === "true" || !node.item) continue;
+    if (node.dataset.leaving === "true" || !node.item || node.item.sample) continue;
     if (timeOf(node.item) <= cutoff) retire(node);
   }
-  if (chat.children.length === 0) stopSweeping();
+  // Nothing left that can ever age – an empty column, or one holding only the preview – so there is
+  // nothing for the timer to come back for. Every arriving line starts it again.
+  if (![...chat.children].some((node) => node.item && !node.item.sample)) stopSweeping();
 }
 
 function retire(node) {

@@ -219,16 +219,39 @@ public sealed class ChatHub(
         }
     }
 
+    /// <summary>
+    /// Takes the preview down, because the app has joined a channel and everything from here is real
+    /// chat. Called on connect rather than left to the first line that arrives: a room that stays
+    /// quiet for the first ten minutes of a stream would otherwise have six invented lines and a made
+    /// up subscription sitting on the broadcast the whole time, and the viewers cannot tell them from
+    /// the real thing.
+    /// </summary>
+    public void ClearSamples()
+    {
+        lock (_historyLock)
+        {
+            if (_showingSamples) DropSamples();
+        }
+    }
+
+    /// <summary>
+    /// The samples go, and every page hears that the column is empty. Callers hold
+    /// <see cref="_historyLock"/>. Deliberately no version bump: the samples were never part of what
+    /// gets saved, so nothing about the file on disk has changed.
+    /// </summary>
+    private void DropSamples()
+    {
+        _showingSamples = false;
+        _history.Clear();
+        Send(DockJson.Serialize(new DockEnvelope<object?>("clear", null)));
+    }
+
     /// <summary>Adds one item to the timeline. Callers hold <see cref="_historyLock"/>.</summary>
     private void Remember(ChatTimelineItem item)
     {
-        // The first real line replaces the sample lines that showed what the dock looks like.
-        if (_showingSamples)
-        {
-            _showingSamples = false;
-            _history.Clear();
-            Send(DockJson.Serialize(new DockEnvelope<object?>("clear", null)));
-        }
+        // A line that arrived before the connect could take the samples down – our own echo, a test
+        // pet, the very first "hej" – replaces them the same way it always did.
+        if (_showingSamples) DropSamples();
 
         _history.Enqueue(item);
         while (_history.Count > HistoryLimit) _history.Dequeue();
@@ -448,6 +471,12 @@ public sealed class ChatHub(
     /// <summary>
     /// Sample lines so an unconnected dock shows what the reading settings actually look like,
     /// rather than an empty column.
+    ///
+    /// <para>Sent as one frame that says what they are, rather than as the messages they pretend to
+    /// be. The pages need to be able to tell: on the stream overlay a replayed line is dropped once
+    /// it is older than the fade time, and these all carry the moment the app started – as ordinary
+    /// chat they would be gone from every reload a few minutes into the run, which is exactly when
+    /// somebody is placing the browser source in OBS and has nothing else to aim at.</para>
     /// </summary>
     public void ShowSamples()
     {
@@ -477,9 +506,7 @@ public sealed class ChatHub(
             foreach (ChatMessage sample in samples) _history.Enqueue(ChatTimelineItem.Of(sample));
             _history.Enqueue(ChatTimelineItem.Of(sampleEvent));
 
-            foreach (ChatMessage sample in samples)
-                Send(DockJson.Serialize(new DockEnvelope<DockMessage>("message", ToDock(sample))));
-            Send(DockJson.Serialize(new DockEnvelope<DockEvent>("event", DockMapper.ToDock(sampleEvent))));
+            Send(DockJson.Serialize(new DockSamples("samples", _history.Select(ToDock).ToArray())));
         }
     }
 
@@ -497,8 +524,16 @@ public sealed class ChatHub(
     {
         int depth = Math.Clamp(settings.Stream.MaxMessages * 4, 40, HistoryLimit);
         ChatTimelineItem[] history;
-        lock (_historyLock) history = _history.TakeLast(depth).ToArray();
-        return DockJson.Serialize(new DockStreamHello("hello", settings.Stream, history.Select(ToDock).ToArray()));
+        bool samples;
+        lock (_historyLock)
+        {
+            history = _history.TakeLast(depth).ToArray();
+            samples = _showingSamples;
+        }
+        // Said out loud, because the page treats the two completely differently: replayed chat is
+        // dropped once it is too old to be worth putting back in front of the viewers, and a preview
+        // has no age – it is what the overlay is aimed at while nothing is connected.
+        return DockJson.Serialize(new DockStreamHello("hello", settings.Stream, history.Select(ToDock).ToArray(), samples));
     }
 
     /// <summary>

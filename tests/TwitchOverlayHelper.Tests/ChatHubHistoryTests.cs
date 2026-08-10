@@ -90,6 +90,36 @@ public sealed class ChatHubHistoryTests
         Assert.Equal("b", only.Message?.Id);
     }
 
+    // The samples were never part of what gets written to disk, so taking them down cannot be a
+    // change to it: a version bump here would rewrite the file for something that was never in it.
+    [Fact]
+    public void TakingThePreviewDownIsNotAChangeWorthSaving()
+    {
+        ChatHub hub = Hub("kanalen");
+        hub.ShowSamples();
+        long before = hub.HistoryVersion;
+
+        hub.ClearSamples();
+
+        Assert.Equal(before, hub.HistoryVersion);
+        Assert.Empty(hub.SnapshotHistory());
+    }
+
+    // Once the preview is down, the lines that follow are the timeline – nothing may wipe them the
+    // way the first real line used to wipe the samples.
+    [Fact]
+    public void LinesAfterThePreviewIsDownAreKept()
+    {
+        ChatHub hub = Hub("kanalen");
+        hub.ShowSamples();
+        hub.ClearSamples();
+
+        hub.PublishMessage(Message("a", "hej"));
+        hub.PublishMessage(Message("b", "hej igen"));
+
+        Assert.Equal(["a", "b"], hub.SnapshotHistory().Select(item => item.Message?.Id));
+    }
+
     [Fact]
     public void MarkingAMessageCountsAsAChangeWorthSaving()
     {

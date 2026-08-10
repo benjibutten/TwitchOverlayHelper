@@ -662,8 +662,20 @@ public partial class MainWindow : Window
     private void SavePetRewards()
     {
         _settings.Pets.Rewards = _petRewards.ToList();
-        PetRewardEmptyText.Visibility = _petRewards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ShowPetRewardTable();
         SaveSettings();
+    }
+
+    /// <summary>
+    /// The table's two halves, which are only ever right together: column headings standing over an
+    /// empty list are headings for nothing, and the line explaining that the list is empty has no
+    /// business under a list that is not.
+    /// </summary>
+    private void ShowPetRewardTable()
+    {
+        bool empty = _petRewards.Count == 0;
+        PetRewardHeader.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+        PetRewardEmptyText.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>
@@ -965,6 +977,10 @@ public partial class MainWindow : Window
     {
         _hub.BroadcasterId = roomId;
         _hub.PublishAuth(_chatClient.CanSend);
+        // We are in the room, so the preview lines have had their moment. Taken down here rather
+        // than by the first real message: in a quiet room that message can be twenty minutes away,
+        // and until it came the stream overlay was showing invented chat to actual viewers.
+        _hub.ClearSamples();
         // First, so the chat reads on from where it left off as early as possible – and before the
         // slower Twitch calls below have a chance to hold it up.
         await BackfillRecentMessagesAsync(_settings.Channel);
@@ -1528,7 +1544,7 @@ public partial class MainWindow : Window
         PetMaxInput.Text = _settings.Pets.MaxPets.ToString();
         foreach (PetRewardRule rule in _settings.Pets.Rewards) _petRewards.Add(rule);
         PetRewardList.ItemsSource = _petRewards;
-        PetRewardEmptyText.Visibility = _petRewards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ShowPetRewardTable();
         RefreshPetCatalogUi();
         ToggleHotkeyLabel.Text = _settings.ToggleHotkeyText;
         EditHotkeyLabel.Text = _settings.EditHotkeyText;

@@ -132,6 +132,16 @@ function handle(frame) {
     drawHistory(frame.payload);
     return;
   }
+  /* The made-up lines the app shows while nothing is connected. Drawn at once rather than pushed
+     through the pacer, because they did not arrive one after another – they are a picture of what
+     the reading settings do, and a picture should not assemble itself over the next few seconds. */
+  if (frame.type === "samples") {
+    el.chat.replaceChildren();
+    state.queue.length = 0;
+    state.missed = 0;
+    drawHistory(frame.items);
+    return;
+  }
   if (frame.type === "message") { state.queue.push(msg(frame.payload)); return; }
   // Dropped here rather than at render, so a hidden card never counts as something the reader is
   // behind on: the jump button counts what is waiting in the queue.
