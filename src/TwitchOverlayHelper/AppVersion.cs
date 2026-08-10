@@ -8,11 +8,14 @@ namespace TwitchOverlayHelper;
 /// </summary>
 internal static class AppVersion
 {
+    /// <summary>The stamped version, or the placeholder 1.0.0.0 that a local build carries.</summary>
+    public static Version? Current { get; } = Assembly.GetExecutingAssembly().GetName().Version;
+
     public static string DisplayText { get; } = Compute();
 
     private static string Compute()
     {
-        var version = Assembly.GetExecutingAssembly().GetName().Version;
+        var version = Current;
 
         if (version is null || version.Major < 2000)
         {

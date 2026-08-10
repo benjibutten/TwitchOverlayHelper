@@ -18,6 +18,7 @@ using TwitchOverlayHelper.Services;
 using TwitchOverlayHelper.Settings;
 using TwitchOverlayHelper.Speech;
 using TwitchOverlayHelper.Twitch;
+using TwitchOverlayHelper.Updates;
 using TwitchOverlayHelper.Web;
 
 namespace TwitchOverlayHelper;
@@ -886,6 +887,12 @@ public partial class MainWindow : Window
         // not what the user is looking at, and asking someone to find %LOCALAPPDATA% over voice chat
         // is how a log nobody reads stays unread.
         menu.Items.Add("Visa loggar", null, (_, _) => AppLog.OpenFolder());
+        menu.Items.Add("Sök efter uppdateringar", null, async (_, _) =>
+        {
+            // The dialogs need a visible owner, and the tray is exactly where the window is not.
+            ShowAndActivate();
+            await UpdateCoordinator.CheckAsync(this, manual: true);
+        });
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("Avsluta", null, (_, _) => ExitApplication());
 
@@ -942,6 +949,16 @@ public partial class MainWindow : Window
         _exitRequested = true;
         Close();
     }
+
+    private async void CheckForUpdates_Click(object sender, RoutedEventArgs e) =>
+        await UpdateCoordinator.CheckAsync(this, manual: true);
+
+    /// <summary>
+    /// Ends the app the ordinary way while the updater waits for this process to exit. It has to be the
+    /// ordinary way: settings and the last minutes of chat are written during shutdown, and an update
+    /// that costs the user those is not an improvement.
+    /// </summary>
+    internal void ExitForUpdate() => ExitApplication();
 
     /// <summary>
     /// Everything one chat line sets off. The reward name is put on first, so the overlay, the dock

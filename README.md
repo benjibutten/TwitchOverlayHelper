@@ -121,7 +121,16 @@ Om DeepSeek inte svarar läses namnet upp som det står, med en notis om varför
 - Egna smeknamn på chattare, synliga i både dock och overlay, sparade med säkerhetskopia vid varje ändring.
 - Inställningar sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\settings.json`. OAuth-token sparas aldrig.
 - Körs som en enda instans; en ny vanlig start öppnar den redan körande appens inställningsfönster.
+- **Uppdaterar sig själv** från GitHub-släppen. Se [Uppdateringar](#uppdateringar).
 - Valbar **Starta med Windows**-inställning som startar appen minimerad i meddelandefältet utan extra bakgrundstjänst.
+
+## Uppdateringar
+
+Appen håller sig själv uppdaterad. Åtta sekunder efter start – och som mest var tolfte timme – frågar den GitHub om det finns ett nyare släpp, och hittar den ett visar den en fråga. Finns inget nytt säger den ingenting: en dialog mitt i en sändning ska bara dyka upp när den har något att erbjuda. Startar appen minimerad i meddelandefältet väntar kontrollen tills fönstret öppnas.
+
+Säger du ja hämtas zip-filen, kontrolleras mot släppets SHA-256-summa och packas upp av en kopia av appen som kör från `%TEMP%`. Den kopian väntar på att appen stängs ordentligt – inställningar och chatthistorik hinner sparas – byter filerna och startar den nya versionen. Varje fil som skrivs över säkerhetskopieras först, så ett avbrott mitt i installationen lämnar den gamla versionen hel i stället för en halv av varje. Ligger appen i en mapp som kräver administratör frågar Windows om godkännande; ligger den i din egen profil frågar den ingenting.
+
+Vill du kolla själv finns **Sök efter uppdateringar** längst ned i inställningsfönstret och i meddelandefältets meny. En lokal `dotnet run`-byggnad har ingen släppt version och uppdaterar sig aldrig – annars skulle den installera ett släpp ovanpå din arbetskopia.
 
 ## Kör
 

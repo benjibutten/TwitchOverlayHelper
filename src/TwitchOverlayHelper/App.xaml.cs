@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using TwitchOverlayHelper.Diagnostics;
+using TwitchOverlayHelper.Updates;
 
 namespace TwitchOverlayHelper;
 
@@ -16,8 +17,31 @@ public partial class App : Application
     private RegisteredWaitHandle? _activationWaitHandle;
     private bool _ownsSingleInstanceMutex;
 
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
+        // Both update modes run in a copy of the exe in a temp folder, and both must return before the
+        // single-instance mutex below is touched: the app they are waiting for still owns it.
+        if (UpdateInstaller.IsCleanupMode(e.Args))
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            base.OnStartup(e);
+            await UpdateInstaller.RunCleanupAsync(e.Args);
+            Shutdown();
+            return;
+        }
+
+        if (UpdateInstaller.IsUpdateMode(e.Args))
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            base.OnStartup(e);
+            await UpdateInstaller.RunAsync(e.Args);
+            Shutdown();
+            return;
+        }
+
+        // Set when this process is the freshly installed build: the updater's temp folder is still on disk.
+        UpdateInstaller.ScheduleCleanup(e.Args);
+
         InstallCrashHandlers();
         bool startMinimized = e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase);
 
@@ -57,9 +81,49 @@ public partial class App : Application
         MainWindow = new MainWindow();
 
         if (startMinimized && MainWindow is MainWindow mainWindow)
+        {
+            CheckForUpdatesWhenShown(mainWindow);
             mainWindow.StartHiddenInTray();
+        }
         else
+        {
             MainWindow.Show();
+            _ = CheckForUpdatesAfterStartupAsync(MainWindow);
+        }
+    }
+
+    /// <summary>
+    /// The automatic check, held back until the app has settled. Connecting to chat is what the first
+    /// seconds after launch are for, and an update dialog on top of that is in the way.
+    /// </summary>
+    private static async Task CheckForUpdatesAfterStartupAsync(Window owner)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(8));
+        if (owner.Dispatcher.HasShutdownStarted)
+            return;
+
+        // Closed to the tray in the meantime. A dialog behind a hidden window is one nobody can answer.
+        if (!owner.IsVisible)
+        {
+            CheckForUpdatesWhenShown(owner);
+            return;
+        }
+
+        await UpdateCoordinator.CheckAsync(owner, manual: false);
+    }
+
+    private static void CheckForUpdatesWhenShown(Window owner)
+    {
+        DependencyPropertyChangedEventHandler? visibilityChanged = null;
+        visibilityChanged = (_, _) =>
+        {
+            if (!owner.IsVisible)
+                return;
+
+            owner.IsVisibleChanged -= visibilityChanged;
+            _ = CheckForUpdatesAfterStartupAsync(owner);
+        };
+        owner.IsVisibleChanged += visibilityChanged;
     }
 
     /// <summary>

@@ -59,7 +59,8 @@ jobs:
           $tagName = "v$version"
           $assemblyVersion = "$version.0"
           $releaseName = "Twitch Overlay Helper $version"
-          $assetName = "TwitchOverlayHelper-win-x64.zip"
+          # The in-app updater looks for exactly this asset name and its .sha256 sidecar.
+          $assetName = "TwitchOverlayHelper-$version-win-x64.zip"
 
           "version=$version" >> $env:GITHUB_OUTPUT
           "tag_name=$tagName" >> $env:GITHUB_OUTPUT
@@ -99,8 +100,10 @@ jobs:
             -o $publishDir
 
       - name: Create release zip
+        id: package
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           $zipPath = Join-Path $PWD "artifacts/${{ steps.meta.outputs.asset_name }}"
 
           if (Test-Path $zipPath)
@@ -110,11 +113,17 @@ jobs:
 
           Compress-Archive -Path "artifacts/publish/$env:RUNTIME_ID/*" -DestinationPath $zipPath
 
+          $hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  ${{ steps.meta.outputs.asset_name }}" | Set-Content -Path "$zipPath.sha256" -NoNewline
+          "sha256=$hash" >> $env:GITHUB_OUTPUT
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v7
         with:
           name: twitch-overlay-helper-${{ steps.meta.outputs.version }}-win-x64
-          path: artifacts/${{ steps.meta.outputs.asset_name }}
+          path: |
+            artifacts/${{ steps.meta.outputs.asset_name }}
+            artifacts/${{ steps.meta.outputs.asset_name }}.sha256
 
       - name: Write release notes
         shell: pwsh
@@ -126,9 +135,14 @@ jobs:
           Build: ${{ steps.meta.outputs.version }}
           Commit: ${{ github.sha }}
           Runtime: ${{ env.RUNTIME_ID }}
+          SHA-256: ${{ steps.package.outputs.sha256 }}
 
-          Download the zip asset below, extract it to a folder, and run TwitchOverlayHelper.exe.
-          Extracting over an existing installation preserves its location; app settings remain in LocalAppData.
+          Installed copies update themselves: the app checks this release feed and offers to download,
+          verify and install the new build, then restarts itself.
+
+          For a manual installation, download the zip asset below, extract it to a folder, and run
+          TwitchOverlayHelper.exe. Extracting over an existing installation preserves its location;
+          app settings remain in LocalAppData.
           "@ | Set-Content -Path artifacts/release-notes.md
 
       - name: Create GitHub release
@@ -138,7 +152,7 @@ jobs:
           commit: ${{ github.sha }}
           name: ${{ steps.meta.outputs.release_name }}
           bodyFile: artifacts/release-notes.md
-          artifacts: artifacts/${{ steps.meta.outputs.asset_name }}
+          artifacts: artifacts/${{ steps.meta.outputs.asset_name }},artifacts/${{ steps.meta.outputs.asset_name }}.sha256
           allowUpdates: true
           artifactErrorsFailBuild: true
           replacesArtifacts: true
