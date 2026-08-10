@@ -47,6 +47,9 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
     /// <summary>The transparent pet overlay, meant for an OBS browser source over the game.</summary>
     public string PetsUrl => $"http://127.0.0.1:{Port}/pets.html?key={context.Settings.DockAccessKey}";
 
+    /// <summary>The chat as the viewers see it – a transparent browser source on the stream itself.</summary>
+    public string StreamUrl => $"http://127.0.0.1:{Port}/stream.html?key={context.Settings.DockAccessKey}";
+
     public async Task<bool> StartAsync()
     {
         if (_app is not null) return true;
@@ -151,8 +154,12 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
         app.MapGet("/ws", async (HttpContext http) =>
         {
             if (!http.WebSockets.IsWebSocketRequest) return Results.BadRequest();
+            // A page says which of the two it is when it connects. Anything else – the pet overlay,
+            // a browser source added before the stream chat existed – is a dock, which is the view
+            // that gets everything.
+            DockView view = http.Request.Query["view"] == "stream" ? DockView.Stream : DockView.Dock;
             using WebSocket socket = await http.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
-            await context.Hub.RunClientAsync(socket, context.Chat.CanSend, http.RequestAborted).ConfigureAwait(false);
+            await context.Hub.RunClientAsync(socket, context.Chat.CanSend, http.RequestAborted, view).ConfigureAwait(false);
             return Results.Empty;
         });
 

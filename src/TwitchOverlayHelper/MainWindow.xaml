@@ -360,6 +360,26 @@
                         <StackPanel Grid.Column="2" Style="{StaticResource Column}">
                             <Border Style="{StaticResource Card}">
                                 <StackPanel>
+                                    <TextBlock Text="Chatt på streamen" Style="{StaticResource CardTitle}" />
+                                    <TextBlock Text="Samma chatt, fast för tittarna. Lägg till adressen som en Browser Source i OBS – genomskinlig bakgrund, inga knappar. Smeknamn, moderering, inloggning och fastnålat stannar i docken och når aldrig sändningen."
+                                               Style="{StaticResource Lead}" Margin="0,7,0,12" />
+                                    <Border Style="{StaticResource Sunken}" Padding="11,9">
+                                        <TextBox x:Name="StreamUrlBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                                 Foreground="{StaticResource PrimaryBrush}" FontFamily="Consolas" Padding="0" />
+                                    </Border>
+                                    <Grid Margin="0,10,0,0">
+                                        <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                        <Button x:Name="CopyStreamUrlButton" Content="Kopiera adress" IsEnabled="False" Click="CopyStreamUrl_Click" />
+                                        <Button x:Name="OpenStreamButton" Grid.Column="2" Content="Förhandsgranska" Background="#343B50" IsEnabled="False" Click="OpenStream_Click" />
+                                    </Grid>
+                                    <Button x:Name="StreamAppearanceButton" Content="Ändra utseende på streamchatten" Background="#343B50" Margin="0,10,0,0" Click="StreamAppearance_Click" />
+                                    <TextBlock Text="Tips: gör källan ungefär 460 × 800 px i OBS och dra den dit du vill ha chatten. Rutan växer från underkanten."
+                                               Style="{StaticResource Hint}" Margin="0,10,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource StackedCard}">
+                                <StackPanel>
                                     <TextBlock Text="Uppläsning av namn" Style="{StaticResource CardTitle}" />
                                     <TextBlock Text="Valfritt" Foreground="{StaticResource HintTextBrush}" FontSize="12" Margin="0,3,0,0" />
                                     <TextBlock Text="Lägger en högtalarknapp bredvid varje namn i OBS-docken. Ett klick läser upp hur namnet troligen sägs, här på datorn. Kräver en API-nyckel till DeepSeek och en till ElevenLabs – utan dem syns ingen knapp."

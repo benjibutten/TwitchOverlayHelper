@@ -1,0 +1,123 @@
+<Window x:Class="TwitchOverlayHelper.StreamSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Chatten på streamen" Width="560" Height="820" MinWidth="480" MinHeight="600"
+        Icon="pack://application:,,,/Assets/app.ico"
+        Background="{StaticResource PageBrush}" Foreground="{StaticResource TextBrush}"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="24">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+
+        <StackPanel>
+            <TextBlock Text="CHATT PÅ STREAMEN" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" FontSize="12" />
+            <TextBlock Text="Utseende" FontSize="26" FontWeight="SemiBold" Margin="0,3,0,0" />
+            <TextBlock Text="Det här är rutan tittarna ser. Ändringarna syns direkt i OBS – inget behöver sparas eller laddas om."
+                       Foreground="{StaticResource MutedTextBrush}" FontSize="13" Margin="0,6,0,16" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="0,0,14,0">
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20">
+                    <StackPanel>
+                        <TextBlock Text="Text" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14" />
+
+                        <TextBlock Text="Typsnitt" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6" />
+                        <ComboBox x:Name="FontBox" IsEditable="True" SelectionChanged="Setting_Changed" LostKeyboardFocus="Setting_Changed">
+                            <ComboBoxItem Content="Verdana" /><ComboBoxItem Content="Tahoma" /><ComboBoxItem Content="Segoe UI" />
+                            <ComboBoxItem Content="Arial" /><ComboBoxItem Content="Impact" /><ComboBoxItem Content="Comic Sans MS" />
+                            <ComboBoxItem Content="Atkinson Hyperlegible" /><ComboBoxItem Content="Lexend" />
+                        </ComboBox>
+                        <TextBlock Text="Typsnittet måste vara installerat i Windows – OBS ritar sidan på den här datorn."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,7,0,16" />
+
+                        <DockPanel><TextBlock Text="Textstorlek" /><TextBlock x:Name="FontSizeValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="FontSizeSlider" Minimum="14" Maximum="64" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,4" ValueChanged="Setting_Changed" />
+                        <TextBlock Text="Större än i docken. Tittarna läser rutan i förbifarten, ofta på en telefon."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,0,0,13" />
+
+                        <DockPanel><TextBlock Text="Radavstånd" /><TextBlock x:Name="LineHeightValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="LineHeightSlider" Minimum="1.1" Maximum="2.2" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,15" ValueChanged="Setting_Changed" />
+
+                        <DockPanel><TextBlock Text="Avstånd mellan meddelanden" /><TextBlock x:Name="GapValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="GapSlider" Minimum="0" Maximum="40" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="Setting_Changed" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Läsbarhet över videon" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14" />
+
+                        <DockPanel><TextBlock Text="Platta bakom texten" /><TextBlock x:Name="PlateValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="PlateSlider" Minimum="0" Maximum="0.9" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,4" ValueChanged="Setting_Changed" />
+                        <TextBlock Text="En mörk ruta bakom varje meddelande. Noll = bara text, vilket kräver konturen nedan."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,0,0,10" />
+
+                        <CheckBox x:Name="OutlineCheck" Content="Mörk kontur runt bokstäverna" ToolTip="Det enda som håller texten läsbar mot både en snölandskap och en nattbana" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="NameLineCheck" Content="Namnet på egen rad" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="TopCheck" Content="Nyaste meddelandet överst" ToolTip="För en ruta som sitter längst upp i bild. Av: nyast underst, som i vanlig chatt." Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="AnimateCheck" Content="Låt meddelanden glida in" ToolTip="Av = en sak mindre som rör sig i bild" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Hur länge de syns" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14" />
+
+                        <DockPanel><TextBlock Text="Antal meddelanden i rutan" /><TextBlock x:Name="MaxMessagesValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="MaxMessagesSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,15" ValueChanged="Setting_Changed" />
+
+                        <DockPanel><TextBlock Text="Försvinner efter" /><TextBlock x:Name="FadeValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="FadeSlider" Minimum="0" Maximum="600" TickFrequency="5" IsSnapToTickEnabled="True" Margin="0,4,0,4" ValueChanged="Setting_Changed" />
+                        <TextBlock Text="Längst till vänster: meddelandena ligger kvar tills nya trycker undan dem. Sätt en tid om overlayen ligger ovanpå spelet – då städas rutan av sig själv när det är tyst."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,0,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Vad som visas" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <TextBlock Text="Smeknamn, modereringsknappar, inloggning och fastnålade meddelanden finns aldrig här – de är dina och stannar i docken."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,0,0,10" />
+                        <CheckBox x:Name="BadgesCheck" Content="Visa badges" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="NameColorsCheck" Content="Twitch-namnfärger" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EmotesCheck" Content="Visa emotes" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="GiantEmotesCheck" Content="Förstorade emotes i full storlek" ToolTip="Power-upen “Gigantify an Emote”. Av: vanlig storlek med en markör i stället." Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="RepliesCheck" Content="Visa vem meddelandet svarar på" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="TimestampsCheck" Content="Visa klockslag" ToolTip="Sällan värt platsen – tittarna ser chatten i realtid" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="LinksCheck" Content="Korta ner länkar till en liten knapp" ToolTip="Hindrar att någon får upp en läsbar adress på din stream" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="ShoutingCheck" Content="Dämpa VERSALER till gemener" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="CommandsCheck" Content="Dölj !kommandon helt" ToolTip="I docken tonas de bara ner. På streamen är de brus – botens svar kommer direkt efter." Checked="Setting_Changed" Unchecked="Setting_Changed" />
+
+                        <TextBlock Text="Konton som aldrig syns" Margin="0,16,0,6" />
+                        <TextBox x:Name="IgnoreBox" AcceptsReturn="True" TextWrapping="Wrap" Height="66"
+                                 VerticalScrollBarVisibility="Auto" TextChanged="Setting_Changed" />
+                        <TextBlock Text="Ett namn per rad, eller separerade med komma. Chattbottar är ifyllda från början."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,7,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Händelser i chatten" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <TextBlock Text="Egna kort i rutan. Här handlar valet om vad tittarna ska se firas – ett annat beslut än vad du själv vill ha i docken."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,0,0,10" />
+                        <CheckBox x:Name="EventSubsCheck" Content="Prenumerationer och gåvor" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EventRaidsCheck" Content="Raids" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EventAnnouncementsCheck" Content="Meddelanden från streamern" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EventBitsCheck" Content="Bits-märken och firanden" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EventMilestonesCheck" Content="Tittarstreaks och nya chattare" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EventRewardsCheck" Content="Inlösta belöningar utan text" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EventShoutoutsCheck" Content="Shoutouts" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="EventOtherCheck" Content="Övriga händelser" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <DockPanel Grid.Row="2" Margin="0,18,0,0">
+            <Button DockPanel.Dock="Right" Content="Stäng" Background="#343B50" Click="Close_Click" />
+            <Button x:Name="ResetButton" DockPanel.Dock="Right" Content="Återställ" Background="#343B50" Margin="0,0,10,0" Click="Reset_Click" />
+            <TextBlock Text="Öppna Browser Source-förhandsvisningen i OBS medan du drar." Foreground="#858193" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        </DockPanel>
+    </Grid>
+</Window>

@@ -61,6 +61,9 @@ public sealed class AppSettings
     public string DockAccessKey { get; set; } = string.Empty;
     public DockSettings Dock { get; set; } = new();
 
+    /// <summary>The chat as a browser source on the stream itself, seen by the viewers.</summary>
+    public StreamSettings Stream { get; set; } = new();
+
     /// <summary>Reading a chatter's name out loud. The API keys are stored separately and encrypted.</summary>
     public SpeechSettings Speech { get; set; } = new();
 
@@ -76,6 +79,8 @@ public sealed class AppSettings
         if (string.IsNullOrWhiteSpace(DockAccessKey)) DockAccessKey = GenerateAccessKey();
         Dock ??= new DockSettings();
         Dock.Normalize();
+        Stream ??= new StreamSettings();
+        Stream.Normalize();
         Events ??= new ChatEventVisibility();
         Speech ??= new SpeechSettings();
         Speech.Normalize();

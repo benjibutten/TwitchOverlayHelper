@@ -123,6 +123,19 @@ internal sealed record DockHello(
     DockHypeTrain? HypeTrain,
     IReadOnlyList<DockNickname> Nicknames);
 
+/// <summary>
+/// What a socket from the stream overlay is handed when it opens. Deliberately not
+/// <see cref="DockHello"/> with a couple of fields blanked: this page is on the broadcast, and the
+/// safest version of "the viewers must never see the nicknames" is that the page they are rendered
+/// on never receives them. The same goes for who is logged in and what the dock looks like – none of
+/// it has a use here, and all of it is the streamer's own business.
+///
+/// <para>The history is cut to what the overlay could show anyway. A page that draws a dozen lines
+/// has no use for two hundred, and this is the frame that would otherwise be the largest thing the
+/// server ever sends.</para>
+/// </summary>
+internal sealed record DockStreamHello(string Type, StreamSettings Stream, IReadOnlyList<DockHistoryItem> History);
+
 internal sealed record DockPet(string Id, string Name, string? Color, string Species, long SpawnedAt, long ExpiresAt);
 
 internal sealed record DockPetSettings(bool Enabled, double Scale, int LifetimeMinutes, int MaxPets, bool ShowNames);

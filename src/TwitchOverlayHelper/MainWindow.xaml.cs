@@ -112,6 +112,7 @@ public partial class MainWindow : Window
     private bool _reconnecting;
     private bool _refreshingPetCatalog;
     private DockSettingsWindow? _dockSettingsWindow;
+    private StreamSettingsWindow? _streamSettingsWindow;
     private SpeechSettingsWindow? _speechSettingsWindow;
     private string? _lastBadgeRoom;
     private string? _lastSeenRewardId;
@@ -369,6 +370,9 @@ public partial class MainWindow : Window
         PetsUrlBox.Text = started ? _dockServer.PetsUrl : string.Empty;
         CopyPetsUrlButton.IsEnabled = started;
         OpenPetsButton.IsEnabled = started;
+        StreamUrlBox.Text = started ? _dockServer.StreamUrl : string.Empty;
+        CopyStreamUrlButton.IsEnabled = started;
+        OpenStreamButton.IsEnabled = started;
         SetDockStatus(started ? "Servern kör – klistra in adressen i OBS." : _dockServer.LastError ?? "Servern kunde inte starta.", started ? "live" : "error");
     }
 
@@ -422,6 +426,19 @@ public partial class MainWindow : Window
     {
         if (PetsUrlBox.Text.Length == 0) return;
         OpenInBrowser(PetsUrlBox.Text);
+    }
+
+    private void CopyStreamUrl_Click(object sender, RoutedEventArgs e)
+    {
+        if (StreamUrlBox.Text.Length == 0) return;
+        try { Clipboard.SetText(StreamUrlBox.Text); }
+        catch (System.Runtime.InteropServices.COMException) { /* the address is still selectable */ }
+    }
+
+    private void OpenStream_Click(object sender, RoutedEventArgs e)
+    {
+        if (StreamUrlBox.Text.Length == 0) return;
+        OpenInBrowser(StreamUrlBox.Text);
     }
 
     private void PetSetting_Changed(object sender, RoutedEventArgs e)
@@ -672,6 +689,23 @@ public partial class MainWindow : Window
         }) { Owner = this };
         _dockSettingsWindow.Closed += (_, _) => _dockSettingsWindow = null;
         _dockSettingsWindow.Show();
+    }
+
+    private void StreamAppearance_Click(object sender, RoutedEventArgs e)
+    {
+        if (_streamSettingsWindow is { IsLoaded: true })
+        {
+            _streamSettingsWindow.Activate();
+            return;
+        }
+
+        _streamSettingsWindow = new StreamSettingsWindow(_settings, () =>
+        {
+            SaveSettings();
+            _hub.PublishStreamSettings();
+        }) { Owner = this };
+        _streamSettingsWindow.Closed += (_, _) => _streamSettingsWindow = null;
+        _streamSettingsWindow.Show();
     }
 
     private void SpeechSettings_Click(object sender, RoutedEventArgs e)

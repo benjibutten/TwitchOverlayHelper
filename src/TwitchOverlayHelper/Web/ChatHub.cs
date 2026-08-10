@@ -11,6 +11,19 @@ using TwitchOverlayHelper.Twitch;
 namespace TwitchOverlayHelper.Web;
 
 /// <summary>
+/// Which page a socket belongs to. The chat frames are the same for both, but a few of them carry
+/// something only the streamer should have – the nicknames above all – and those are addressed
+/// rather than broadcast. A socket that says nothing is a dock, which is what the pet overlay and
+/// every browser source added before this existed do.
+/// </summary>
+public enum DockView
+{
+    Dock,
+    /// <summary>The transparent chat laid over the stream, seen by the viewers.</summary>
+    Stream
+}
+
+/// <summary>
 /// Fan-out point between the single Twitch connection and every dock that is open. Holds the
 /// recent history so a dock that reconnects (OBS restart, page reload) is not staring at an
 /// empty column.
@@ -25,7 +38,7 @@ public sealed class ChatHub(
 {
     private const int HistoryLimit = 200;
 
-    private readonly ConcurrentDictionary<Guid, Channel<string>> _clients = new();
+    private readonly ConcurrentDictionary<Guid, Client> _clients = new();
     // Messages and events share one queue, so a sub notice keeps its place between the lines it
     // landed between even after the dock reconnects and replays the history.
     private readonly Queue<ChatTimelineItem> _history = new();
@@ -312,21 +325,30 @@ public sealed class ChatHub(
                  || (moderation.TargetLogin is { Length: > 0 } login && string.Equals(message.UserLogin, login, StringComparison.OrdinalIgnoreCase))
         };
 
+    /// <summary>
+    /// Whether we are connected, and what went wrong if not. The dock's alone: it is information
+    /// about the app rather than about the conversation, and the page that carries it onto the
+    /// broadcast should not be told which of our tokens expired.
+    /// </summary>
     public void PublishStatus(string text, string state)
     {
         _statusText = text;
         _statusState = state;
-        Send(DockJson.Serialize(new DockEnvelope<DockStatus>("status", new DockStatus(text, state))));
+        SendTo(DockView.Dock, DockJson.Serialize(new DockEnvelope<DockStatus>("status", new DockStatus(text, state))));
     }
 
     public void PublishSettings() =>
-        Send(DockJson.Serialize(new DockEnvelope<DockSettings>("settings", settings.Dock)));
+        SendTo(DockView.Dock, DockJson.Serialize(new DockEnvelope<DockSettings>("settings", settings.Dock)));
+
+    /// <summary>Pushes the stream overlay's appearance, so a slider in the app lands without a reload.</summary>
+    public void PublishStreamSettings() =>
+        SendTo(DockView.Stream, DockJson.Serialize(new DockEnvelope<StreamSettings>("streamSettings", settings.Stream)));
 
     public void PublishAuth(bool canSend) =>
-        Send(DockJson.Serialize(new DockEnvelope<DockAuth>("auth", BuildAuth(canSend))));
+        SendTo(DockView.Dock, DockJson.Serialize(new DockEnvelope<DockAuth>("auth", BuildAuth(canSend))));
 
     public void PublishSpeech() =>
-        Send(DockJson.Serialize(new DockEnvelope<DockSpeech>("speech", new DockSpeech(SpeechEnabled))));
+        SendTo(DockView.Dock, DockJson.Serialize(new DockEnvelope<DockSpeech>("speech", new DockSpeech(SpeechEnabled))));
 
     /// <summary>
     /// A nickname was given, changed or taken away. Every dock gets it, including the one that made
@@ -334,7 +356,7 @@ public sealed class ChatHub(
     /// lookup rather than from the message means one frame is enough to update the whole column.
     /// </summary>
     public void PublishNickname(Nickname entry) =>
-        Send(DockJson.Serialize(new DockEnvelope<DockNickname>("nickname",
+        SendTo(DockView.Dock, DockJson.Serialize(new DockEnvelope<DockNickname>("nickname",
             new DockNickname(entry.UserId, entry.Login, entry.IsRemoval ? null : entry.Text))));
 
     /// <summary>Tells every dock that badge images just became available, so it can re-render.</summary>
@@ -421,6 +443,21 @@ public sealed class ChatHub(
     private static ChatMessage Sample(string id, string name, string text, string color, ChatBadge[] badges, DateTimeOffset at) =>
         new(id, name, text, color, badges, id == "sample-3", false, at) { UserLogin = name.ToLowerInvariant() };
 
+    /// <summary>
+    /// What the stream overlay opens onto: its own appearance and the tail of the timeline. There is
+    /// no reason to hand it the whole two hundred lines, but the tail has to be deeper than the dozen
+    /// it draws – the page throws away bots, commands, switched-off events and anything too old to be
+    /// worth replaying, and a quiet stretch that ended in bot chatter would otherwise open onto an
+    /// empty column with perfectly good lines sitting just above the cut.
+    /// </summary>
+    private string BuildStreamHello()
+    {
+        int depth = Math.Clamp(settings.Stream.MaxMessages * 4, 40, HistoryLimit);
+        ChatTimelineItem[] history;
+        lock (_historyLock) history = _history.TakeLast(depth).ToArray();
+        return DockJson.Serialize(new DockStreamHello("hello", settings.Stream, history.Select(ToDock).ToArray()));
+    }
+
     private string BuildHello(bool canSend)
     {
         ChatTimelineItem[] history;
@@ -458,17 +495,31 @@ public sealed class ChatHub(
         ? new DockHistoryItem("event", null, DockMapper.ToDock(chatEvent))
         : new DockHistoryItem("message", ToDock(item.Message!), null);
 
-    private void Send(string payload)
+    /// <summary>One open socket and which page it belongs to.</summary>
+    private sealed record Client(Channel<string> Outbound, DockView View);
+
+    private void Send(string payload) => Fan(payload, null);
+
+    /// <summary>
+    /// Sends to one kind of page only. What the dock alone gets is everything a viewer has no
+    /// business seeing – the nicknames, who is logged in, the reading settings – and what the stream
+    /// overlay alone gets is its own appearance. Addressed rather than filtered in the browser: a
+    /// frame that is never sent cannot be read by a page sitting on the broadcast.
+    /// </summary>
+    private void SendTo(DockView view, string payload) => Fan(payload, view);
+
+    private void Fan(string payload, DockView? only)
     {
-        foreach (Channel<string> outbound in _clients.Values)
+        foreach (Client client in _clients.Values)
         {
+            if (only is { } view && client.View != view) continue;
             // A dock that cannot keep up is dropped rather than allowed to stall the whole fan-out.
-            if (!outbound.Writer.TryWrite(payload)) outbound.Writer.TryComplete();
+            if (!client.Outbound.Writer.TryWrite(payload)) client.Outbound.Writer.TryComplete();
         }
     }
 
     /// <summary>Runs one dock connection until the socket closes.</summary>
-    public async Task RunClientAsync(WebSocket socket, bool canSend, CancellationToken cancellationToken)
+    public async Task RunClientAsync(WebSocket socket, bool canSend, CancellationToken cancellationToken, DockView view = DockView.Dock)
     {
         var id = Guid.NewGuid();
         // Never DropOldest: the queue carries clear and moderation frames as well as chat lines, and
@@ -479,11 +530,12 @@ public sealed class ChatHub(
             FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true
         });
-        _clients[id] = outbound;
+        _clients[id] = new Client(outbound, view);
 
         try
         {
-            await SendFrameAsync(socket, BuildHello(canSend), cancellationToken).ConfigureAwait(false);
+            string hello = view == DockView.Stream ? BuildStreamHello() : BuildHello(canSend);
+            await SendFrameAsync(socket, hello, cancellationToken).ConfigureAwait(false);
             // Completing the outbound channel when the socket closes is what ends the loop below;
             // without it an idle dock would sit in _clients until the next message happened to arrive.
             Task drain = DrainThenCompleteAsync(socket, outbound, cancellationToken);

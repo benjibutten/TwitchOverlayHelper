@@ -1,0 +1,187 @@
+/* The chat as the viewers see it. A different medium from the dock, not a different theme of it:
+   this sits on top of moving video that we know nothing about, so nothing here may rely on the
+   background being any particular colour. Light text with a dark rim and a dark plate behind it is
+   the combination that survives a snow level and a night level alike. */
+
+:root {
+  --font: Verdana, sans-serif;
+  --size: 26px;
+  --lh: 1.35;
+  --gap: 8px;
+  --plate: 0.35;
+  --text: #ffffff;
+  --muted: #d9d9e2;
+  --pad: 0.2em 0.5em;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  /* OBS composites the page over the scene; anything opaque here would be a black box on the stream. */
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font);
+  font-size: var(--size);
+  line-height: var(--lh);
+  color: var(--text);
+  /* No selection, no caret, no drag: this page is a picture, and OBS should never render either. */
+  user-select: none;
+  cursor: default;
+}
+
+/* The rim. Four small shadows rather than one big blur: a blur alone turns to mush over a bright
+   scene, and a hard rim alone disappears over a dark one. */
+body[data-outline="true"] {
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.95),
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    1px 0 2px rgba(0, 0, 0, 0.55),
+    -1px 0 2px rgba(0, 0, 0, 0.55);
+}
+
+/* The column grows away from the edge it is anchored to and is clipped at the other end, so the
+   overlay can be dropped anywhere in the scene and stay where it was put. */
+.chat {
+  height: 100%;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--gap);
+  overflow: hidden;
+}
+
+/* Newest at the top: the same chronological markup read from the other end, so nothing about how a
+   line is built or trimmed has to know which way round the column is. */
+body[data-top="true"] .chat { flex-direction: column-reverse; }
+
+.msg, .evt {
+  flex: 0 0 auto;
+  /* Hugging the text rather than filling the width: a plate that runs the whole way across is a
+     black bar on the stream even when the line is two words long. */
+  width: fit-content;
+  max-width: 100%;
+  padding: var(--pad);
+  border-radius: 0.35em;
+  background: rgba(0, 0, 0, var(--plate));
+  overflow-wrap: anywhere;
+}
+
+body[data-animate="true"] .msg,
+body[data-animate="true"] .evt { animation: arrive 0.22s ease-out both; }
+
+@keyframes arrive {
+  from { opacity: 0; transform: translateY(0.5em); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Leaving is its own animation rather than the arrival played backwards: a line that has had its
+   time is meant to slip away quietly, not to re-enact how it came in. */
+.msg[data-leaving="true"], .evt[data-leaving="true"] {
+  animation: leave 0.45s ease-in both;
+  pointer-events: none;
+}
+
+@keyframes leave {
+  to { opacity: 0; transform: translateX(-0.6em); }
+}
+
+/* ---------- one message ---------- */
+
+/* Inline by default, so a short line is "Namn: hej" on one row. The head becomes a block of its own
+   when the name is given its own line, and the colon goes with it. */
+.msg-head { display: inline; }
+.msg-head::after { content: ":"; color: var(--muted); margin-right: 0.3em; }
+
+body[data-nameline="true"] .msg-head { display: block; }
+body[data-nameline="true"] .msg-head::after { content: ""; margin: 0; }
+
+.msg-name { font-weight: 700; }
+.msg-time { font-size: 0.62em; color: var(--muted); margin-right: 0.3em; }
+.msg-text[data-action="true"] { font-style: italic; }
+
+.badge { height: 1em; width: auto; vertical-align: -0.12em; margin-right: 0.15em; }
+.emote { height: 1.4em; width: auto; vertical-align: -0.35em; }
+.emote[data-giant="true"] { height: 3em; vertical-align: -0.9em; }
+
+.tag {
+  display: inline-block;
+  font-size: 0.55em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.15em 0.45em;
+  border-radius: 0.5em;
+  vertical-align: 0.15em;
+  margin-right: 0.25em;
+  color: #fff;
+  text-shadow: none;
+  background: #6b7280;
+}
+/* The same chip, spaced from whichever side it is read from: a role badge stands in front of the
+   name and pushes it away, a marker stands behind it and is pushed. Without the mirror the colon
+   that follows the last marker drifts a word away from it. */
+.msg-name ~ .tag { margin-left: 0.25em; margin-right: 0; }
+
+.tag[data-kind="broadcaster"] { background: #d13c3c; }
+.tag[data-kind="moderator"], .tag[data-kind="lead_moderator"] { background: #1f9d55; }
+.tag[data-kind="vip"] { background: #c0287f; }
+.tag[data-kind="subscriber"] { background: #6d43c9; }
+.tag[data-kind="new"] { background: #0f7c8a; }
+.tag[data-kind="bits"] { background: #8b5cf6; }
+.tag[data-kind="reward"] { background: #0f7c8a; text-transform: none; letter-spacing: 0.02em; }
+.tag[data-kind="powerup"] { background: #8b5cf6; text-transform: none; letter-spacing: 0.02em; }
+
+/* Context for the line under it, so it gives way with an ellipsis instead of growing: an answer to
+   a wall of text must not be taller than the answer itself. */
+.msg-reply {
+  display: block;
+  font-size: 0.65em;
+  color: var(--muted);
+  opacity: 0.9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msg-reply-name { font-weight: 700; }
+.msg-reply-name::after { content: ": "; }
+
+/* Links never carry anywhere from here – nobody can click a video – so the chip is purely about not
+   putting a readable address on somebody else's stream. */
+.link-chip {
+  display: inline-block;
+  font-size: 0.72em;
+  padding: 0.1em 0.45em;
+  border-radius: 0.6em;
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--text);
+  text-decoration: none;
+  text-shadow: none;
+}
+.link { color: #c8b4ff; }
+
+/* ---------- events ---------- */
+
+.evt {
+  border-left: 0.16em solid #a970ff;
+  padding-left: 0.45em;
+}
+.evt-icon { margin-right: 0.25em; }
+.evt-headline { font-weight: 700; font-size: 0.95em; }
+.evt .msg-text { display: block; font-size: 0.95em; margin-top: 0.1em; }
+
+.evt[data-kind="raid"], .evt[data-kind="unraid"] { border-left-color: #ff6b6b; }
+.evt[data-kind="announcement"] { border-left-color: #ffd166; }
+.evt[data-kind="bitsBadge"], .evt[data-kind="celebration"] { border-left-color: #8b5cf6; }
+.evt[data-kind="watchStreak"], .evt[data-kind="newChatter"], .evt[data-kind="reward"] { border-left-color: #2dd4bf; }
+.evt[data-kind="shoutoutSent"], .evt[data-kind="shoutoutReceived"] { border-left-color: #f472b6; }
+
+.evt[data-color="blue"] { border-left-color: #60a5fa; }
+.evt[data-color="green"] { border-left-color: #4ade80; }
+.evt[data-color="orange"] { border-left-color: #fb923c; }
+.evt[data-color="purple"] { border-left-color: #a970ff; }

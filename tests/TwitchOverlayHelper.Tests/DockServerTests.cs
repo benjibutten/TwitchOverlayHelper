@@ -457,11 +457,11 @@ public sealed class DockServerTests
         };
 
     /// <summary>Opens a dock, reads past its hello, then returns the frames <paramref name="act"/> caused.</summary>
-    private static async Task<string[]> FramesAfterHelloAsync(AppSettings settings, int count, Action act)
+    private static async Task<string[]> FramesAfterHelloAsync(AppSettings settings, int count, Action act, string view = "")
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         using var socket = new ClientWebSocket();
-        await socket.ConnectAsync(new Uri($"ws://127.0.0.1:{settings.DockServerPort}/ws?key={settings.DockAccessKey}"), timeout.Token);
+        await socket.ConnectAsync(new Uri(SocketUrl(settings, view)), timeout.Token);
 
         byte[] buffer = new byte[64 * 1024];
         await socket.ReceiveAsync(buffer, timeout.Token);
@@ -494,21 +494,169 @@ public sealed class DockServerTests
         client.Dispose();
     }
 
+    // ------------------------------------------------------------- the stream overlay
+
+    [Fact]
+    public async Task ServesTheStreamOverlayAndTheRendererBothPagesShare()
+    {
+        (DockServer server, _, HttpClient client) = await StartAsync();
+        await using (server)
+        {
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/stream.html")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/stream.js")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/stream.css")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/chat-render.js")).StatusCode);
+        }
+        client.Dispose();
+    }
+
+    /// <summary>
+    /// The whole point of the separate view: this page is on the broadcast, so the nicknames, who is
+    /// logged in and the dock's own settings must not merely go undrawn – they must not arrive.
+    /// </summary>
+    [Fact]
+    public async Task StreamHelloCarriesTheAppearanceAndNothingPrivate()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, _, NicknameBook nicknames) =
+            await StartWithBookAsync(loggedInUserId: null);
+        await using (server)
+        {
+            nicknames.Set("42", "kajsa_92", "Kajsa från jobbet");
+
+            using JsonDocument hello = JsonDocument.Parse(await HelloAsync(settings, "stream"));
+            Assert.Equal("hello", hello.RootElement.GetProperty("type").GetString());
+            Assert.Equal(settings.Stream.FontSize, hello.RootElement.GetProperty("stream").GetProperty("fontSize").GetDouble());
+            Assert.True(hello.RootElement.TryGetProperty("history", out _));
+
+            foreach (string secret in new[] { "nicknames", "auth", "settings", "mentionName", "speechEnabled" })
+                Assert.False(hello.RootElement.TryGetProperty(secret, out _), $"strömvyn fick '{secret}'");
+
+            // And the dock still gets all of it, so the split has not quietly taken it from both.
+            using JsonDocument dockHello = JsonDocument.Parse(await HelloAsync(settings));
+            Assert.Equal(1, dockHello.RootElement.GetProperty("nicknames").GetArrayLength());
+        }
+        client.Dispose();
+    }
+
+    /// <summary>
+    /// Deeper than the overlay draws, because the page still has to throw away bots, commands and
+    /// switched-off cards: a quiet stretch that ended in bot chatter must not open onto an empty
+    /// column with good lines sitting just above the cut. Deep is not the whole timeline either.
+    /// </summary>
+    [Fact]
+    public async Task StreamHelloCarriesMoreThanTheOverlayDrawsButNotEverything()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            settings.Stream.MaxMessages = 3;
+            hub.SetChannel("kanal_a");
+            for (int i = 0; i < 60; i++)
+                hub.PublishMessage(new ChatMessage($"m{i}", "Någon", $"rad {i}", null, [], false, false, DateTimeOffset.Now));
+
+            using JsonDocument hello = JsonDocument.Parse(await HelloAsync(settings, "stream"));
+            JsonElement history = hello.RootElement.GetProperty("history");
+            int count = history.GetArrayLength();
+            Assert.InRange(count, settings.Stream.MaxMessages + 1, 59);
+            // The tail, not the head: what an overlay opens onto is the newest lines.
+            Assert.Equal("rad 59", history[count - 1].GetProperty("message").GetProperty("text").GetString());
+        }
+        client.Dispose();
+    }
+
+    /// <summary>
+    /// Being disconnected, and why, is something the app knows about itself. The dock says it out
+    /// loud in its top bar; the page on the broadcast is not told at all.
+    /// </summary>
+    [Fact]
+    public async Task TheConnectionStatusStaysInTheDock()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            hub.SetChannel("kanal_a");
+
+            string[] frames = await FramesAfterHelloAsync(settings, 1, () =>
+            {
+                hub.PublishStatus("Token har gått ut", "error");
+                hub.PublishMessage(new ChatMessage("1", "Någon", "hej", null, [], false, false, DateTimeOffset.Now));
+            }, "stream");
+
+            Assert.Contains("\"type\":\"message\"", frames[0]);
+            Assert.DoesNotContain("Token har", frames[0]);
+        }
+        client.Dispose();
+    }
+
+    /// <summary>A name given in the dock reaches the dock and stops there.</summary>
+    [Fact]
+    public async Task ANicknameNeverReachesTheStreamOverlay()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub, NicknameBook nicknames) =
+            await StartWithBookAsync(loggedInUserId: null);
+        await using (server)
+        {
+            hub.SetChannel("kanal_a");
+
+            // The nickname is published first, so a stream socket that received it at all would hand
+            // it back here instead of the message.
+            string[] frames = await FramesAfterHelloAsync(settings, 1, () =>
+            {
+                nicknames.Set("42", "kajsa_92", "Kajsa från jobbet");
+                hub.PublishMessage(new ChatMessage("1", "Kajsa_92", "hej", null, [], false, false, DateTimeOffset.Now));
+            }, "stream");
+
+            // Had the nickname reached this socket it would be sitting here instead of the message.
+            Assert.Contains("\"type\":\"message\"", frames[0]);
+            Assert.DoesNotContain("nickname", frames[0]);
+        }
+        client.Dispose();
+    }
+
+    [Fact]
+    public async Task AppearanceFramesGoToThePageTheyBelongTo()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            hub.SetChannel("kanal_a");
+
+            string[] toDock = await FramesAfterHelloAsync(settings, 1, () =>
+            {
+                hub.PublishStreamSettings();
+                hub.PublishSettings();
+            });
+            Assert.Contains("\"type\":\"settings\"", toDock[0]);
+
+            string[] toStream = await FramesAfterHelloAsync(settings, 1, () =>
+            {
+                hub.PublishSettings();
+                hub.PublishStreamSettings();
+            }, "stream");
+            Assert.Contains("\"type\":\"streamSettings\"", toStream[0]);
+        }
+        client.Dispose();
+    }
+
     private static async Task<int> HelloHistoryCountAsync(AppSettings settings)
     {
         using JsonDocument json = JsonDocument.Parse(await HelloAsync(settings));
         return json.RootElement.GetProperty("history").GetArrayLength();
     }
 
-    private static async Task<string> HelloAsync(AppSettings settings)
+    private static async Task<string> HelloAsync(AppSettings settings, string view = "")
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         using var socket = new ClientWebSocket();
-        await socket.ConnectAsync(new Uri($"ws://127.0.0.1:{settings.DockServerPort}/ws?key={settings.DockAccessKey}"), timeout.Token);
+        await socket.ConnectAsync(new Uri(SocketUrl(settings, view)), timeout.Token);
         byte[] buffer = new byte[64 * 1024];
         WebSocketReceiveResult hello = await socket.ReceiveAsync(buffer, timeout.Token);
         return Encoding.UTF8.GetString(buffer, 0, hello.Count);
     }
+
+    private static string SocketUrl(AppSettings settings, string view) =>
+        $"ws://127.0.0.1:{settings.DockServerPort}/ws?key={settings.DockAccessKey}"
+        + (view.Length > 0 ? $"&view={view}" : string.Empty);
 
     // The speaker button is hidden when pronunciation is not set up, but hiding a button is not
     // enforcement – and the endpoint spends money at two APIs.

@@ -1,6 +1,6 @@
 # Twitch Overlay Helper
 
-En Windows-app som läser Twitch-chatten och visar den på två ställen: som en stor, lugn och klickigenom overlay ovanpå ett spel, och som en dyslexianpassad chatt i OBS via en Custom Browser Dock. Gränssnittet prioriterar låg visuell trängsel, tydlig avsändare, generöst radavstånd och få beslut per vy.
+En Windows-app som läser Twitch-chatten och visar den på tre ställen: som en stor, lugn och klickigenom overlay ovanpå ett spel, som en dyslexianpassad chatt i OBS via en Custom Browser Dock, och som en genomskinlig chattruta på själva sändningen för tittarna. Gränssnittet prioriterar låg visuell trängsel, tydlig avsändare, generöst radavstånd och få beslut per vy.
 
 ## Chatt-dock i OBS
 
@@ -24,6 +24,21 @@ Moderering fungerar i alla kanaler där du är moderator, inte bara i din egen. 
 - Serverns adress innehåller en hemlig nyckel och är bunden till `127.0.0.1`, så den är varken nåbar från nätverket eller användbar för andra sidor på datorn.
 
 Moderering, raid och skrivfältet kräver inloggning; utan den fungerar docken som en ren läsvy.
+
+## Chatt på streamen
+
+Samma chatt en gång till, fast för tittarna: en genomskinlig sida som läggs in som **Browser Source** i OBS. Adressen finns att kopiera bredvid dockens, under fliken **OBS-dock**, och utseendet ställs in under **Ändra utseende på streamchatten**.
+
+Det är avsiktligt inte docken med bakgrunden bortskruvad. De två läses av olika personer på olika avstånd, och därför skiljer sig både vad som visas och hur:
+
+- **Ingenting privat följer med.** Smeknamn, moderering, inloggning, fastnålade meddelanden, uppläsningsknappen och anslutningsstatusen finns inte på sidan – och skickas inte ens dit. Sidan säger vid anslutningen vilken vy den är, och servern håller de bitarna kvar hos docken.
+- **Borttaget är borta.** Docken stryker över ett raderat meddelande så du ser att det hände; på sändningen försvinner det direkt, tillsammans med allt som ännu inte hunnit ritas ut.
+- `!kommandon` **döljs helt** i stället för att tonas ner, och du kan lista konton som aldrig får synas – chattbottarna är ifyllda från början.
+- Egna reglage för storlek, platta bakom texten, mörk kontur runt bokstäverna, antal rader och hur länge de ligger kvar. Sätt en tid om rutan ligger ovanpå spelet, så städas den av sig själv när det är tyst; låt den vara noll om chatten har ett eget hörn.
+- Nyaste raden underst som i vanlig chatt, eller överst om rutan sitter i överkanten.
+- Egna val för vilka händelsekort tittarna ska se – ett annat beslut än vad du själv vill ha i spalten.
+
+Sidan delar renderare med docken, så en emote, en länkknapp eller en förstorad emote ser likadan ut på båda ställena. Under en raid ritas nya rader några stycken per bildruta i stället för allihop på en gång, och det som ändå aldrig hade hunnit synas kastas – rutan håller ett dussin rader, och en kö tre gånger så djup är redan historia.
 
 ## Händelser i chatten
 
@@ -50,7 +65,7 @@ Saknas något slutar det alltid med *färre kort* – aldrig med en chatt som sl
 
 Power-upen *förstorad emote* ritas i full storlek på en egen rad. Meddelandeeffekter (`animation-id`) kommer över IRC och visas som en markör i alla kanaler, även utloggad – animationen i sig återges inte.
 
-Varje typ går att stänga av för sig: overlayens val ligger under **Händelser i overlayen** i appen, dockens under **Ändra chattens läsbarhet → Händelser i chatten**. De är separata, eftersom en overlay ovanpå ett spel tål mindre än en dock man läser i lugn och ro. Att stänga av en typ tar bort korten som redan står kvar; att slå på den igen gäller det som händer sedan (docken hämtar tillbaka historiken vid omladdning). Reglagen styr bara korten – en belöning triggar fortfarande pets, och en cheer är fortfarande en markör på meddelandet den kom med.
+Varje typ går att stänga av för sig: overlayens val ligger under **Händelser i overlayen** i appen, dockens under **Ändra chattens läsbarhet → Händelser i chatten** och streamchattens under **Ändra utseende på streamchatten → Händelser i chatten**. De är separata, eftersom en overlay ovanpå ett spel tål mindre än en dock man läser i lugn och ro – och vad tittarna ska se firas är en tredje fråga. Att stänga av en typ tar bort korten som redan står kvar; att slå på den igen gäller det som händer sedan (docken hämtar tillbaka historiken vid omladdning). Reglagen styr bara korten – en belöning triggar fortfarande pets, och en cheer är fortfarande en markör på meddelandet den kom med.
 
 ## Chatten ligger kvar
 
