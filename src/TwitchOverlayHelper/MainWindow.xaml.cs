@@ -207,7 +207,7 @@ public partial class MainWindow : Window
         // One entry point rather than four handlers: the reward name has to be filled in before the
         // message reaches the views, and that only holds if enrichment happens ahead of the fan-out.
         _chatClient.MessageReceived += OnChatMessage;
-        _chatClient.ModerationReceived += _hub.PublishModeration;
+        _chatClient.ModerationReceived += OnModeration;
         _chatClient.EventReceived += OnChatEvent;
         _eventSubClient.EventReceived += OnChatEvent;
         _eventSubClient.RedemptionReceived += OnRedemption;
@@ -324,6 +324,31 @@ public partial class MainWindow : Window
         _overlay.ReplaceItems(merged);
         _hub.ReplaceHistory(merged);
         AppLog.Info($"Hämtade {fetched.Count} tidigare rader för #{channel}; chatten visar nu {merged.Count}.");
+    }
+
+    /// <summary>
+    /// A message was deleted, somebody was timed out or banned, or a moderator cleared the room –
+    /// including the broadcaster typing /clear in their own chat, which is what Twitch turns into a
+    /// CLEARCHAT for everyone listening.
+    ///
+    /// <para>Three surfaces hold chat and each has to be told. The hub drops the lines from its
+    /// timeline, which is what takes them off the dock and the stream overlay; the overlay window
+    /// keeps its own cards and is told separately; and the file is written at once rather than at
+    /// the next tick, because a restart in the twenty seconds in between is exactly when a cleared
+    /// room would come back as though nothing had happened.</para>
+    /// </summary>
+    private void OnModeration(ChatModerationEvent moderation)
+    {
+        _hub.PublishModeration(moderation);
+        RunOnUi(() =>
+        {
+            // A line the action reached may still be sitting in the queue waiting for a card. Drawing
+            // it a moment after it was deleted is the one thing this must not do, and a single flush
+            // takes fifty at a time – the line we are after can be further back than that.
+            DrainPendingMessages();
+            _overlay.ApplyModeration(moderation);
+            SaveChatHistory();
+        });
     }
 
     /// <summary>

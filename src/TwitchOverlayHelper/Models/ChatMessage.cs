@@ -149,7 +149,25 @@ public sealed record ChatModerationEvent(
     string? TargetUserId,
     string? TargetLogin,
     int? DurationSeconds,
-    DateTimeOffset At);
+    DateTimeOffset At)
+{
+    /// <summary>
+    /// Whether this action reaches a given line. Asked by every surface that holds chat – the
+    /// timeline the browser pages replay from, the file on disk, the overlay's own cards – and it
+    /// has to be the same question in all of them: a line one of them still shows after a ban is a
+    /// line the moderator thinks is gone.
+    ///
+    /// <para>Messages only. A sub or a raid is not something a timeout takes back, so a cleared room
+    /// leaves the event cards standing.</para>
+    /// </summary>
+    public bool Affects(ChatMessage message) => Kind switch
+    {
+        ChatEventKind.ChatCleared => true,
+        ChatEventKind.MessageDeleted => string.Equals(message.Id, TargetMessageId, StringComparison.Ordinal),
+        _ => (TargetUserId is { Length: > 0 } id && string.Equals(message.UserId, id, StringComparison.Ordinal))
+             || (TargetLogin is { Length: > 0 } login && string.Equals(message.UserLogin, login, StringComparison.OrdinalIgnoreCase))
+    };
+}
 
 /// <summary>
 /// The kinds of USERNOTICE the chat views give a card of their own. Anything Twitch sends that is

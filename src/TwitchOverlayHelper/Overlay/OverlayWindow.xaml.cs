@@ -145,6 +145,26 @@ public partial class OverlayWindow : Window
         }
     }
 
+    /// <summary>
+    /// Takes the lines a moderator's action reached off the overlay – a deleted message, everything
+    /// from a user who was timed out or banned, or the whole room when the chat was cleared.
+    ///
+    /// <para>Removed rather than struck through the way the dock marks them. The dock is the
+    /// streamer's own reading surface, where seeing that something was dealt with is the point; this
+    /// window sits over the game, where a line with a line through it is the same words still on
+    /// screen. Nothing here needs to know why – the rule for what an action reaches lives on the
+    /// event, next to the one the chat timeline asks.</para>
+    /// </summary>
+    public void ApplyModeration(ChatModerationEvent moderation)
+    {
+        for (int i = MessagePanel.Children.Count - 1; i >= 0; i--)
+        {
+            if (MessagePanel.Children[i] is not Border card) continue;
+            if (card.Tag is not ChatTimelineItem { Message: { } message }) continue;
+            if (moderation.Affects(message)) MessagePanel.Children.RemoveAt(i);
+        }
+    }
+
     private Border CreateCard(ChatTimelineItem item) =>
         item.Event is { } chatEvent ? CreateEventCard(chatEvent) : CreateMessageCard(item.Message!);
 

@@ -120,6 +120,41 @@ public sealed class ChatHubHistoryTests
         Assert.Equal(["a", "b"], hub.SnapshotHistory().Select(item => item.Message?.Id));
     }
 
+    /// <summary>
+    /// The broadcaster typing /clear reaches us as a CLEARCHAT with no target, and it has to empty
+    /// the timeline the same way it empties the chat everyone else is looking at – including the
+    /// copy on disk, or the room would be full again after the next restart.
+    /// </summary>
+    [Fact]
+    public void ClearingTheRoomEmptiesTheTimeline()
+    {
+        ChatHub hub = Hub("kanalen");
+        hub.PublishMessage(Message("a", "hej"));
+        hub.PublishMessage(Message("b", "hej igen"));
+        long before = hub.HistoryVersion;
+
+        hub.PublishModeration(new ChatModerationEvent(ChatEventKind.ChatCleared, null, null, null, null, Now));
+
+        Assert.Empty(hub.SnapshotHistory());
+        // The file has to be rewritten, or a restart brings the cleared lines straight back.
+        Assert.NotEqual(before, hub.HistoryVersion);
+    }
+
+    // A timeout takes back what somebody said, not the fact that they subscribed – so the cards stay
+    // where every view already leaves them.
+    [Fact]
+    public void ClearingTheRoomLeavesTheEventCardsStanding()
+    {
+        ChatHub hub = Hub("kanalen");
+        hub.PublishMessage(Message("a", "hej"));
+        hub.PublishEvent(new ChatEvent(ChatEventType.Subscription, "sub-1", "Kajsa", Now) { UserLogin = "kajsa" });
+
+        hub.PublishModeration(new ChatModerationEvent(ChatEventKind.ChatCleared, null, null, null, null, Now));
+
+        ChatTimelineItem only = Assert.Single(hub.SnapshotHistory());
+        Assert.Equal("sub-1", only.Event?.Id);
+    }
+
     [Fact]
     public void MarkingAMessageCountsAsAChangeWorthSaving()
     {

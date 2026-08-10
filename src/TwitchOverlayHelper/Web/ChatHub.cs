@@ -362,17 +362,12 @@ public sealed class ChatHub(
     }
 
     /// <summary>
-    /// Moderation reaches messages only. A sub or a raid is not something a timeout takes back, and
-    /// the views leave event cards standing for the same reason.
+    /// Moderation reaches messages only, which is <see cref="ChatModerationEvent.Affects"/>'s rule –
+    /// shared with the overlay, so the same ban cannot take a line off one surface and leave it on
+    /// another.
     /// </summary>
     private static bool IsAffected(ChatTimelineItem item, ChatModerationEvent moderation) =>
-        item.Message is { } message && moderation.Kind switch
-        {
-            ChatEventKind.ChatCleared => true,
-            ChatEventKind.MessageDeleted => string.Equals(message.Id, moderation.TargetMessageId, StringComparison.Ordinal),
-            _ => (moderation.TargetUserId is { Length: > 0 } id && string.Equals(message.UserId, id, StringComparison.Ordinal))
-                 || (moderation.TargetLogin is { Length: > 0 } login && string.Equals(message.UserLogin, login, StringComparison.OrdinalIgnoreCase))
-        };
+        item.Message is { } message && moderation.Affects(message);
 
     /// <summary>
     /// Whether we are connected, and what went wrong if not. The dock's alone: it is information
