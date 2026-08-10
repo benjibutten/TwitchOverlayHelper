@@ -45,6 +45,13 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
     public event Action<RewardRedemption>? RedemptionReceived;
 
     /// <summary>
+    /// Raised when a redemption's status changed – fulfilled or cancelled. Mostly this is the app's
+    /// own answer coming back to it, which nothing acts on; what it exists for is the other case,
+    /// where the streamer works the queue in Twitch's dashboard and a pet has to come down.
+    /// </summary>
+    public event Action<RedemptionStatusChange>? RedemptionUpdated;
+
+    /// <summary>
     /// Raised when a Gigantify an Emote power-up was used. It is not an event card of its own: it
     /// belongs to a chat line, and the app's job is to find that line and mark it.
     /// </summary>
@@ -74,7 +81,11 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
 
         // Redemptions are readable in your own channel only, whatever the scope says.
         bool ownChannel = string.Equals(broadcasterId, session.UserId, StringComparison.Ordinal);
-        bool redemptions = ownChannel && session.HasScope(TwitchAuth.RedemptionsScope);
+        // Either scope opens this topic – Twitch accepts the manage scope in place of the read one,
+        // and a login granted only the manage half would otherwise lose its redemptions over a
+        // permission it already holds.
+        bool canReadRedemptions = session.HasScope(TwitchAuth.RedemptionsScope) || session.HasScope(TwitchAuth.ManageRedemptionsScope);
+        bool redemptions = ownChannel && canReadRedemptions;
         // Shoutouts need the mod role in that channel, which Twitch will not tell us up front. We
         // ask, and treat a refusal as "not a moderator here" rather than as an error.
         bool shoutouts = session.HasScope(TwitchAuth.ShoutoutsScope);
@@ -84,7 +95,11 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
         bool hypeTrain = ownChannel && session.HasScope(TwitchAuth.HypeTrainScope);
 
         var missing = new List<string>();
-        if (ownChannel && !session.HasScope(TwitchAuth.RedemptionsScope)) missing.Add(TwitchAuth.RedemptionsScope);
+        // Reported as the one thing that is actually missing rather than as both halves: a login
+        // holding the manage scope can already read redemptions, so naming the read scope there
+        // would send the user off to fix something that is not broken.
+        if (ownChannel && !canReadRedemptions) missing.Add(TwitchAuth.RedemptionsScope);
+        if (ownChannel && !session.HasScope(TwitchAuth.ManageRedemptionsScope)) missing.Add(TwitchAuth.ManageRedemptionsScope);
         if (!session.HasScope(TwitchAuth.ShoutoutsScope)) missing.Add(TwitchAuth.ShoutoutsScope);
         if (ownChannel && !session.HasScope(TwitchAuth.BitsScope)) missing.Add(TwitchAuth.BitsScope);
         if (ownChannel && !session.HasScope(TwitchAuth.HypeTrainScope)) missing.Add(TwitchAuth.HypeTrainScope);
@@ -313,8 +328,21 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
         bool hypeTrain = false;
 
         if (plan.Redemptions)
+        {
+            var condition = new Dictionary<string, string> { ["broadcaster_user_id"] = broadcasterId };
             redemptions = await TrySubscribeAsync("channel.channel_points_custom_reward_redemption.add", "1",
-                new Dictionary<string, string> { ["broadcaster_user_id"] = broadcasterId }, sessionId, token).ConfigureAwait(false);
+                condition, sessionId, token).ConfigureAwait(false);
+
+            // Asked for separately and never allowed to speak for the redemptions themselves: this
+            // one only carries what the streamer does in Twitch's own queue. Losing it costs a pet
+            // left standing after a manual refund – worth having, not worth turning the pets off
+            // over. Gated on the same scopes as the topic above, because Twitch takes either one
+            // here too; asking only when the manage scope is present would turn a permission
+            // Twitch grants into one this app withholds.
+            if (redemptions)
+                await TrySubscribeAsync("channel.channel_points_custom_reward_redemption.update", "1",
+                    condition, sessionId, token).ConfigureAwait(false);
+        }
 
         if (plan.Shoutouts)
         {
@@ -405,6 +433,15 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
                 // thing twice, so only the silent rewards – the ones nothing else can show – get one.
                 if (redemption.UserInput is null)
                     EventReceived?.Invoke(redemption.ToChatEvent());
+                return;
+            }
+            case "channel.channel_points_custom_reward_redemption.update":
+            {
+                JsonElement reward = data.TryGetProperty("reward", out JsonElement nested) ? nested : default;
+                RedemptionUpdated?.Invoke(new RedemptionStatusChange(
+                    ReadString(data, "id"),
+                    ReadString(reward, "id"),
+                    ReadString(data, "status")));
                 return;
             }
             case "channel.bits.use":
@@ -626,6 +663,13 @@ public sealed record EventSubPlan(bool Redemptions, bool Shoutouts, bool PowerUp
 /// wrote them and by the text itself.
 /// </summary>
 public sealed record GigantifiedEmote(string UserId, string EmoteId, string Text, DateTimeOffset At);
+
+/// <summary>
+/// A redemption that changed status. <paramref name="Status"/> is Twitch's own wording –
+/// FULFILLED or CANCELED – kept as it arrived rather than parsed into something narrower, so an
+/// unexpected value passes through as itself instead of quietly becoming the wrong one.
+/// </summary>
+public sealed record RedemptionStatusChange(string RedemptionId, string RewardId, string Status);
 
 /// <summary>
 /// A channel point redemption, with the name and price IRC never carries. Kept separate from

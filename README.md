@@ -52,6 +52,7 @@ Resten kommer via EventSub och kräver inloggning, rätt behörighet och – fö
 |---|---|---|
 | Subs, gåvor, raids, `/announce`, cheers, bits-märken, streaks, nya chattare | Nej | Alla kanaler |
 | Inlösta belöningar med namn och kostnad | Ja (`channel:read:redemptions`) | Bara din egen kanal |
+| Återbetalning av pet-belöningar | Ja (`channel:manage:redemptions`) | Bara din egen kanal, och bara belöningar appen själv skapat |
 | Power-ups: förstorad emote, firande | Ja (`bits:read`) | Bara din egen kanal |
 | Hypetåg | Ja (`channel:read:hype_train`) | Bara din egen kanal |
 | Shoutouts | Ja (`moderator:read:shoutouts`) | Kanaler där du är moderator |
@@ -66,6 +67,36 @@ Saknas något slutar det alltid med *färre kort* – aldrig med en chatt som sl
 Power-upen *förstorad emote* ritas i full storlek på en egen rad. Meddelandeeffekter (`animation-id`) kommer över IRC och visas som en markör i alla kanaler, även utloggad – animationen i sig återges inte.
 
 Varje typ går att stänga av för sig: overlayens val ligger under **Händelser i overlayen** i appen, dockens under **Ändra chattens läsbarhet → Händelser i chatten** och streamchattens under **Ändra utseende på streamchatten → Händelser i chatten**. De är separata, eftersom en overlay ovanpå ett spel tål mindre än en dock man läser i lugn och ro – och vad tittarna ska se firas är en tredje fråga. Att stänga av en typ tar bort korten som redan står kvar; att slå på den igen gäller det som händer sedan (docken hämtar tillbaka historiken vid omladdning). Reglagen styr bara korten – en belöning triggar fortfarande pets, och en cheer är fortfarande en markör på meddelandet den kom med.
+
+## Pets som kan betalas tillbaka
+
+En pet som aldrig syntes ska inte kosta tittaren någonting. Appen kan därför skapa pet-belöningen åt dig i Twitch och svara på varje inlösen: **klart** när peten levde ut sin tid, **återbetalning** när den aldrig kom fram.
+
+Det kräver att belöningen är skapad **härifrån**. Twitch låter en app besvara en inlösen bara på belöningar som appens eget Client ID har skapat – en belöning du gjort för hand i Twitchs dashboard går inte att adoptera, och svaret blir 403 hur behörigheterna än ser ut. Appen skapar den därför med kön påslagen (`should_redemptions_skip_request_queue` = false); hoppar en belöning över kön blir den klarmarkerad i samma sekund och kan aldrig återbetalas.
+
+Så här byter du över:
+
+1. Logga in igen efter uppdateringen – `channel:manage:redemptions` är nytt.
+2. Döp om eller ta bort den gamla, handgjorda belöningen. Twitch vägrar skapa två med samma namn.
+3. Fyll i namn, tid och poäng på raden under **Pets → Belöningar som ger pets** och klicka **⚡**. Raden får ett 🔒 när den är appens egen.
+4. Sätt bilden i Twitchs dashboard efteråt – den går inte att ladda upp via API:t.
+5. Kryssa i **Shutdown source when not visible** på pet-källan i OBS. Då märker appen när gräsmattan faktiskt är borta i stället för att gissa.
+
+Inlösen markeras **inte** som klar när peten spawnar, utan när den levt färdigt. Det är enda sättet att hålla återbetalningen möjlig hela vägen: att servern lade till en pet och skickade en frame betyder inte att någon såg den. Overlayen kvitterar därför varje pet den faktiskt ritar, och en inlösen betalas tillbaka när
+
+- kvittot uteblir – browser-källan är uppe men ritade aldrig något,
+- gräsmattan är full, eller peten knuffas ut i förtid av en annan,
+- ingen pet-overlay är igång,
+- overlayen försvinner mitt i (en omladdning i OBS hinner tillbaka och kostar ingenting),
+- du stänger av pets i appen medan pets lever – hela gräsmattan göms, så ingen ser vad de betalat för.
+
+Återbetalar du själv i Twitchs kö går peten ned här också. Byter du kanal töms gräsmattan – en pet köpt i en annan kanal hör inte hemma på den nya.
+
+Allt som lösts in **medan appen inte lyssnade** betalas tillbaka när den kopplar upp igen: förra körningen, en krasch mitt i sändningen, ett svep i en annan kanal, ett tapp i EventSub mitt i sändningen, eller bara sekunderna innan socketen kom upp. De petsen finns inte längre, så poängen ska tillbaka. Inlösen som EventSub redan levererat rörs inte, och går genomgången inte att slutföra görs den om vid nästa anslutning i stället för att bockas av. Har en kö vuxit förbi 2 000 väntande inlösen tas resten inte här – det står i loggen, och Twitchs egen kö har dem kvar.
+
+Är EventSub nere spawnar en 🔒-belöning ingen pet alls. Chattvägen ser bara belöningens ID, aldrig inlösens eget, så en pet utdelad där hade aldrig kunnat bokföras – tittaren hade fått både peten och poängen tillbaka. Inlösen ligger i stället kvar i Twitchs kö tills appen är tillbaka.
+
+Belöningar du redan har fungerar precis som förut: peten spawnar, poängen är spenderade, ingenting nytt händer, och chattvägen bär dem även utan EventSub. Bara rader med 🔒 kan besvaras – och deras ID är låst, eftersom det är det enda som binder raden till belöningen Twitch låter oss svara på. Peka om en rad genom att ta bort den och skapa en ny.
 
 ## Chatten ligger kvar
 

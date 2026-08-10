@@ -89,6 +89,25 @@ public partial class MainWindow : Window
     private readonly PetRegistry _petRegistry = new();
     private readonly PetCatalog _petCatalog = new();
     private readonly PetService _petService;
+
+    /// <summary>
+    /// Holds every redemption of an app-made pet reward open until the pet has been delivered, and
+    /// pays it back when it has not.
+    /// </summary>
+    private readonly RedemptionLedger _ledger;
+
+    /// <summary>Which channel the ledger's pending redemptions belong to, so a reconnect is told from a switch.</summary>
+    private string _ledgerChannel = string.Empty;
+
+    /// <summary>
+    /// Whether the reward queue has been read through since the last gap in coverage. Set only by a
+    /// sweep that finished, and cleared by every stretch where redemptions were not being
+    /// delivered – a reconnect and a channel switch both leave a queue nobody was listening to.
+    /// </summary>
+    private bool _swept;
+
+    /// <summary>A sweep is out. Coverage is reported more than once, and two sweeps would read the same queue twice.</summary>
+    private bool _sweeping;
     private readonly DockServer _dockServer;
     private readonly DockServerContext _dockContext;
     private readonly AppSettings _settings;
@@ -143,6 +162,12 @@ public partial class MainWindow : Window
         _nameSpeech = new NameSpeechService(_speechHttpClient, _settings, _speechSecrets, _namePlayer.PlayAsync);
         _hub = new ChatHub(_settings, _badgeCatalog, _session, _petRegistry, _petCatalog, _nicknames) { SpeechEnabled = _nameSpeech.IsConfigured };
         _petService = new PetService(_settings, _petCatalog, _petRegistry, _hub);
+        // The broadcaster is read at call time rather than captured: the app can be pointed at
+        // another channel while it runs, and a refund aimed at the channel we have left is refused.
+        _ledger = new RedemptionLedger(
+            new TwitchRedemptionGateway(_apiClient, () => _hub.BroadcasterId),
+            _petRegistry,
+            _hub.PublishPetRemoved);
         _dockContext = new DockServerContext
         {
             Settings = _settings,
@@ -186,6 +211,21 @@ public partial class MainWindow : Window
         _chatClient.EventReceived += OnChatEvent;
         _eventSubClient.EventReceived += OnChatEvent;
         _eventSubClient.RedemptionReceived += OnRedemption;
+        // The queue can also be worked from Twitch's own dashboard, and a pet whose redemption was
+        // refunded there has to come down here too.
+        _eventSubClient.RedemptionUpdated += change => _ledger.HandleExternalUpdate(change.RedemptionId, change.Status);
+        // The two signals that say whether a pet is being seen at all: a lawn reporting what it has
+        // drawn, and whether any lawn is connected in the first place.
+        _hub.PetShown += _ledger.MarkShown;
+        _hub.PetOverlayCountChanged += _ledger.OverlayCountChanged;
+        // A full lawn pushes the oldest pet home to fit a new one, and that pet may be one somebody
+        // paid for. The chat route and the test button both do it; a refundable reward refuses
+        // instead, so it is only ever on the receiving end.
+        _petService.PetEvicted += _ledger.PetEvicted;
+        _ledger.Answered += notice => RunOnUi(() => ShowRedemptionNotice(notice));
+        // Nothing is connected yet, and the ledger has to start out knowing that rather than
+        // assuming a lawn it has never seen.
+        _ledger.OverlayCountChanged(_hub.PetOverlayCount);
         _eventSubClient.GigantifyReceived += OnGigantify;
         _eventSubClient.HypeTrainChanged += OnHypeTrain;
         _eventSubClient.StatusChanged += status => RunOnUi(() => SetEventStatus(status));
@@ -444,11 +484,16 @@ public partial class MainWindow : Window
     private void PetSetting_Changed(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
+        bool wasEnabled = _settings.Pets.Enabled;
         _settings.Pets.Enabled = PetsEnabledCheck.IsChecked == true;
         _settings.Pets.ShowNames = PetNamesCheck.IsChecked == true;
         _settings.Pets.Scale = PetScaleSlider.Value;
         PetScaleValue.Text = $"{PetScaleSlider.Value:P0}";
         _hub.PublishPetSettings();
+        // Switching pets off hides the whole lawn, and the creatures on it go on living out their
+        // time behind it. Anyone who paid for one of them is now paying for something nobody can
+        // see, so they get their points back rather than a redemption booked as delivered.
+        if (wasEnabled && !_settings.Pets.Enabled) _ledger.RefundAll("pets stängdes av");
         SaveSettings();
     }
 
@@ -496,6 +541,84 @@ public partial class MainWindow : Window
             box.Text = rule.Minutes.ToString();
     }
 
+    private void PetRewardCost_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is not TextBox box || box.DataContext is not PetRewardRule rule) return;
+        if (!int.TryParse(box.Text, out int cost) || cost < 1) box.Text = rule.Cost.ToString();
+    }
+
+    /// <summary>
+    /// Creates the row's reward on Twitch, which is the only thing that makes its redemptions
+    /// refundable later: Twitch lets an app answer a redemption only on a reward its own client id
+    /// made. A reward set up by hand in the dashboard cannot be adopted – there is no API for it –
+    /// so moving an existing pet reward over means creating a new one here and retiring the old one.
+    /// </summary>
+    private async void CreatePetReward_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not PetRewardRule rule) return;
+
+        if (rule.Managed)
+        {
+            PetRewardStatusText.Text = $"“{rule.Label}” är redan skapad av appen.";
+            return;
+        }
+        if (!_session.IsLoggedIn)
+        {
+            PetRewardStatusText.Text = "Logga in på Twitch först.";
+            return;
+        }
+        if (!_session.HasScope(TwitchAuth.ManageRedemptionsScope))
+        {
+            PetRewardStatusText.Text = "Din inloggning är från innan återbetalning fanns – logga ut och in igen så du kan godkänna behörigheten.";
+            return;
+        }
+        if (_hub.BroadcasterId.Length == 0 || !string.Equals(_hub.BroadcasterId, _session.UserId, StringComparison.Ordinal))
+        {
+            PetRewardStatusText.Text = "Anslut till din egen kanal först – belöningar kan bara skapas där.";
+            return;
+        }
+        if (rule.Label.Trim().Length == 0)
+        {
+            PetRewardStatusText.Text = "Ge raden ett namn först; det blir belöningens namn i Twitch.";
+            return;
+        }
+
+        (sender as Button)!.IsEnabled = false;
+        PetRewardStatusText.Text = $"Skapar “{rule.Label}” i Twitch …";
+        try
+        {
+            CustomReward created = await _apiClient.CreateCustomRewardAsync(_hub.BroadcasterId, new NewCustomReward(
+                rule.Label.Trim(),
+                rule.Cost,
+                $"Skriv namnet på den pet du vill ha, t.ex. boo. Peten syns i {rule.Minutes} minuter.",
+                RequireInput: true,
+                CooldownSeconds: 0,
+                BackgroundColor: null));
+
+            rule.RewardId = created.Id;
+            rule.RewardName = created.Title;
+            rule.Cost = created.Cost;
+            rule.Managed = true;
+            _rewards.Remember(created);
+            SavePetRewards();
+            // The rows read their state once when they are drawn, so the list is built again to let
+            // the new lock show up next to the reward that just became refundable.
+            RefreshPetRewardList();
+            PetRewardStatusText.Text = $"“{created.Title}” skapad. Sätt bilden i Twitchs dashboard – den går inte att ladda upp via API:t.";
+        }
+        catch (Exception ex) when (ex is TwitchApiException or TwitchAuthException or System.Net.Http.HttpRequestException or TaskCanceledException)
+        {
+            // The one worth spelling out: Twitch refuses a second reward with a title the channel
+            // already uses, which is exactly what a streamer moving off a hand-made reward hits.
+            PetRewardStatusText.Text = $"Kunde inte skapa belöningen: {ex.Message} Har du redan en belöning med samma namn? Döp om eller ta bort den först.";
+            AppLog.Warn($"Pets: kunde inte skapa belöning “{rule.Label}”: {ex.Message}");
+        }
+        finally
+        {
+            if (sender is Button button) button.IsEnabled = true;
+        }
+    }
+
     private void AddPetReward_Click(object sender, RoutedEventArgs e) =>
         AddPetReward(new PetRewardRule { Minutes = _settings.Pets.LifetimeMinutes });
 
@@ -541,6 +664,18 @@ public partial class MainWindow : Window
         _settings.Pets.Rewards = _petRewards.ToList();
         PetRewardEmptyText.Visibility = _petRewards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         SaveSettings();
+    }
+
+    /// <summary>
+    /// Draws the rows again. The rules are plain settings objects with no change notification, so
+    /// the one thing that changes without the user typing it – a row becoming refundable – needs
+    /// the list rebuilt to show up.
+    /// </summary>
+    private void RefreshPetRewardList()
+    {
+        PetRewardRule[] rules = _petRewards.ToArray();
+        _petRewards.Clear();
+        foreach (PetRewardRule rule in rules) _petRewards.Add(rule);
     }
 
     private void SpawnTestPet_Click(object sender, RoutedEventArgs e) => _petService.SpawnTest();
@@ -883,6 +1018,26 @@ public partial class MainWindow : Window
         _hub.ClearHypeTrain();
         _hypeCards.Clear();
         _petService.RedemptionsFromEventSub = false;
+        // Whatever brought us here, redemptions stopped being delivered for a stretch, so the queue
+        // has to be read again on the way back.
+        _swept = false;
+
+        // Pending redemptions belong to the channel they were made in, so a switch lets them go –
+        // answering them from another channel is refused by Twitch and would be wrong even if it
+        // were not. A plain reconnect must not, though: this method also runs when IRC drops and
+        // comes back mid-stream, and throwing away the pets living through that gap would leave
+        // their viewers refunded for something they watched.
+        if (!string.Equals(_ledgerChannel, broadcasterId, StringComparison.Ordinal))
+        {
+            _ledger.Reset();
+            _ledgerChannel = broadcasterId;
+            // Another channel's pets have no business on this one's lawn, and the entries that
+            // vouched for them have just gone. Letting them go is not the same as settling them:
+            // they stay unfulfilled in the channel they were made in, and coming back there finds
+            // them sitting from before we were listening and pays them back.
+            _petRegistry.Clear();
+            _hub.PublishPetsCleared();
+        }
         if (generation != _eventSubGeneration) return;
 
         EventSubPlan plan = _eventSubClient.Plan(broadcasterId);
@@ -896,6 +1051,58 @@ public partial class MainWindow : Window
         // their whole session over an optional feature.
         try { await _eventSubClient.StartAsync(broadcasterId); }
         catch (InvalidOperationException) { }
+        // The sweep is not started here. StartAsync only kicks off the background task – the socket
+        // is not open and nothing is subscribed yet, so anything redeemed in that gap would be
+        // invisible to EventSub and too new for a sweep cut at this moment. It waits for coverage
+        // to confirm the subscription instead; see ApplyEventCoverage.
+    }
+
+    /// <summary>
+    /// Pays back every redemption of one of our rewards that we were not listening for.
+    ///
+    /// <para>The pets only ever live in memory, so a redemption still unfulfilled on an app-made
+    /// reward from before we subscribed bought a pet that nobody can be watching now. A clean exit,
+    /// a crash mid-stream, a spell in another channel and the seconds it takes the socket to come
+    /// up all look the same from here, and the viewer is owed their points in every one of them.
+    /// </para>
+    /// </summary>
+    /// <param name="listeningSince">
+    /// The moment EventSub confirmed the subscription. Everything redeemed before it is ours to pay
+    /// back; everything after arrives through the normal path. Cut here rather than at process
+    /// start on purpose – that left the connection gap belonging to neither.
+    /// </param>
+    /// <summary>Runs the sweep and lets the next one in afterwards, however this one ended.</summary>
+    private async Task SweepThenReleaseAsync(DateTimeOffset listeningSince, int generation)
+    {
+        try { await SweepLeftoverRedemptionsAsync(listeningSince, generation); }
+        finally { _sweeping = false; }
+    }
+
+    private async Task SweepLeftoverRedemptionsAsync(DateTimeOffset listeningSince, int generation)
+    {
+        IReadOnlyList<string> managed = _settings.Pets.ManagedRewardIds;
+        if (managed.Count == 0)
+        {
+            _swept = true;
+            return;
+        }
+
+        bool complete;
+        try { complete = await _ledger.SweepAsync(managed, listeningSince); }
+        catch (Exception ex)
+        {
+            AppLog.Error("Pets: kunde inte städa kön från förra körningen", ex);
+            complete = false;
+        }
+        if (generation != _eventSubGeneration) return;
+
+        // Only a sweep that actually read every queue may stop the next connection from trying
+        // again. Marking it done up front is how a single failed call leaves a viewer's points
+        // sitting in Twitch's queue for the rest of the stream.
+        _swept = complete;
+        RunOnUi(() => PetRewardStatusText.Text = complete
+            ? "Kön är genomgången."
+            : "Kunde inte läsa hela kön – försöker igen vid nästa anslutning.");
     }
 
     private async Task LoadRewardNamesAsync(string broadcasterId)
@@ -918,6 +1125,21 @@ public partial class MainWindow : Window
     private void ApplyEventCoverage(EventSubCoverage coverage)
     {
         _petService.RedemptionsFromEventSub = coverage.Redemptions;
+
+        // This is the first moment we know redemptions are actually being delivered, which makes it
+        // the only honest place to cut the sweep: everything redeemed before now was redeemed while
+        // nobody was listening.
+        //
+        // Not listening is exactly what arms it again. Every gap – a reconnect, a revoked
+        // subscription, a channel switch – is a stretch where a redemption could arrive with nobody
+        // to hear it, so the queue has to be looked at once more on the way back. The flag is only
+        // set by a sweep that finished, so a failed one comes round again too.
+        if (!coverage.Redemptions) _swept = false;
+        else if (!_swept && !_sweeping)
+        {
+            _sweeping = true;
+            _ = SweepThenReleaseAsync(DateTimeOffset.UtcNow, _eventSubGeneration);
+        }
 
         var on = new List<string>();
         if (coverage.Redemptions) on.Add("inlösta belöningar visas med namn och kostnad");
@@ -1157,9 +1379,52 @@ public partial class MainWindow : Window
     {
         if (redemption.RewardId.Length > 0)
             _rewards.Remember(new CustomReward(redemption.RewardId, redemption.RewardTitle, redemption.RewardCost ?? 0));
-        _petService.HandleRedemption(redemption);
+
+        PetRedemptionResult result = _petService.HandleRedemption(redemption);
+        AnswerRedemption(redemption, result);
         RunOnUi(() => ShowLastReward(redemption.RewardId, redemption.RewardTitle, redemption.DisplayName));
     }
+
+    /// <summary>
+    /// Tells Twitch what became of a redemption – but only for the rewards this app created, which
+    /// are the only ones it may answer at all.
+    ///
+    /// <para>A pet that did spawn is not answered yet. It goes into the ledger and stays in the
+    /// channel's queue until it has lived its time, because that is the only window in which it can
+    /// still be paid back: an OBS browser source that never came up accepts the frame and draws
+    /// nothing, and marking the purchase done at spawn would close the door before anyone could
+    /// notice. Everything that failed outright is refunded on the spot.</para>
+    /// </summary>
+    private void AnswerRedemption(RewardRedemption redemption, PetRedemptionResult result)
+    {
+        if (!result.Refundable) return;
+
+        string viewer = redemption.DisplayName.Length > 0 ? redemption.DisplayName : redemption.UserLogin;
+        int cost = redemption.RewardCost ?? 0;
+
+        if (result is { Outcome: PetSpawnOutcome.Spawned, Pet: { } pet })
+        {
+            _ledger.Track(redemption.Id, redemption.RewardId, pet.Id, viewer, cost,
+                DateTimeOffset.FromUnixTimeMilliseconds(pet.ExpiresAt));
+            return;
+        }
+
+        string? reason = result.Outcome switch
+        {
+            PetSpawnOutcome.Disabled => "pets är avstängda i appen",
+            PetSpawnOutcome.Full => "det var fullt på gräsmattan",
+            PetSpawnOutcome.NoOverlay => "pet-overlayen var inte igång",
+            _ => null
+        };
+        if (reason is null) return;
+        _ = _ledger.RefundNow(redemption.Id, redemption.RewardId, viewer, cost, reason);
+    }
+
+    /// <summary>Says what the ledger just did, so a refund is not something the streamer finds out about later.</summary>
+    private void ShowRedemptionNotice(RedemptionNotice notice) =>
+        PetRewardStatusText.Text = notice.Refunded
+            ? $"↩ {notice.ViewerName} fick tillbaka {notice.Cost} poäng – {notice.Reason}."
+            : $"✓ {notice.ViewerName}s pet levde klart.";
 
     /// <summary>
     /// A Gigantify an Emote power-up. It carries no message id, so the tracker pairs it with the
@@ -1773,6 +2038,11 @@ public partial class MainWindow : Window
         _badgeLoadCancellation?.Cancel();
         _badgeLoadCancellation?.Dispose();
         _badgeLoadCancellation = null;
+        // Anything still waiting on a verdict is left in Twitch's queue rather than answered from a
+        // window that is disappearing. The streamer can refund it there, and the next start sweeps
+        // whatever they did not.
+        _ledger.Reset();
+        _ledger.Dispose();
         SaveSettingsNow();
         // The last twenty seconds of chat would otherwise be the one gap a clean shutdown leaves.
         SaveChatHistory();

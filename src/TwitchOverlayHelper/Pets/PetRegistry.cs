@@ -31,7 +31,14 @@ public sealed class PetRegistry
     /// a twin would only halve the attention each one gets. Naming another species on the second
     /// redemption transforms the pet, so paying again always changes something on screen.
     /// </summary>
-    public PetSpawnResult Spawn(string id, string name, string? color, string species, TimeSpan lifetime, int maxPets)
+    /// <param name="evictWhenFull">
+    /// What a full lawn means. True is the old behaviour: the oldest pet goes home so the newest
+    /// redemption always gets one. False refuses instead, and is what a reward that can pay back
+    /// asks for – sending someone else's pet home early to make room is a poor answer when handing
+    /// the points back is available.
+    /// </param>
+    /// <returns>The spawn, or null when the lawn was full and eviction was not allowed.</returns>
+    public PetSpawnResult? Spawn(string id, string name, string? color, string species, TimeSpan lifetime, int maxPets, bool evictWhenFull = true)
     {
         long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         long expires = now + (long)lifetime.TotalMilliseconds;
@@ -50,6 +57,7 @@ public sealed class PetRegistry
             string? removedId = null;
             if (_pets.Count >= Math.Max(1, maxPets))
             {
+                if (!evictWhenFull) return null;
                 removedId = _pets[0].Id;
                 _pets.RemoveAt(0);
             }
@@ -58,6 +66,15 @@ public sealed class PetRegistry
             _pets.Add(pet);
             return new PetSpawnResult(pet, removedId, Extended: false);
         }
+    }
+
+    /// <summary>
+    /// Takes one pet off the lawn early – a redemption paid back, whether by this app or by the
+    /// streamer in Twitch's own queue. Answers whether there was one to take.
+    /// </summary>
+    public bool Remove(string id)
+    {
+        lock (_lock) return _pets.RemoveAll(pet => string.Equals(pet.Id, id, StringComparison.Ordinal)) > 0;
     }
 
     public void Clear()

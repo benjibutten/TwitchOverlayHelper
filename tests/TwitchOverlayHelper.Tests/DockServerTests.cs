@@ -658,6 +658,197 @@ public sealed class DockServerTests
         $"ws://127.0.0.1:{settings.DockServerPort}/ws?key={settings.DockAccessKey}"
         + (view.Length > 0 ? $"&view={view}" : string.Empty);
 
+    // ------------------------------------------------------------- the pet overlay
+    //
+    // The pet lawn is the one view that has to answer "is anybody going to see this", because a
+    // reward that can pay back refuses rather than spend a viewer's points on an empty screen.
+
+    [Fact]
+    public async Task ThePetOverlayGetsItsOwnGreetingWithoutTheStreamersBusinessInIt()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: "42");
+        await using (server)
+        {
+            hub.PublishMessage(new ChatMessage("1", "Någon", "hej", "#ffffff", [], false, false, DateTimeOffset.Now));
+
+            using JsonDocument hello = JsonDocument.Parse(await HelloAsync(settings, "pets"));
+
+            Assert.Equal("hello", hello.RootElement.GetProperty("type").GetString());
+            Assert.True(hello.RootElement.TryGetProperty("petSettings", out _));
+            Assert.True(hello.RootElement.TryGetProperty("petCatalog", out _));
+            Assert.True(hello.RootElement.TryGetProperty("pets", out _));
+            // A browser source on the broadcast machine has no business with any of these.
+            Assert.False(hello.RootElement.TryGetProperty("history", out _));
+            Assert.False(hello.RootElement.TryGetProperty("nicknames", out _));
+            Assert.False(hello.RootElement.TryGetProperty("auth", out _));
+        }
+        client.Dispose();
+    }
+
+    [Fact]
+    public async Task OnlyThePetViewCountsAsALawnThatCanBeSeen()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            byte[] buffer = new byte[64 * 1024];
+
+            // A dock left open in a browser tab is not an answer to "will anyone see the pet".
+            using var dock = new ClientWebSocket();
+            await dock.ConnectAsync(new Uri(SocketUrl(settings, "")), timeout.Token);
+            await dock.ReceiveAsync(buffer, timeout.Token);
+            Assert.Equal(0, hub.PetOverlayCount);
+
+            using var lawn = new ClientWebSocket();
+            await lawn.ConnectAsync(new Uri(SocketUrl(settings, "pets")), timeout.Token);
+            await lawn.ReceiveAsync(buffer, timeout.Token);
+            Assert.Equal(1, hub.PetOverlayCount);
+        }
+        client.Dispose();
+    }
+
+    // The receipt that tells a pet which was drawn from one that was only sent.
+    [Fact]
+    public async Task ThePetOverlayCanReportThePetsItHasDrawn()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            var shown = new TaskCompletionSource<string>();
+            hub.PetShown += id => shown.TrySetResult(id);
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var lawn = new ClientWebSocket();
+            await lawn.ConnectAsync(new Uri(SocketUrl(settings, "pets")), timeout.Token);
+            await lawn.ReceiveAsync(new byte[64 * 1024], timeout.Token);
+
+            await SendAsync(lawn, """{"type":"petShown","id":"viewer-7"}""", timeout.Token);
+
+            Assert.Equal("viewer-7", await shown.Task.WaitAsync(timeout.Token));
+        }
+        client.Dispose();
+    }
+
+    // These sockets sit on the broadcast machine, so anything that is not the one frame we know is
+    // dropped rather than guessed at.
+    [Fact]
+    public async Task ADockCannotClaimAPetWasDrawnAndNeitherCanAnUnknownFrame()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            var heard = new List<string>();
+            hub.PetShown += heard.Add;
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            byte[] buffer = new byte[64 * 1024];
+
+            using var dock = new ClientWebSocket();
+            await dock.ConnectAsync(new Uri(SocketUrl(settings, "")), timeout.Token);
+            await dock.ReceiveAsync(buffer, timeout.Token);
+            await SendAsync(dock, """{"type":"petShown","id":"viewer-7"}""", timeout.Token);
+
+            using var lawn = new ClientWebSocket();
+            await lawn.ConnectAsync(new Uri(SocketUrl(settings, "pets")), timeout.Token);
+            await lawn.ReceiveAsync(buffer, timeout.Token);
+            await SendAsync(lawn, "inte ens json", timeout.Token);
+            await SendAsync(lawn, """{"type":"nagot-annat","id":"viewer-8"}""", timeout.Token);
+            // Well-formed JSON of the wrong shape. Reading these without checking the kind first
+            // throws InvalidOperationException, which is not a JsonException and would travel
+            // straight out of the socket loop – a browser source could end its own connection.
+            await SendAsync(lawn, """{"type":1}""", timeout.Token);
+            await SendAsync(lawn, """{"type":{"petShown":true},"id":"viewer-8"}""", timeout.Token);
+            await SendAsync(lawn, """{"type":"petShown","id":17}""", timeout.Token);
+            await SendAsync(lawn, "[1,2,3]", timeout.Token);
+
+            // A frame that does reach through, so the assertion is not just racing the two above.
+            var shown = new TaskCompletionSource<string>();
+            hub.PetShown += id => shown.TrySetResult(id);
+            await SendAsync(lawn, """{"type":"petShown","id":"viewer-9"}""", timeout.Token);
+            await shown.Task.WaitAsync(timeout.Token);
+
+            Assert.Equal(["viewer-9"], heard);
+        }
+        client.Dispose();
+    }
+
+    [Fact]
+    public async Task ARefundedPetIsSentHomeOnItsOwnFrame()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            string[] frames = await FramesAfterHelloAsync(settings, 1, () => hub.PublishPetRemoved("viewer-7"), "pets");
+
+            using JsonDocument frame = JsonDocument.Parse(frames[0]);
+            Assert.Equal("petRemove", frame.RootElement.GetProperty("type").GetString());
+            Assert.Equal("viewer-7", frame.RootElement.GetProperty("payload").GetProperty("id").GetString());
+        }
+        client.Dispose();
+    }
+
+    // The lawn reads no chat, and being sent it is not free: its outbound queue is bounded, and a
+    // client that fills one is dropped. During a raid that would close the pet socket – which is
+    // now the thing that refunds every pet on screen.
+    [Fact]
+    public async Task ThePetOverlayIsNotSentTheChat()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var lawn = new ClientWebSocket();
+            await lawn.ConnectAsync(new Uri(SocketUrl(settings, "pets")), timeout.Token);
+            byte[] buffer = new byte[64 * 1024];
+            await lawn.ReceiveAsync(buffer, timeout.Token);
+
+            for (int i = 0; i < 20; i++)
+                hub.PublishMessage(new ChatMessage($"{i}", "Någon", "hej", "#ffffff", [], false, false, DateTimeOffset.Now));
+            // A pet frame behind them: the first thing the lawn hears has to be this one, which only
+            // holds if none of the chat above was sent to it.
+            hub.PublishPetRemoved("viewer-7");
+
+            WebSocketReceiveResult result = await lawn.ReceiveAsync(buffer, timeout.Token);
+            using JsonDocument frame = JsonDocument.Parse(Encoding.UTF8.GetString(buffer, 0, result.Count));
+            Assert.Equal("petRemove", frame.RootElement.GetProperty("type").GetString());
+        }
+        client.Dispose();
+    }
+
+    // A lawn added as a browser source before the pet view existed connects as a dock. Narrowing
+    // the pet frames to the new view would leave it showing nothing at all.
+    [Fact]
+    public async Task APetOverlayConnectedAsADockStillGetsItsPets()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            string[] frames = await FramesAfterHelloAsync(settings, 1, () => hub.PublishPetRemoved("viewer-7"));
+
+            using JsonDocument frame = JsonDocument.Parse(frames[0]);
+            Assert.Equal("petRemove", frame.RootElement.GetProperty("type").GetString());
+        }
+        client.Dispose();
+    }
+
+    [Fact]
+    public async Task LeavingAChannelEmptiesTheLawn()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            string[] frames = await FramesAfterHelloAsync(settings, 1, hub.PublishPetsCleared, "pets");
+
+            using JsonDocument frame = JsonDocument.Parse(frames[0]);
+            Assert.Equal("petsClear", frame.RootElement.GetProperty("type").GetString());
+        }
+        client.Dispose();
+    }
+
+    private static Task SendAsync(ClientWebSocket socket, string payload, CancellationToken token) =>
+        socket.SendAsync(Encoding.UTF8.GetBytes(payload), WebSocketMessageType.Text, true, token);
+
     // The speaker button is hidden when pronunciation is not set up, but hiding a button is not
     // enforcement – and the endpoint spends money at two APIs.
     [Fact]

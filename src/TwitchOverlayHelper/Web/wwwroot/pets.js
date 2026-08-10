@@ -21,8 +21,12 @@ const BASE_SIZE = 90;
 let socket = null;
 let reconnectDelay = 1000;
 
+/* view=pets is how the app tells this page apart from a dock somebody left open in a browser tab.
+   It decides two things on the server: this page gets a greeting cut to the pets instead of the
+   whole chat history, and a redemption that can pay back knows whether anyone is going to see the
+   pet it bought. */
 function connect() {
-  socket = new WebSocket(`ws://${location.host}/ws?key=${encodeURIComponent(KEY)}`);
+  socket = new WebSocket(`ws://${location.host}/ws?view=pets&key=${encodeURIComponent(KEY)}`);
   socket.onopen = () => { reconnectDelay = 1000; };
   socket.onmessage = (event) => handle(JSON.parse(event.data));
   socket.onclose = () => {
@@ -30,6 +34,16 @@ function connect() {
     reconnectDelay = Math.min(15000, reconnectDelay * 1.7);
   };
   socket.onerror = () => socket.close();
+}
+
+/* The receipt for one pet. Sent once it is in the DOM, so the app can tell a pet that was drawn
+   from one it only sent: a browser source that failed to come up in OBS accepts the frame and
+   renders nothing, and the viewer who paid for it deserves their points back rather than an empty
+   lawn. Sent on a best effort – a socket that closed between the frame and here says the same
+   thing by being gone. */
+function reportShown(id) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  try { socket.send(JSON.stringify({ type: "petShown", id })); } catch { /* the reconnect answers for it */ }
 }
 
 function handle(frame) {
@@ -41,11 +55,15 @@ function handle(frame) {
   }
   if (frame.type === "petSettings") { applySettings(frame.payload); return; }
   if (frame.type === "petCatalog") { applyCatalog(frame.payload); return; }
+  if (frame.type === "petRemove") { removePet(frame.payload.id, true); return; }
+  // The app left the channel these pets were bought in; none of them belong on the new one.
+  if (frame.type === "petsClear") { for (const id of [...pets.keys()]) removePet(id, true); return; }
   if (frame.type === "petSpawn") {
     const { pet, removedId, extended } = frame.payload;
     if (removedId) removePet(removedId, true);
     if (extended && pets.has(pet.id)) extendPet(pet);
     else spawnPet(pet);
+    reportShown(pet.id);
   }
   // Chat frames from the shared socket are someone else's business.
 }
@@ -71,7 +89,9 @@ function applyCatalog(list) {
   for (const pet of pets.values()) applyBody(pet);
 }
 
-/* The server list is the truth: drop pets it no longer knows, add the ones it does. */
+/* The server list is the truth: drop pets it no longer knows, add the ones it does. Every pet that
+   ends up on screen is reported, this time included: a reload in OBS lands here, and a pet that
+   came back deserves the same receipt as one that arrived fresh. */
 function syncPets(list) {
   const alive = new Set(list.map((p) => p.id));
   for (const id of [...pets.keys()]) if (!alive.has(id)) removePet(id, false);
@@ -80,9 +100,10 @@ function syncPets(list) {
       const existing = pets.get(p.id);
       existing.expiresAt = p.expiresAt;
       if (p.species && p.species !== existing.species) morphPet(existing, p.species);
-      continue;
+    } else {
+      spawnPet(p);
     }
-    spawnPet(p);
+    reportShown(p.id);
   }
 }
 

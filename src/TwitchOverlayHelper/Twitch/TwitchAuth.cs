@@ -28,6 +28,17 @@ public sealed class TwitchAuth(HttpClient httpClient)
     /// <summary>Channel point redemptions, in your own channel only.</summary>
     public const string RedemptionsScope = "channel:read:redemptions";
 
+    /// <summary>
+    /// Creating channel point rewards and answering their redemptions – fulfilled, or cancelled,
+    /// which is what hands the viewer their points back.
+    ///
+    /// <para>Twitch only lets an app answer redemptions of rewards that same app created, so this
+    /// scope alone buys nothing: the reward has to be made from here as well. A reward set up by
+    /// hand in the creator dashboard can never be refunded from this app, whatever the token says.
+    /// </para>
+    /// </summary>
+    public const string ManageRedemptionsScope = "channel:manage:redemptions";
+
     /// <summary>Shoutouts, in channels you moderate. The read scope is enough; we never send one.</summary>
     public const string ShoutoutsScope = "moderator:read:shoutouts";
 
@@ -59,6 +70,7 @@ public sealed class TwitchAuth(HttpClient httpClient)
         "channel:manage:raids",
         "user:read:follows",
         RedemptionsScope,
+        ManageRedemptionsScope,
         ShoutoutsScope,
         BitsScope,
         HypeTrainScope,
@@ -83,6 +95,7 @@ public sealed class TwitchAuth(HttpClient httpClient)
     public static string DescribeScope(string scope) => scope switch
     {
         RedemptionsScope => "inlösta belöningar",
+        ManageRedemptionsScope => "återbetalning av pet-belöningar",
         ShoutoutsScope => "shoutouts",
         BitsScope => "power-ups och förstorade emotes",
         HypeTrainScope => "hypetåg",

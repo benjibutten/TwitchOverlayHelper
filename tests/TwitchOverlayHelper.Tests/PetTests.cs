@@ -15,8 +15,9 @@ public sealed class PetRegistryTests
     {
         var registry = new PetRegistry();
 
-        PetSpawnResult result = registry.Spawn("7", "Kajsa", "#9146FF", "robo", Lifetime, maxPets: 6);
+        PetSpawnResult? result = registry.Spawn("7", "Kajsa", "#9146FF", "robo", Lifetime, maxPets: 6);
 
+        Assert.NotNull(result);
         Assert.False(result.Extended);
         Assert.Null(result.RemovedId);
         var pet = Assert.Single(registry.Snapshot());
@@ -29,10 +30,12 @@ public sealed class PetRegistryTests
     public void ExtendsInsteadOfDuplicatingWhenTheSameViewerRedeemsAgain()
     {
         var registry = new PetRegistry();
-        PetSpawnResult first = registry.Spawn("7", "Kajsa", null, "robo", Lifetime, 6);
+        PetSpawnResult? first = registry.Spawn("7", "Kajsa", null, "robo", Lifetime, 6);
 
-        PetSpawnResult second = registry.Spawn("7", "Kajsa", null, "robo", Lifetime, 6);
+        PetSpawnResult? second = registry.Spawn("7", "Kajsa", null, "robo", Lifetime, 6);
 
+        Assert.NotNull(first);
+        Assert.NotNull(second);
         Assert.True(second.Extended);
         Assert.Single(registry.Snapshot());
         Assert.True(second.Pet.ExpiresAt >= first.Pet.ExpiresAt);
@@ -44,8 +47,9 @@ public sealed class PetRegistryTests
         var registry = new PetRegistry();
         registry.Spawn("7", "Kajsa", null, "robo", Lifetime, 6);
 
-        PetSpawnResult result = registry.Spawn("7", "Kajsa", null, "boo", Lifetime, 6);
+        PetSpawnResult? result = registry.Spawn("7", "Kajsa", null, "boo", Lifetime, 6);
 
+        Assert.NotNull(result);
         Assert.True(result.Extended);
         Assert.Equal("boo", Assert.Single(registry.Snapshot()).Species);
     }
@@ -57,10 +61,50 @@ public sealed class PetRegistryTests
         registry.Spawn("a", "Första", null, "robo", Lifetime, maxPets: 2);
         registry.Spawn("b", "Andra", null, "robo", Lifetime, maxPets: 2);
 
-        PetSpawnResult result = registry.Spawn("c", "Tredje", null, "robo", Lifetime, maxPets: 2);
+        PetSpawnResult? result = registry.Spawn("c", "Tredje", null, "robo", Lifetime, maxPets: 2);
 
+        Assert.NotNull(result);
         Assert.Equal("a", result.RemovedId);
         Assert.Equal(["b", "c"], registry.Snapshot().Select(pet => pet.Id));
+    }
+
+    // What a reward that can pay back asks for instead: sending somebody else's pet home early is a
+    // poor answer when the points can simply go back.
+    [Fact]
+    public void RefusesInsteadOfEvictingWhenEvictionIsNotAllowed()
+    {
+        var registry = new PetRegistry();
+        registry.Spawn("a", "Första", null, "robo", Lifetime, maxPets: 1);
+
+        PetSpawnResult? result = registry.Spawn("b", "Andra", null, "robo", Lifetime, maxPets: 1, evictWhenFull: false);
+
+        Assert.Null(result);
+        Assert.Equal(["a"], registry.Snapshot().Select(pet => pet.Id));
+    }
+
+    // A viewer already on the lawn is extending, not arriving, so a full lawn is no reason to refuse.
+    [Fact]
+    public void AFullLawnStillExtendsAPetThatIsAlreadyOnIt()
+    {
+        var registry = new PetRegistry();
+        registry.Spawn("a", "Första", null, "robo", Lifetime, maxPets: 1);
+
+        PetSpawnResult? result = registry.Spawn("a", "Första", null, "robo", Lifetime, maxPets: 1, evictWhenFull: false);
+
+        Assert.NotNull(result);
+        Assert.True(result.Extended);
+    }
+
+    [Fact]
+    public void RemoveTakesOnePetOffTheLawn()
+    {
+        var registry = new PetRegistry();
+        registry.Spawn("a", "Första", null, "robo", Lifetime, 6);
+        registry.Spawn("b", "Andra", null, "robo", Lifetime, 6);
+
+        Assert.True(registry.Remove("a"));
+        Assert.False(registry.Remove("a"));
+        Assert.Equal(["b"], registry.Snapshot().Select(pet => pet.Id));
     }
 
     [Fact]
@@ -148,6 +192,56 @@ public sealed class PetRewardRuleTests
         PetRewardRule rule = Assert.Single(settings.Rewards);
         Assert.Equal("kort", rule.RewardId);
         Assert.Equal(60, rule.Minutes);
+    }
+
+    // Settings written before refunding existed carry no flag, and a reward set up by hand in the
+    // dashboard cannot be answered whatever the settings say. Both have to keep working exactly as
+    // they did: pet spawns, points spent, nothing else changes.
+    [Fact]
+    public void ARewardTheAppDidNotCreateIsNeverRefundable()
+    {
+        PetSettings settings = Settings(new PetRewardRule { Label = "Gammal", RewardId = "handgjord", Minutes = 5 });
+
+        PetRewardRule rule = Assert.Single(settings.Rewards);
+        Assert.False(rule.Managed);
+        Assert.False(rule.CanRefund);
+        Assert.Equal(5, settings.LifetimeMinutesFor("handgjord"));
+        Assert.Empty(settings.ManagedRewardIds);
+    }
+
+    [Fact]
+    public void ARewardTheAppCreatedIsRefundableAndListed()
+    {
+        PetSettings settings = Settings(
+            new PetRewardRule { Label = "Pet 5 min", RewardId = "gjord-av-appen", Minutes = 5, Managed = true },
+            new PetRewardRule { Label = "Gammal", RewardId = "handgjord", Minutes = 5 });
+
+        Assert.True(settings.RuleFor("gjord-av-appen")!.CanRefund);
+        Assert.False(settings.RuleFor("handgjord")!.CanRefund);
+        Assert.Equal(["gjord-av-appen"], settings.ManagedRewardIds);
+    }
+
+    // A catch-all claims redemptions of rewards this app never made, so it can never answer for
+    // them – Twitch would refuse, and the flag would only make the app try.
+    [Fact]
+    public void ACatchAllRuleCannotClaimToBeRefundable()
+    {
+        PetSettings settings = Settings(new PetRewardRule { Minutes = 5, Managed = true });
+
+        PetRewardRule rule = Assert.Single(settings.Rewards);
+        Assert.False(rule.Managed);
+        Assert.False(rule.CanRefund);
+    }
+
+    [Fact]
+    public void RuleForFindsTheRuleTheRedemptionFallsUnder()
+    {
+        PetSettings settings = Settings(
+            new PetRewardRule { RewardId = "kort", Minutes = 5 },
+            new PetRewardRule { Minutes = 2 });
+
+        Assert.Equal("kort", settings.RuleFor("KORT")!.RewardId);
+        Assert.True(settings.RuleFor("nagot-annat")!.IsCatchAll);
     }
 }
 
@@ -608,5 +702,135 @@ public sealed class PetServiceTests
         service.HandleMessage(Message("en robot tack", rewardId: "abc"));
 
         Assert.Empty(registry.Snapshot());
+    }
+
+    // ---------------------------------------------------------------- the answer to a redemption
+    //
+    // Every case below turns into a verdict the app owes Twitch, but only for the rewards it made
+    // itself. The Refundable flag is what carries that, and the outcome is what decides whether the
+    // redemption waits for the pet to live or is paid back on the spot.
+
+    private static PetRewardRule Managed(string rewardId) =>
+        new() { Label = "Pet 5 min", RewardId = rewardId, Minutes = 5, Managed = true };
+
+    // No pet overlay is connected in these tests, which is exactly the case a refundable reward
+    // refuses: the frame would go out and be drawn for nobody.
+    [Fact]
+    public void ARefundableRedemptionIsTurnedDownWhenNoOverlayIsConnected()
+    {
+        (PetService service, PetRegistry registry, AppSettings settings) = Build();
+        settings.Pets.Rewards = [Managed("pet-reward")];
+
+        PetRedemptionResult result = service.HandleRedemption(Redemption("pet-reward", "Pet 5 min", null));
+
+        Assert.Equal(PetSpawnOutcome.NoOverlay, result.Outcome);
+        Assert.True(result.Refundable);
+        Assert.Empty(registry.Snapshot());
+    }
+
+    // The same missing overlay must change nothing for a reward the app did not create: there is no
+    // refund to give, so refusing would only lose the viewer their pet as well as their points.
+    [Fact]
+    public void ARewardTheAppDidNotCreateSpawnsWithoutAskingAboutTheOverlay()
+    {
+        (PetService service, PetRegistry registry, AppSettings settings) = Build();
+        settings.Pets.Rewards = [new PetRewardRule { RewardId = "handgjord", Minutes = 5 }];
+
+        PetRedemptionResult result = service.HandleRedemption(Redemption("handgjord", "Gammal belöning", null));
+
+        Assert.Equal(PetSpawnOutcome.Spawned, result.Outcome);
+        Assert.False(result.Refundable);
+        Assert.Single(registry.Snapshot());
+    }
+
+    [Fact]
+    public void ARedemptionOfAnotherRewardIsNotOursToAnswer()
+    {
+        (PetService service, _, AppSettings settings) = Build();
+        settings.Pets.Rewards = [Managed("pet-reward")];
+
+        PetRedemptionResult result = service.HandleRedemption(Redemption("hydrate", "Drick vatten", null));
+
+        Assert.Equal(PetSpawnOutcome.NotAPetReward, result.Outcome);
+        Assert.False(result.Refundable);
+    }
+
+    [Fact]
+    public void PetsSwitchedOffIsAnAnswerRatherThanSilenceForARefundableReward()
+    {
+        (PetService service, _, AppSettings settings) = Build();
+        settings.Pets.Rewards = [Managed("pet-reward")];
+        settings.Pets.Enabled = false;
+
+        PetRedemptionResult result = service.HandleRedemption(Redemption("pet-reward", "Pet 5 min", null));
+
+        Assert.Equal(PetSpawnOutcome.Disabled, result.Outcome);
+        Assert.True(result.Refundable);
+    }
+
+    // IRC carries the reward id but never the redemption's own id, so a pet handed out on this
+    // route could never be booked as delivered. It would sit unanswered in the queue and be paid
+    // back by the next sweep – the viewer keeping both the pet and the points. Leaving it alone is
+    // what lets the queue settle it exactly once.
+    [Fact]
+    public void TheChatRouteLeavesRefundableRewardsToEventSub()
+    {
+        (PetService service, PetRegistry registry, AppSettings settings) = Build();
+        settings.Pets.Rewards = [Managed("pet-reward")];
+        service.RedemptionsFromEventSub = false;
+
+        service.HandleMessage(Message("en robot tack", rewardId: "pet-reward"));
+
+        Assert.Empty(registry.Snapshot());
+    }
+
+    // The same outage must not touch anything else. A reward the app did not create has nothing
+    // riding on EventSub, and IRC is the only route it ever had.
+    [Fact]
+    public void TheChatRouteStillCarriesRewardsTheAppDidNotCreate()
+    {
+        (PetService service, PetRegistry registry, AppSettings settings) = Build();
+        settings.Pets.Rewards =
+        [
+            Managed("pet-reward"),
+            new PetRewardRule { RewardId = "handgjord", Minutes = 5 }
+        ];
+        service.RedemptionsFromEventSub = false;
+
+        service.HandleMessage(Message("en robot tack", rewardId: "handgjord"));
+
+        Assert.Single(registry.Snapshot());
+    }
+
+    // An app-made pet is just a pet once it is out there: the chat route and the test button both
+    // push the oldest one home without asking whose it is. Saying so is what turns that into a
+    // refund instead of a redemption booked as a full life.
+    [Fact]
+    public void APetPushedOffAFullLawnIsReported()
+    {
+        (PetService service, _, AppSettings settings) = Build();
+        settings.Pets.MaxPets = 1;
+        List<string> evicted = [];
+        service.PetEvicted += evicted.Add;
+
+        service.HandleRedemption(Redemption("abc", "Pet", null));
+        service.HandleMessage(new ChatMessage("m2", "Pelle", "!pet", null, [new ChatBadge("moderator", "1")], false, false, DateTimeOffset.Now)
+        { UserId = "8", UserLogin = "pelle" });
+
+        Assert.Equal(["7"], evicted);
+    }
+
+    [Fact]
+    public void ASpawnThatEvictsNobodyReportsNothing()
+    {
+        (PetService service, _, AppSettings settings) = Build();
+        settings.Pets.MaxPets = 6;
+        List<string> evicted = [];
+        service.PetEvicted += evicted.Add;
+
+        service.HandleRedemption(Redemption("abc", "Pet", null));
+        service.SpawnTest();
+
+        Assert.Empty(evicted);
     }
 }

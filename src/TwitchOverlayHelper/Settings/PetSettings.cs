@@ -21,8 +21,34 @@ public sealed class PetRewardRule
 
     public int Minutes { get; set; } = 5;
 
+    /// <summary>
+    /// This app created the reward on Twitch, which is the only thing that makes its redemptions
+    /// answerable: Twitch lets an app fulfil or refund a redemption only on a reward its own client
+    /// id made. A rule pointed at a reward set up by hand in the dashboard stays false forever, and
+    /// keeps the old behaviour – the pet spawns and the points are simply spent.
+    ///
+    /// <para>Written by the app, never by hand. Setting it on a reward the app did not create only
+    /// buys a 403 from Twitch at the moment a refund was supposed to happen.</para>
+    /// </summary>
+    public bool Managed { get; set; }
+
+    /// <summary>
+    /// The price the reward was created with, kept so the settings can show what a rule costs
+    /// without a round trip. Twitch's own copy is the truth; this is a note.
+    /// </summary>
+    public int Cost { get; set; } = 500;
+
     /// <summary>True when this rule claims every redemption no other rule named.</summary>
     public bool IsCatchAll => RewardId.Length == 0 && RewardName.Length == 0;
+
+    /// <summary>
+    /// Whether a redemption of this reward can be paid back. A catch-all never can, whatever the
+    /// flag says: it claims redemptions of rewards this app never made.
+    /// </summary>
+    public bool CanRefund => Managed && RewardId.Length > 0;
+
+    /// <summary>Shown in the settings list, so a row says at a glance whether it can pay back.</summary>
+    public string StatusGlyph => CanRefund ? "🔒" : "—";
 
     public bool Matches(string? rewardId, string? rewardTitle) =>
         (RewardId.Length > 0 && string.Equals(RewardId, rewardId, StringComparison.OrdinalIgnoreCase))
@@ -34,6 +60,10 @@ public sealed class PetRewardRule
         RewardId = RewardId?.Trim() ?? string.Empty;
         RewardName = RewardName?.Trim() ?? string.Empty;
         Minutes = Math.Clamp(Minutes, 1, 60);
+        Cost = Math.Clamp(Cost, 1, 10_000_000);
+        // A hand-edited file could claim a reward is ours without an id to answer on. The flag is
+        // dropped rather than trusted: it decides whether viewers get their points back.
+        if (RewardId.Length == 0) Managed = false;
     }
 }
 
@@ -88,18 +118,31 @@ public sealed class PetSettings
     public int? LifetimeMinutesFor(string? rewardId, string? rewardTitle = null)
     {
         if (Rewards.Count == 0) return LifetimeMinutes;
+        return RuleFor(rewardId, rewardTitle)?.Minutes;
+    }
 
+    /// <summary>
+    /// Which rule a redemption falls under, or null when none claims it. Told apart from
+    /// <see cref="LifetimeMinutesFor"/> because refunding needs the rule itself: only a rule holding
+    /// a reward this app created may answer Twitch about the redemption.
+    /// </summary>
+    public PetRewardRule? RuleFor(string? rewardId, string? rewardTitle = null)
+    {
         foreach (PetRewardRule rule in Rewards)
             if (rule.Matches(rewardId, rewardTitle))
-                return rule.Minutes;
+                return rule;
 
         // A rule that names nothing is the catch-all, so "every other redemption" can still be
         // worth something without pasting every reward in the channel.
         foreach (PetRewardRule rule in Rewards)
-            if (rule.IsCatchAll) return rule.Minutes;
+            if (rule.IsCatchAll) return rule;
 
         return null;
     }
+
+    /// <summary>The rewards this app created, which are the ones whose queue it may clean up.</summary>
+    public IReadOnlyList<string> ManagedRewardIds =>
+        Rewards.Where(rule => rule.CanRefund).Select(rule => rule.RewardId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
     public void Normalize()
     {

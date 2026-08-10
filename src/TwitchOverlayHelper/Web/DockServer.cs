@@ -154,10 +154,15 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
         app.MapGet("/ws", async (HttpContext http) =>
         {
             if (!http.WebSockets.IsWebSocketRequest) return Results.BadRequest();
-            // A page says which of the two it is when it connects. Anything else – the pet overlay,
-            // a browser source added before the stream chat existed – is a dock, which is the view
-            // that gets everything.
-            DockView view = http.Request.Query["view"] == "stream" ? DockView.Stream : DockView.Dock;
+            // A page says which it is when it connects. Anything else – a browser source added
+            // before the stream chat or the pet view existed – is a dock, which is the view that
+            // gets everything.
+            DockView view = http.Request.Query["view"].FirstOrDefault() switch
+            {
+                "stream" => DockView.Stream,
+                "pets" => DockView.Pets,
+                _ => DockView.Dock
+            };
             using WebSocket socket = await http.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
             await context.Hub.RunClientAsync(socket, context.Chat.CanSend, http.RequestAborted, view).ConfigureAwait(false);
             return Results.Empty;

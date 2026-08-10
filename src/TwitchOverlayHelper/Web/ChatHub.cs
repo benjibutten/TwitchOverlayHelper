@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Channels;
 using TwitchOverlayHelper.Models;
 using TwitchOverlayHelper.Nicknames;
@@ -11,16 +12,23 @@ using TwitchOverlayHelper.Twitch;
 namespace TwitchOverlayHelper.Web;
 
 /// <summary>
-/// Which page a socket belongs to. The chat frames are the same for both, but a few of them carry
+/// Which page a socket belongs to. The chat frames are the same for all of them, but a few carry
 /// something only the streamer should have – the nicknames above all – and those are addressed
-/// rather than broadcast. A socket that says nothing is a dock, which is what the pet overlay and
-/// every browser source added before this existed do.
+/// rather than broadcast. A socket that says nothing is a dock, which is what every browser source
+/// added before this existed does.
 /// </summary>
 public enum DockView
 {
     Dock,
     /// <summary>The transparent chat laid over the stream, seen by the viewers.</summary>
-    Stream
+    Stream,
+    /// <summary>
+    /// The pet lawn. Told apart from a dock because it is the one view that answers the question
+    /// "is anybody actually going to see this pet" – and a dock left open in a browser tab is not
+    /// an answer to that. A pet overlay from before this view existed still connects as a dock and
+    /// still works; it simply cannot vouch for itself, and the rewards that pay back notice.
+    /// </summary>
+    Pets
 }
 
 /// <summary>
@@ -60,12 +68,30 @@ public sealed class ChatHub(
     public int ClientCount => _clients.Count;
 
     /// <summary>
+    /// How many pet overlays are connected right now. Zero means a pet spawned this second would be
+    /// drawn for nobody – the browser source is missing from the scene, or OBS has shut it down –
+    /// which is the difference between a redemption that was delivered and one that has to be paid
+    /// back.
+    /// </summary>
+    public int PetOverlayCount => _clients.Values.Count(client => client.View == DockView.Pets);
+
+    /// <summary>
     /// Lines were dropped from the timeline by a reader rather than by chat moving on – today only
     /// the dock's "hide the earlier sitting" button. The window listens, because the overlay draws
     /// from its own cards and the disk copy from its own file: without this, lines put away in the
     /// dock would still be on the stream, and back in both after the next restart.
     /// </summary>
     public event Action? HistoryTrimmed;
+
+    /// <summary>
+    /// A pet overlay reporting that it has put a pet on screen, by pet id. The only signal in the
+    /// app that a redemption was actually delivered rather than merely accepted: everything before
+    /// this proves the server thought so.
+    /// </summary>
+    public event Action<string>? PetShown;
+
+    /// <summary>Raised with the new count whenever a pet overlay connects or goes away.</summary>
+    public event Action<int>? PetOverlayCountChanged;
 
     /// <summary>Twitch room id of the joined channel; needed as broadcaster_id for moderation.</summary>
     public string BroadcasterId { get; set; } = string.Empty;
@@ -364,16 +390,33 @@ public sealed class ChatHub(
         Send(DockJson.Serialize(new DockEnvelope<object?>("badgesLoaded", null)));
 
     public void PublishPetSpawn(PetSpawnResult result) =>
-        Send(DockJson.Serialize(new DockEnvelope<DockPetSpawn>("petSpawn",
+        SendEverywhere(DockJson.Serialize(new DockEnvelope<DockPetSpawn>("petSpawn",
             new DockPetSpawn(ToDock(result.Pet), result.RemovedId, result.Extended))));
+
+    /// <summary>
+    /// Sends one pet home ahead of time, because the redemption behind it was paid back. Its own
+    /// frame rather than a spawn carrying <c>removedId</c>: nothing is arriving to make room here,
+    /// and a spawn frame with no pet in it would be a lie the overlay has to unpick.
+    /// </summary>
+    public void PublishPetRemoved(string petId) =>
+        SendEverywhere(DockJson.Serialize(new DockEnvelope<DockPetRemoved>("petRemove", new DockPetRemoved(petId))));
+
+    /// <summary>
+    /// Empties the lawn – the app has left the channel these pets were bought in. Sent as its own
+    /// frame because a reconnecting overlay would otherwise be handed the pets back from a registry
+    /// that has already let them go, and a viewer from the previous channel would be walking about
+    /// in front of the new one.
+    /// </summary>
+    public void PublishPetsCleared() =>
+        SendEverywhere(DockJson.Serialize(new DockEnvelope<object?>("petsClear", null)));
 
     /// <summary>Pushes size and limits to the pet overlay so slider changes land without a reload.</summary>
     public void PublishPetSettings() =>
-        Send(DockJson.Serialize(new DockEnvelope<DockPetSettings>("petSettings", BuildPetSettings())));
+        SendEverywhere(DockJson.Serialize(new DockEnvelope<DockPetSettings>("petSettings", BuildPetSettings())));
 
     /// <summary>Hands the overlay the species list again, after the user reloads the pets folder.</summary>
     public void PublishPetCatalog() =>
-        Send(DockJson.Serialize(new DockEnvelope<IReadOnlyList<DockPetDefinition>>("petCatalog", BuildPetCatalog())));
+        SendEverywhere(DockJson.Serialize(new DockEnvelope<IReadOnlyList<DockPetDefinition>>("petCatalog", BuildPetCatalog())));
 
     private DockPetSettings BuildPetSettings() => new(
         settings.Pets.Enabled, settings.Pets.Scale, settings.Pets.LifetimeMinutes, settings.Pets.MaxPets, settings.Pets.ShowNames);
@@ -458,6 +501,15 @@ public sealed class ChatHub(
         return DockJson.Serialize(new DockStreamHello("hello", settings.Stream, history.Select(ToDock).ToArray()));
     }
 
+    /// <summary>
+    /// The pet overlay's own greeting: its settings, the drawings and the pets already alive. It
+    /// used to get the dock's, which carries the nicknames, who is logged in and the whole chat
+    /// history – none of which a lawn full of creatures has any use for, and all of which sits on
+    /// the broadcast machine as a browser source.
+    /// </summary>
+    private string BuildPetsHello() =>
+        DockJson.Serialize(new DockPetsHello("hello", BuildPetSettings(), BuildPetCatalog(), pets.Snapshot().Select(ToDock).ToArray()));
+
     private string BuildHello(bool canSend)
     {
         ChatTimelineItem[] history;
@@ -498,7 +550,18 @@ public sealed class ChatHub(
     /// <summary>One open socket and which page it belongs to.</summary>
     private sealed record Client(Channel<string> Outbound, DockView View);
 
-    private void Send(string payload) => Fan(payload, null);
+    /// <summary>
+    /// The chat and everything that happens in it, to the pages that read chat. The pet lawn is
+    /// deliberately not one of them.
+    ///
+    /// <para><b>Why the lawn is left out.</b> Its socket carries a bounded queue like every other,
+    /// and a client that fills it is dropped rather than allowed to stall the fan-out. The lawn
+    /// reads none of these frames – but during a raid it would be handed every one of them, and a
+    /// queue filled by chat it was never going to look at would close the socket. That now costs
+    /// real money: no lawn connected is what refunds the pets currently on it, so a busy minute of
+    /// chat could hand back the points for every pet on screen.</para>
+    /// </summary>
+    private void Send(string payload) => Fan(payload, client => client.View != DockView.Pets);
 
     /// <summary>
     /// Sends to one kind of page only. What the dock alone gets is everything a viewer has no
@@ -506,13 +569,21 @@ public sealed class ChatHub(
     /// overlay alone gets is its own appearance. Addressed rather than filtered in the browser: a
     /// frame that is never sent cannot be read by a page sitting on the broadcast.
     /// </summary>
-    private void SendTo(DockView view, string payload) => Fan(payload, view);
+    private void SendTo(DockView view, string payload) => Fan(payload, client => client.View == view);
 
-    private void Fan(string payload, DockView? only)
+    /// <summary>
+    /// The pet frames, to every page. Not narrowed to <see cref="DockView.Pets"/>: a lawn added as a
+    /// browser source before that view existed connects as a dock, and narrowing would leave it
+    /// showing nothing at all. They are few and far between, so a dock that ignores them pays
+    /// nothing for receiving them.
+    /// </summary>
+    private void SendEverywhere(string payload) => Fan(payload, _ => true);
+
+    private void Fan(string payload, Func<Client, bool> wants)
     {
         foreach (Client client in _clients.Values)
         {
-            if (only is { } view && client.View != view) continue;
+            if (!wants(client)) continue;
             // A dock that cannot keep up is dropped rather than allowed to stall the whole fan-out.
             if (!client.Outbound.Writer.TryWrite(payload)) client.Outbound.Writer.TryComplete();
         }
@@ -531,14 +602,20 @@ public sealed class ChatHub(
             SingleReader = true
         });
         _clients[id] = new Client(outbound, view);
+        if (view == DockView.Pets) PetOverlayCountChanged?.Invoke(PetOverlayCount);
 
         try
         {
-            string hello = view == DockView.Stream ? BuildStreamHello() : BuildHello(canSend);
+            string hello = view switch
+            {
+                DockView.Stream => BuildStreamHello(),
+                DockView.Pets => BuildPetsHello(),
+                _ => BuildHello(canSend)
+            };
             await SendFrameAsync(socket, hello, cancellationToken).ConfigureAwait(false);
             // Completing the outbound channel when the socket closes is what ends the loop below;
             // without it an idle dock would sit in _clients until the next message happened to arrive.
-            Task drain = DrainThenCompleteAsync(socket, outbound, cancellationToken);
+            Task drain = DrainThenCompleteAsync(socket, outbound, view, cancellationToken);
 
             await foreach (string payload in outbound.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -553,29 +630,73 @@ public sealed class ChatHub(
         {
             _clients.TryRemove(id, out _);
             outbound.Writer.TryComplete();
+            if (view == DockView.Pets) PetOverlayCountChanged?.Invoke(PetOverlayCount);
         }
     }
 
-    private static async Task DrainThenCompleteAsync(WebSocket socket, Channel<string> outbound, CancellationToken cancellationToken)
+    private async Task DrainThenCompleteAsync(WebSocket socket, Channel<string> outbound, DockView view, CancellationToken cancellationToken)
     {
-        try { await DrainIncomingAsync(socket, cancellationToken).ConfigureAwait(false); }
+        try { await DrainIncomingAsync(socket, view, cancellationToken).ConfigureAwait(false); }
         finally { outbound.Writer.TryComplete(); }
     }
 
-    /// <summary>The dock only sends pings; reading them is what detects a closed socket.</summary>
-    private static async Task DrainIncomingAsync(WebSocket socket, CancellationToken cancellationToken)
+    /// <summary>
+    /// Reads what a page sends back. For a dock that is pings only, and reading them is what
+    /// detects a closed socket. The pet overlay also reports each pet it has drawn, which is the
+    /// only thing that can tell a delivered redemption from one the browser source never rendered.
+    ///
+    /// <para>Nothing here may act on a page's say-so beyond that: these sockets sit on the
+    /// broadcast machine, so an unknown frame is dropped rather than guessed at.</para>
+    /// </summary>
+    private async Task DrainIncomingAsync(WebSocket socket, DockView view, CancellationToken cancellationToken)
     {
         byte[] buffer = new byte[512];
+        var message = new StringBuilder();
         try
         {
             while (socket.State == WebSocketState.Open)
             {
                 WebSocketReceiveResult result = await socket.ReceiveAsync(buffer, cancellationToken).ConfigureAwait(false);
                 if (result.MessageType == WebSocketMessageType.Close) break;
+                if (view != DockView.Pets || result.MessageType != WebSocketMessageType.Text) continue;
+
+                // A frame longer than a pet id is not one of ours; the rest of it is dropped so a
+                // page cannot grow this buffer without limit.
+                if (message.Length < 2048) message.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+                if (!result.EndOfMessage) continue;
+
+                string payload = message.ToString();
+                message.Clear();
+                if (ReadPetShownId(payload) is { Length: > 0 } petId) PetShown?.Invoke(petId);
             }
         }
         catch (OperationCanceledException) { }
         catch (WebSocketException) { }
+    }
+
+    /// <summary>
+    /// The pet id out of a <c>petShown</c> frame, or null for anything else.
+    ///
+    /// <para>Every value is checked for its kind before it is read. <c>GetString</c> on a number or
+    /// an object throws <see cref="InvalidOperationException"/>, which is not a
+    /// <see cref="JsonException"/> and would travel straight out of the socket loop – so a page
+    /// sending <c>{"type":1}</c> could take the reader down. Both are caught anyway: this parses
+    /// input from a browser, and nothing it sends may end a connection.</para>
+    /// </summary>
+    private static string? ReadPetShownId(string payload)
+    {
+        try
+        {
+            JsonElement frame = JsonDocument.Parse(payload).RootElement;
+            if (frame.ValueKind != JsonValueKind.Object) return null;
+            if (!frame.TryGetProperty("type", out JsonElement type) || type.ValueKind != JsonValueKind.String) return null;
+            if (type.GetString() != "petShown") return null;
+            return frame.TryGetProperty("id", out JsonElement id) && id.ValueKind == JsonValueKind.String ? id.GetString() : null;
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     private static Task SendFrameAsync(WebSocket socket, string payload, CancellationToken cancellationToken) =>

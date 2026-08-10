@@ -63,6 +63,40 @@ public sealed class EventSubPlanTests
         Assert.Contains(TwitchAuth.RedemptionsScope, plan.MissingScopes);
     }
 
+    // Twitch takes either scope on the redemption topic, and the manage scope is the wider of the
+    // two. A login holding only that half used to lose its redemptions over a permission it
+    // already had.
+    [Fact]
+    public void TheManageScopeAloneIsEnoughToReadRedemptions()
+    {
+        EventSubPlan plan = Client(OwnUserId, TwitchAuth.ManageRedemptionsScope).Plan(OwnUserId);
+
+        Assert.True(plan.Redemptions);
+        // And it is not then reported as missing, which would send the user off to fix something
+        // that is not broken.
+        Assert.DoesNotContain(TwitchAuth.RedemptionsScope, plan.MissingScopes);
+    }
+
+    // Reading redemptions and answering them are two different permissions: the read half alone
+    // still shows the cards and spawns the pets, it just cannot pay anybody back.
+    [Fact]
+    public void TheReadScopeAloneStillWantsTheManageScope()
+    {
+        EventSubPlan plan = Client(OwnUserId, TwitchAuth.RedemptionsScope).Plan(OwnUserId);
+
+        Assert.True(plan.Redemptions);
+        Assert.Contains(TwitchAuth.ManageRedemptionsScope, plan.MissingScopes);
+    }
+
+    [Fact]
+    public void NeitherRedemptionScopeIsWantedInSomeoneElsesChannel()
+    {
+        EventSubPlan plan = Client(OwnUserId, "chat:read").Plan("999");
+
+        Assert.DoesNotContain(TwitchAuth.RedemptionsScope, plan.MissingScopes);
+        Assert.DoesNotContain(TwitchAuth.ManageRedemptionsScope, plan.MissingScopes);
+    }
+
     // Twitch will not say up front whether we moderate a channel, so the only way to find out is to
     // ask and read the refusal. That means the plan says yes wherever the scope allows it.
     [Fact]

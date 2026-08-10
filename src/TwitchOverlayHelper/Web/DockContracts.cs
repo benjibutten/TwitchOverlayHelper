@@ -156,8 +156,23 @@ internal sealed record DockPetDefinition(
     IReadOnlyList<string> Emoji,
     int? SpriteVersion = null);
 
+/// <summary>
+/// The pet overlay's greeting: what it looks like, what it can draw, and what is already on the
+/// lawn. Cut to those three the same way the stream overlay's is – it is a browser source on the
+/// broadcast machine, and the chat history and nicknames in the dock's hello are the streamer's own
+/// business.
+/// </summary>
+internal sealed record DockPetsHello(
+    string Type,
+    DockPetSettings PetSettings,
+    IReadOnlyList<DockPetDefinition> PetCatalog,
+    IReadOnlyList<DockPet> Pets);
+
 /// <summary>A spawn can bump the oldest pet out; the overlay despawns it in the same breath.</summary>
 internal sealed record DockPetSpawn(DockPet Pet, string? RemovedId, bool Extended);
+
+/// <summary>One pet sent home early, because the redemption that bought it was paid back.</summary>
+internal sealed record DockPetRemoved(string Id);
 
 /// <summary>Whether the speaker button next to every name has anything to call.</summary>
 internal sealed record DockSpeech(bool Enabled);
