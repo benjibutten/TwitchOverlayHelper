@@ -5,12 +5,22 @@ namespace TwitchOverlayHelper.Tests;
 
 public sealed class EdgeAlertSettingsTests
 {
-    private static ChatMessage Message(string text, bool moderator = false, bool broadcaster = false, bool firstMessage = false)
+    private static ChatMessage Message(
+        string text,
+        bool moderator = false,
+        bool broadcaster = false,
+        bool firstMessage = false,
+        string? modBadge = null,
+        bool modTag = false)
     {
         var badges = new List<ChatBadge>();
         if (moderator) badges.Add(new ChatBadge("moderator", "1"));
         if (broadcaster) badges.Add(new ChatBadge("broadcaster", "1"));
-        return new ChatMessage("id", "Namn", text, null, badges, firstMessage, false, DateTimeOffset.Now);
+        if (modBadge is not null) badges.Add(new ChatBadge(modBadge, "1"));
+        return new ChatMessage("id", "Namn", text, null, badges, firstMessage, false, DateTimeOffset.Now)
+        {
+            HasModTag = modTag
+        };
     }
 
     [Theory]
@@ -31,6 +41,30 @@ public sealed class EdgeAlertSettingsTests
         var settings = new EdgeAlertSettings();
 
         Assert.True(settings.TriggersModAlert(Message("!psst", broadcaster: true)));
+    }
+
+    /// <summary>
+    /// A mod whose badge is not the moderator badge. Twitch shows a lead moderator the
+    /// lead_moderator badge *instead of* the moderator one, so the call went unheard for exactly the
+    /// mods most likely to make it.
+    /// </summary>
+    [Theory]
+    [InlineData("lead_moderator")]
+    [InlineData("staff")]
+    public void ModsWearingAnotherBadgeStillLightTheGlow(string badge)
+    {
+        var settings = new EdgeAlertSettings();
+
+        Assert.True(settings.TriggersModAlert(Message("!psst", modBadge: badge, modTag: true)));
+    }
+
+    /// <summary>Badges are the fallback for a line that reached us without tags – restored history.</summary>
+    [Fact]
+    public void TheLeadModeratorBadgeAloneIsEnough()
+    {
+        var settings = new EdgeAlertSettings();
+
+        Assert.True(settings.TriggersModAlert(Message("!psst", modBadge: "lead_moderator")));
     }
 
     /// <summary>A viewer writing the command must do nothing – the glow is the mods' line to the streamer.</summary>

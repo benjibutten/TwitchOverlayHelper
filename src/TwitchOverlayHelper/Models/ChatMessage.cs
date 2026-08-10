@@ -105,8 +105,24 @@ public sealed record ChatMessage(
         }
     }
 
+    /// <summary>
+    /// Twitch's own answer to "may this account moderate this room", taken from the mod tag on the
+    /// message. It is the only place the answer is actually stated: badges say what the room
+    /// *displays*, and a mod who carries a fancier one – lead_moderator, staff – is shown that badge
+    /// instead of the plain moderator badge rather than next to it.
+    /// </summary>
+    public bool HasModTag { get; init; }
+
     public bool IsBroadcaster => HasBadge("broadcaster");
-    public bool IsModerator => HasBadge("moderator");
+
+    /// <summary>
+    /// Anyone who can moderate the room. The tag decides it; the badges stay as a fallback for
+    /// messages that reach us without tags – history written by an older version, a line rebuilt by
+    /// hand – and lead_moderator is listed alongside moderator for the reason given on
+    /// <see cref="HasModTag"/>: it replaces that badge, so asking for "moderator" alone answers no
+    /// for the channel's most senior mods.
+    /// </summary>
+    public bool IsModerator => HasModTag || HasBadge("moderator") || HasBadge("lead_moderator");
 
     private bool HasBadge(string setId)
     {

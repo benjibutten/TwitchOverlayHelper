@@ -528,7 +528,7 @@ public partial class OverlayWindow : Window
         (string text, Color color) = badge.SetId switch
         {
             "broadcaster" => ("LIVE", Color.FromRgb(239, 68, 68)),
-            "moderator" => ("MOD", Color.FromRgb(34, 197, 94)),
+            "moderator" or "lead_moderator" => ("MOD", Color.FromRgb(34, 197, 94)),
             "vip" => ("VIP", Color.FromRgb(219, 39, 119)),
             "subscriber" => ("SUB", Color.FromRgb(145, 92, 246)),
             "staff" => ("STAFF", Color.FromRgb(0, 173, 238)),

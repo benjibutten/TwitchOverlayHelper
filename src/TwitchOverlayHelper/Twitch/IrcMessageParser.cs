@@ -11,7 +11,11 @@ namespace TwitchOverlayHelper.Twitch;
 /// Twitch's id for the message this USERSTATE answers, when it sends one at all. Nullable rather
 /// than assumed: without it the line is ours to show but not ours to pin or delete through Helix.
 /// </param>
-internal sealed record UserState(string? MessageId, string? DisplayName, string? Color, IReadOnlyList<ChatBadge> Badges);
+internal sealed record UserState(string? MessageId, string? DisplayName, string? Color, IReadOnlyList<ChatBadge> Badges)
+{
+    /// <summary>Whether Twitch calls us a moderator here. See ChatMessage.HasModTag for why the badges cannot answer this.</summary>
+    public bool HasModTag { get; init; }
+}
 
 internal static class IrcMessageParser
 {
@@ -51,6 +55,7 @@ internal static class IrcMessageParser
         {
             UserId = tags.GetValueOrDefault("user-id") ?? string.Empty,
             UserLogin = login,
+            HasModTag = ReadModTag(tags),
             IsAction = isAction,
             Reply = reply,
             RewardId = EmptyToNull(tags.GetValueOrDefault("custom-reward-id")),
@@ -156,7 +161,10 @@ internal static class IrcMessageParser
             EmptyToNull(tags.GetValueOrDefault("id")),
             EmptyToNull(tags.GetValueOrDefault("display-name")),
             EmptyToNull(tags.GetValueOrDefault("color")),
-            ParseBadges(tags.GetValueOrDefault("badges")));
+            ParseBadges(tags.GetValueOrDefault("badges")))
+        {
+            HasModTag = ReadModTag(tags)
+        };
         return true;
     }
 
@@ -394,6 +402,17 @@ internal static class IrcMessageParser
         string trailing = line[(channelEnd + 1)..];
         return trailing.StartsWith(':') ? trailing[1..] : trailing;
     }
+
+    /// <summary>
+    /// Whether Twitch marked the sender as a moderator of this room. The mod tag is the plain answer
+    /// and rides along on every PRIVMSG and USERSTATE; user-type says the same thing in words and is
+    /// read as a fallback for the same reason we read the tag at all – one channel of the answer can
+    /// go missing, and the badges cannot stand in for it. Neither is set for the broadcaster: Twitch
+    /// does not count the owner as a mod of their own channel, which is why callers ask about the
+    /// broadcaster badge separately.
+    /// </summary>
+    private static bool ReadModTag(Dictionary<string, string> tags) =>
+        tags.GetValueOrDefault("mod") == "1" || tags.GetValueOrDefault("user-type") == "mod";
 
     private static IReadOnlyList<ChatBadge> ParseBadges(string? raw)
     {

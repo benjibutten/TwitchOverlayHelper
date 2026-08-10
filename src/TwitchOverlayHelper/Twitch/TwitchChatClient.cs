@@ -162,6 +162,7 @@ public sealed class TwitchChatClient : IAsyncDisposable
         {
             UserId = _userId,
             UserLogin = _login,
+            HasModTag = state.HasModTag,
             IsAction = isAction,
             IsLocalEcho = state.MessageId is null
         };

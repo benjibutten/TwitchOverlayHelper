@@ -996,7 +996,10 @@ public partial class MainWindow : Window
         string reason = !edge.ModAlert.Enabled
             ? "mod-ljuset är avstängt i inställningarna"
             : "avsändaren är varken moderator eller broadcaster";
-        AppLog.Info($"\"{text}\" från {message.DisplayName} tände inte kanterna: {reason}. Badges: {badges}.");
+        // The mod tag is what the decision actually rests on, so it is written down next to the
+        // badges: badges alone once made a lead moderator look like an ordinary viewer here.
+        string modTag = message.HasModTag ? "ja" : "nej";
+        AppLog.Info($"\"{text}\" från {message.DisplayName} tände inte kanterna: {reason}. Mod-tagg: {modTag}. Badges: {badges}.");
     }
 
     /// <summary>

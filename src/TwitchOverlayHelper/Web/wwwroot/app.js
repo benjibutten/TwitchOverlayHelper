@@ -475,8 +475,8 @@ function build(message) {
         image.alt = badge.title || badge.setId;
         image.title = image.alt;
         head.appendChild(image);
-      } else if (["broadcaster", "moderator", "vip", "subscriber"].includes(badge.setId)) {
-        head.appendChild(tag({ broadcaster: "live", moderator: "mod", vip: "vip", subscriber: "sub" }[badge.setId], badge.setId));
+      } else if (["broadcaster", "moderator", "lead_moderator", "vip", "subscriber"].includes(badge.setId)) {
+        head.appendChild(tag({ broadcaster: "live", moderator: "mod", lead_moderator: "mod", vip: "vip", subscriber: "sub" }[badge.setId], badge.setId));
       }
     }
   }

@@ -242,7 +242,7 @@ body[data-nameline="false"] .msg-text { display: inline; }
   padding: 2px 5px; border-radius: 4px; color: #fff; text-transform: uppercase;
 }
 .tag[data-kind="broadcaster"] { background: #d13c3c; }
-.tag[data-kind="moderator"] { background: #1f9d55; }
+.tag[data-kind="moderator"], .tag[data-kind="lead_moderator"] { background: #1f9d55; }
 .tag[data-kind="vip"] { background: #c0287f; }
 .tag[data-kind="subscriber"] { background: #6d43c9; }
 .tag[data-kind="new"] { background: #0f7c8a; }

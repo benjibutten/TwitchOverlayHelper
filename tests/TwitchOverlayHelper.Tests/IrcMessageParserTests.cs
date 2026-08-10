@@ -53,6 +53,31 @@ public sealed class IrcMessageParserTests
         Assert.Null(state);
     }
 
+    /// <summary>
+    /// The mod tag, which is the only thing that actually says whether the sender can moderate. The
+    /// badges here are a real lead moderator's: Twitch never sent the moderator badge to go with them.
+    /// </summary>
+    [Fact]
+    public void ReadsTheModTagRatherThanGuessingFromBadges()
+    {
+        const string raw = "@badges=lead_moderator/1,founder/0,bits-leader/2;display-name=Benji;id=m1;mod=1;user-type=mod :benji!benji@benji.tmi.twitch.tv PRIVMSG #demo :!psst";
+
+        Assert.True(IrcMessageParser.TryParseChatMessage(raw, out var message));
+        Assert.True(message!.HasModTag);
+        Assert.True(message.IsModerator);
+        Assert.False(message.IsBroadcaster);
+    }
+
+    [Fact]
+    public void LeavesTheModTagOffForOrdinaryChatters()
+    {
+        const string raw = "@badges=subscriber/12;display-name=Kajsa;id=m2;mod=0;user-type= :kajsa!kajsa@kajsa.tmi.twitch.tv PRIVMSG #demo :!psst";
+
+        Assert.True(IrcMessageParser.TryParseChatMessage(raw, out var message));
+        Assert.False(message!.HasModTag);
+        Assert.False(message.IsModerator);
+    }
+
     [Fact]
     public void ParsesChannelPointRewardId()
     {
