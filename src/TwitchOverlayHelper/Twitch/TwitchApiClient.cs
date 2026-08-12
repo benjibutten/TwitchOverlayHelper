@@ -25,6 +25,13 @@ public sealed class TwitchNotPermittedException(string message) : TwitchApiExcep
 public sealed record CustomReward(string Id, string Title, int Cost);
 
 /// <summary>
+/// One of the channel's own bits Power-ups. <paramref name="RequiresInput"/> matters more here than
+/// it does for a reward: a Power-up that asks for nothing sends no text, and there is nothing to
+/// read out loud.
+/// </summary>
+public sealed record CustomPowerUp(string Id, string Title, int Bits, bool Enabled, bool RequiresInput);
+
+/// <summary>
 /// A reward to create, worded the way the pet settings ask for it.
 /// </summary>
 /// <param name="RequireInput">
@@ -369,6 +376,38 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
             if (string.IsNullOrEmpty(cursor)) break;
             if (page == maxPages - 1)
                 AppLog.Warn($"Pets: kön för belöning {rewardId} är längre än {maxPages * 50} inlösen – resten ligger kvar i Twitchs kö.");
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// The channel's own bits Power-ups, so the settings can offer them by name instead of asking
+    /// for an id pasted out of a dashboard.
+    ///
+    /// <para>Read-only, and that is the whole API: Twitch offers no way for an app to create a
+    /// custom Power-up, change one, or answer a redemption of one. A channel may have fifty at
+    /// most, so this is deliberately unpaged.</para>
+    /// </summary>
+    public async Task<IReadOnlyList<CustomPowerUp>> GetCustomPowerUpsAsync(string broadcasterId, CancellationToken cancellationToken = default)
+    {
+        string url = $"https://api.twitch.tv/helix/bits/custom_power_ups?broadcaster_id={Uri.EscapeDataString(broadcasterId)}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        JsonElement json = await SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        var result = new List<CustomPowerUp>();
+        if (!json.TryGetProperty("data", out JsonElement data) || data.ValueKind != JsonValueKind.Array) return result;
+        foreach (JsonElement powerUp in data.EnumerateArray())
+        {
+            string id = ReadString(powerUp, "id");
+            if (id.Length == 0) continue;
+            result.Add(new CustomPowerUp(
+                id,
+                ReadString(powerUp, "title"),
+                powerUp.TryGetProperty("bits", out JsonElement bits) && bits.ValueKind == JsonValueKind.Number ? bits.GetInt32() : 0,
+                // Absent reads as enabled: a Power-up we cannot judge is better offered than hidden,
+                // and the list is only ever used to fill in an id.
+                !powerUp.TryGetProperty("is_enabled", out JsonElement enabled) || enabled.ValueKind != JsonValueKind.False,
+                powerUp.TryGetProperty("is_user_input_required", out JsonElement input) && input.ValueKind == JsonValueKind.True));
         }
         return result;
     }

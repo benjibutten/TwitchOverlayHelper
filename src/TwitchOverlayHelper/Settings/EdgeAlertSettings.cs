@@ -17,6 +17,14 @@ public sealed class EdgeAlertSettings
     public EdgeAlertStyle NewChatterAlert { get; set; } = new() { Color = "#5FD6C8" };
 
     /// <summary>
+    /// Lit when a viewer has paid to have something read out loud and it is waiting for a yes. Off
+    /// by default – the approval bar in the dock says the same thing without lighting up the room –
+    /// but it is the one thing here that needs answering rather than merely noticing, so it is
+    /// worth being able to see without looking at the dock.
+    /// </summary>
+    public EdgeAlertStyle TtsAlert { get; set; } = new() { Enabled = false, Color = "#A970FF" };
+
+    /// <summary>
     /// The chat command that lights the mod glow. Only the broadcaster and moderators can trigger
     /// it – a viewer writing the same word does nothing.
     /// </summary>
@@ -55,8 +63,10 @@ public sealed class EdgeAlertSettings
     {
         ModAlert ??= new EdgeAlertStyle { Color = "#F59E0B" };
         NewChatterAlert ??= new EdgeAlertStyle { Color = "#5FD6C8" };
+        TtsAlert ??= new EdgeAlertStyle { Enabled = false, Color = "#A970FF" };
         ModAlert.Normalize("#F59E0B");
         NewChatterAlert.Normalize("#5FD6C8");
+        TtsAlert.Normalize("#A970FF");
         ModCommand = CleanCommand(ModCommand);
         EdgeWidth = double.IsFinite(EdgeWidth) ? Math.Clamp(EdgeWidth, 60, 320) : 160;
     }

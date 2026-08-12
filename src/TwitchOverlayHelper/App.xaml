@@ -6,12 +6,18 @@
         <SolidColorBrush x:Key="CardBrush" Color="#171B27" />
         <SolidColorBrush x:Key="CardBorderBrush" Color="#2A3042" />
         <SolidColorBrush x:Key="PrimaryBrush" Color="#A970FF" />
+        <!-- The brand purple is a fill colour: as fine print on a near black card it is the dimmest
+             thing on the page. Anywhere it has to be *read* – URLs, hotkeys, headings – use this. -->
+        <SolidColorBrush x:Key="AccentTextBrush" Color="#C79BFF" />
         <SolidColorBrush x:Key="TextBrush" Color="#F5F3FF" />
-        <SolidColorBrush x:Key="MutedTextBrush" Color="#AAA7B8" />
+        <SolidColorBrush x:Key="MutedTextBrush" Color="#C9C5D8" />
         <!-- The recessed tone used for read-only fields, status strips and inputs. -->
         <SolidColorBrush x:Key="SunkenBrush" Color="#10141F" />
         <SolidColorBrush x:Key="LineBrush" Color="#343B50" />
-        <SolidColorBrush x:Key="HintTextBrush" Color="#8F8B9E" />
+        <!-- Hint text is the smallest thing on the page and sits on the lightest surface, so it is
+             the first thing to disappear: it needs a good deal more than the muted grey it used to
+             share with the labels. -->
+        <SolidColorBrush x:Key="HintTextBrush" Color="#B0ABC2" />
 
         <!-- ==================== scrollbars ====================
              The default WPF bar is a wide grey chute with two arrow buttons, and on a page of dark
@@ -120,21 +126,29 @@
             </Setter>
         </Style>
 
-        <!-- ==================== text ==================== -->
+        <!-- ==================== text ====================
+             The window sets the body size to 14; everything here is a step above or below that,
+             never the 12 px WPF would otherwise hand out by default. -->
         <Style x:Key="CardTitle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontSize" Value="20" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
         </Style>
         <Style x:Key="SubTitle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontSize" Value="17" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
         </Style>
+        <!-- A page-wide lead runs the full 1160 px otherwise, which is far too long a line to find
+             the way back to the start of. Capped and left aligned; inside a card the cap never
+             comes into play. -->
         <Style x:Key="Lead" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
             <Setter Property="TextWrapping" Value="Wrap" />
-            <Setter Property="LineHeight" Value="20" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="LineHeight" Value="23" />
+            <Setter Property="MaxWidth" Value="880" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
         </Style>
         <Style x:Key="FieldLabel" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
@@ -142,8 +156,8 @@
         </Style>
         <Style x:Key="Hint" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource HintTextBrush}" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="LineHeight" Value="18" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="LineHeight" Value="20" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
         <Style x:Key="ValueBadge" TargetType="TextBlock">
@@ -336,6 +350,41 @@
             </Setter>
         </Style>
 
+        <!-- The twin of the CheckBox above, round instead of square. Without it the radio buttons fall
+             back to the stock theme, which pins Foreground to SystemColors.ControlTextBrushKey – an
+             explicit black that beats the colour the window hands down, so the labels went unreadable
+             on the dark card while every styled control around them stayed white. -->
+        <Style TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="Margin" Value="0,5" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border Background="Transparent" Padding="0,3">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Border x:Name="Box" Width="18" Height="18" CornerRadius="9" VerticalAlignment="Top" Margin="0,1,10,0"
+                                        Background="{StaticResource SunkenBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                                    <Ellipse x:Name="Dot" Width="8" Height="8" Fill="White" Visibility="Collapsed" />
+                                </Border>
+                                <ContentPresenter Grid.Column="1" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="#6D3FD1" />
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                                <Setter TargetName="Dot" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" /></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="SliderThumbStyle" TargetType="Thumb">
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
@@ -399,7 +448,9 @@
             <!-- The help strings are full sentences; without an explicit wrap they run off the screen. -->
             <Setter Property="ContentTemplate">
                 <Setter.Value>
-                    <DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" LineHeight="18" Foreground="{StaticResource TextBrush}" /></DataTemplate>
+                    <!-- A popup is outside the window's inheritance chain, so the body size has to be
+                         repeated here or the tooltips drop back to 12. -->
+                    <DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="14" LineHeight="21" Foreground="{StaticResource TextBrush}" /></DataTemplate>
                 </Setter.Value>
             </Setter>
             <Setter Property="Template">

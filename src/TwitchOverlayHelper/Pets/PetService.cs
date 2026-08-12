@@ -100,8 +100,16 @@ public sealed class PetService(AppSettings settings, PetCatalog catalog, PetRegi
 
         // Which reward was redeemed decides how long the pet stays, so a channel can sell five and
         // ten minutes as separate rewards.
+        //
+        // The reading reward is never a pet, on either route. EventSub claims it before the pets are
+        // shown it at all, and the same has to be said here: this route only runs while EventSub is
+        // down, and a channel with no pet rules configured spawns for every reward id it meets – the
+        // reading's included, which would put a creature on the lawn for a purchase that was meant to
+        // be read out loud.
         int? minutes = null;
-        if (message.RewardId is { Length: > 0 } && !RedemptionsFromEventSub)
+        if (message.RewardId is { Length: > 0 }
+            && !RedemptionsFromEventSub
+            && !settings.Tts.MatchesReward(message.RewardId))
         {
             PetRewardRule? rule = pets.RuleFor(message.RewardId, message.RewardTitle);
             // A reward the app created is never spawned from here. IRC carries the reward id but

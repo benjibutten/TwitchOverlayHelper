@@ -122,6 +122,51 @@ public sealed class EdgeAlertSchedulerTests
         Assert.Equal(TimeSpan.FromSeconds(5), scheduler.PlayFor(EdgeAlertKind.ModCall, Duration, At(7)));
     }
 
+    /// <summary>
+    /// A reading waiting for an answer sits between the other two. A stream of first-time hellos
+    /// must not bury something the streamer has to decide on – and a viewer's bits are sitting in it
+    /// while it waits.
+    /// </summary>
+    [Fact]
+    public void AReadingTakesTheLightFromAWelcome()
+    {
+        var scheduler = new EdgeAlertScheduler();
+        Assert.NotNull(scheduler.PlayFor(EdgeAlertKind.NewChatter, Duration, Start));
+
+        Assert.NotNull(scheduler.PlayFor(EdgeAlertKind.TtsRequest, Duration, At(1)));
+        // And the welcomes behind it wait rather than taking it back.
+        Assert.Null(scheduler.PlayFor(EdgeAlertKind.NewChatter, Duration, At(2)));
+    }
+
+    /// <summary>But a moderator calling for the streamer is still the more urgent of the two.</summary>
+    [Fact]
+    public void ACallStillOutranksAReading()
+    {
+        var scheduler = new EdgeAlertScheduler();
+        Assert.NotNull(scheduler.PlayFor(EdgeAlertKind.TtsRequest, Duration, Start));
+
+        Assert.NotNull(scheduler.PlayFor(EdgeAlertKind.ModCall, Duration, At(1)));
+        Assert.Null(scheduler.PlayFor(EdgeAlertKind.TtsRequest, Duration, At(2)));
+    }
+
+    /// <summary>
+    /// Several redemptions at once is one glow held open, the same as several mods calling – and
+    /// unlike a welcome, a reading has no cooldown: each one has to be answered on its own.
+    /// </summary>
+    [Fact]
+    public void SeveralReadingsHoldTheSameGlowAndNeverGoQuiet()
+    {
+        var scheduler = new EdgeAlertScheduler();
+        Assert.NotNull(scheduler.PlayFor(EdgeAlertKind.TtsRequest, Duration, Start));
+
+        Assert.NotNull(scheduler.PlayFor(EdgeAlertKind.TtsRequest, Duration, At(3)));
+        Assert.NotNull(scheduler.PlayFor(EdgeAlertKind.TtsRequest, Duration, At(8)));
+        // Twelve seconds is the ceiling, the same as it is for a call.
+        Assert.Null(scheduler.PlayFor(EdgeAlertKind.TtsRequest, Duration, At(11)));
+        // The ceiling ends one glow; it does not silence the next redemption.
+        Assert.NotNull(scheduler.PlayFor(EdgeAlertKind.TtsRequest, Duration, At(13)));
+    }
+
     [Fact]
     public void ResetForgetsBothTheGlowAndTheCooldown()
     {

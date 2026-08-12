@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<title>Uppläsning</title>
+<!-- Nothing is drawn: this source exists so OBS has a mixer channel to put the readings on. The
+     dot is only so a streamer previewing the page in a browser can tell it is alive; at the 1×1
+     size the app suggests for the OBS source, nobody ever sees it. -->
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  #state {
+    position: fixed; left: 4px; top: 4px; width: 8px; height: 8px; border-radius: 50%;
+    background: #6b7280; transition: background 200ms linear;
+  }
+  #state[data-live="true"] { background: #22c55e; }
+  #state[data-playing="true"] { background: #a970ff; }
+</style>
+</head>
+<body>
+<div id="state" data-live="false"></div>
+<script src="tts.js"></script>
+</body>
+</html>

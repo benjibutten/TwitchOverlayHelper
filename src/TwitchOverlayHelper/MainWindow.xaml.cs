@@ -83,8 +83,11 @@ public partial class MainWindow : Window
     /// </summary>
     private readonly System.Threading.Lock _publishGate = new();
     private readonly SpeechSecretStore _speechSecrets = new();
-    private readonly NameAudioPlayer _namePlayer;
+    private readonly SpeechAudioPlayer _audioPlayer;
     private readonly NameSpeechService _nameSpeech;
+    private readonly TtsService _tts;
+    private readonly TtsAudioStore _ttsAudio = new();
+    private readonly BrowserTtsOutput _browserTts;
     private readonly ChatHub _hub;
     private readonly PetRegistry _petRegistry = new();
     private readonly PetCatalog _petCatalog = new();
@@ -158,9 +161,11 @@ public partial class MainWindow : Window
         // has seen the message.
         _chatClient.ResolveEmotes = _emotes.SpansIn;
         _eventSubClient = new TwitchEventSubClient(_session, _apiClient);
-        _namePlayer = new NameAudioPlayer(Dispatcher);
-        _nameSpeech = new NameSpeechService(_speechHttpClient, _settings, _speechSecrets, _namePlayer.PlayAsync);
+        _audioPlayer = new SpeechAudioPlayer(Dispatcher);
+        _nameSpeech = new NameSpeechService(_speechHttpClient, _settings, _speechSecrets, _audioPlayer.PlayAsync);
         _hub = new ChatHub(_settings, _badgeCatalog, _session, _petRegistry, _petCatalog, _nicknames) { SpeechEnabled = _nameSpeech.IsConfigured };
+        _browserTts = new BrowserTtsOutput(_hub, _ttsAudio, () => _settings.DockAccessKey);
+        _tts = new TtsService(_speechHttpClient, _settings, _speechSecrets, PlayReadingAsync);
         _petService = new PetService(_settings, _petCatalog, _petRegistry, _hub);
         // The broadcaster is read at call time rather than captured: the app can be pointed at
         // another channel while it runs, and a refund aimed at the channel we have left is refused.
@@ -176,6 +181,8 @@ public partial class MainWindow : Window
             Api = _apiClient,
             Chat = _chatClient,
             Speech = _nameSpeech,
+            Tts = _tts,
+            TtsAudio = _ttsAudio,
             Pets = _petCatalog,
             Nicknames = _nicknames,
             Emotes = _emotes
@@ -211,9 +218,16 @@ public partial class MainWindow : Window
         _chatClient.EventReceived += OnChatEvent;
         _eventSubClient.EventReceived += OnChatEvent;
         _eventSubClient.RedemptionReceived += OnRedemption;
-        // The queue can also be worked from Twitch's own dashboard, and a pet whose redemption was
-        // refunded there has to come down here too.
-        _eventSubClient.RedemptionUpdated += change => _ledger.HandleExternalUpdate(change.RedemptionId, change.Status);
+        // The queue can also be worked from Twitch's own dashboard. A pet whose redemption was
+        // refunded there has to come down here too – and a reading whose redemption was refunded there
+        // must not be read out at all, nor answered afterwards at a redemption Twitch has closed. The
+        // readings are asked first because they own their redemptions outright; the ledger never sees
+        // one of them.
+        _eventSubClient.RedemptionUpdated += change =>
+        {
+            if (_tts.HandleExternalUpdate(change.RedemptionId, change.Status)) return;
+            _ledger.HandleExternalUpdate(change.RedemptionId, change.Status);
+        };
         // The two signals that say whether a pet is being seen at all: a lawn reporting what it has
         // drawn, and whether any lawn is connected in the first place.
         _hub.PetShown += _ledger.MarkShown;
@@ -227,6 +241,31 @@ public partial class MainWindow : Window
         // assuming a lawn it has never seen.
         _ledger.OverlayCountChanged(_hub.PetOverlayCount);
         _eventSubClient.GigantifyReceived += OnGigantify;
+        _eventSubClient.CustomPowerUpReceived += OnCustomPowerUp;
+        // The dock's approval bar reads the queue from the service rather than keeping a copy, so
+        // there is one answer to "what is still waiting" and it is the one that gets acted on.
+        _hub.TtsPending = _tts.Snapshot;
+        _tts.Changed += () => _hub.PublishTts();
+        // The browser source saying it has finished a clip is what releases the next one in the
+        // queue – and, on the channel points route, the only evidence the reading was delivered.
+        _hub.TtsPlaybackFinished += _browserTts.OnFinished;
+        // And a reading page that goes away mid-clip is the same answer arriving as a silence: it can
+        // no longer report anything, so the app settles the clip on its behalf rather than holding the
+        // queue until the timeout.
+        _hub.TtsOverlayCountChanged += _browserTts.OnOverlayCountChanged;
+        // The sweep and the reading queue answer for the same reward, so the sweep has to be able to
+        // tell "left over from before we were listening" from "on screen right now, being decided".
+        _ledger.ClaimedElsewhere = _tts.Holds;
+        // Only the readings that can actually be paid back ever raise this; the bits route has
+        // nobody to tell.
+        _tts.Answered += (request, status, reason) => _ = AnswerTtsAsync(request, status, reason);
+        _tts.Noticed += text => RunOnUi(() => TtsStatusText.Text = text);
+        // Checked here rather than in RaiseEdgeAlert, the same way the chat triggers do it: the
+        // settings window's test buttons preview a switched-off glow on purpose.
+        _tts.ApprovalNeeded += _ =>
+        {
+            if (_settings.EdgeAlerts.TtsAlert.Enabled) RaiseEdgeAlert(EdgeAlertKind.TtsRequest);
+        };
         _eventSubClient.HypeTrainChanged += OnHypeTrain;
         _eventSubClient.StatusChanged += status => RunOnUi(() => SetEventStatus(status));
         _eventSubClient.CoverageChanged += coverage => RunOnUi(() => ApplyEventCoverage(coverage));
@@ -438,6 +477,8 @@ public partial class MainWindow : Window
         StreamUrlBox.Text = started ? _dockServer.StreamUrl : string.Empty;
         CopyStreamUrlButton.IsEnabled = started;
         OpenStreamButton.IsEnabled = started;
+        TtsUrlBox.Text = started ? _dockServer.TtsUrl : string.Empty;
+        CopyTtsUrlButton.IsEnabled = started;
         SetDockStatus(started ? "Servern kör – klistra in adressen i OBS." : _dockServer.LastError ?? "Servern kunde inte starta.", started ? "live" : "error");
     }
 
@@ -1071,6 +1112,9 @@ public partial class MainWindow : Window
         if (!string.Equals(_ledgerChannel, broadcasterId, StringComparison.Ordinal))
         {
             _ledger.Reset();
+            // A reading bought in the channel we have left has no business being read out over the
+            // one we have joined – and the viewer who paid for it is not in this room.
+            _tts.Reset();
             _ledgerChannel = broadcasterId;
             // Another channel's pets have no business on this one's lawn, and the entries that
             // vouched for them have just gone. Letting them go is not the same as settling them:
@@ -1121,7 +1165,15 @@ public partial class MainWindow : Window
 
     private async Task SweepLeftoverRedemptionsAsync(DateTimeOffset listeningSince, int generation)
     {
-        IReadOnlyList<string> managed = _settings.Pets.ManagedRewardIds;
+        // The reading reward is swept alongside the pets'. Both live in memory only, so anything
+        // still unfulfilled on one of them from before we were listening belongs to something that
+        // no longer exists – a reading that was waiting for a yes when the app was closed, a channel
+        // switch that let the queue go, a crash mid-stream. Without this the app is the only half of
+        // the pets' design that TTS copied: letting go quietly, and never coming back to settle up.
+        var managed = _settings.Pets.ManagedRewardIds.ToList();
+        if (_settings.Tts.CanRefund && !managed.Contains(_settings.Tts.RewardId, StringComparer.OrdinalIgnoreCase))
+            managed.Add(_settings.Tts.RewardId);
+
         if (managed.Count == 0)
         {
             _swept = true;
@@ -1132,7 +1184,7 @@ public partial class MainWindow : Window
         try { complete = await _ledger.SweepAsync(managed, listeningSince); }
         catch (Exception ex)
         {
-            AppLog.Error("Pets: kunde inte städa kön från förra körningen", ex);
+            AppLog.Error("Inlösen: kunde inte städa kön från förra körningen", ex);
             complete = false;
         }
         if (generation != _eventSubGeneration) return;
@@ -1186,6 +1238,7 @@ public partial class MainWindow : Window
         if (coverage.Redemptions) on.Add("inlösta belöningar visas med namn och kostnad");
         if (coverage.Shoutouts) on.Add("shoutouts visas");
         if (coverage.PowerUps) on.Add("power-ups visas");
+        if (coverage.CustomPowerUps) on.Add("egna power-ups kan läsas upp");
         if (coverage.HypeTrain) on.Add("hypetåg visas");
 
         // A stored login only misses a scope when it was granted before we started asking for it.
@@ -1375,9 +1428,12 @@ public partial class MainWindow : Window
     /// </summary>
     private void RaiseEdgeAlert(EdgeAlertKind kind)
     {
-        EdgeAlertStyle style = kind == EdgeAlertKind.ModCall
-            ? _settings.EdgeAlerts.ModAlert
-            : _settings.EdgeAlerts.NewChatterAlert;
+        EdgeAlertStyle style = kind switch
+        {
+            EdgeAlertKind.ModCall => _settings.EdgeAlerts.ModAlert,
+            EdgeAlertKind.TtsRequest => _settings.EdgeAlerts.TtsAlert,
+            _ => _settings.EdgeAlerts.NewChatterAlert
+        };
         // The length comes from the scheduler, not from the setting: a glow being held open has only
         // the rest of its ceiling to run, and playing a full alert on top of it is what would keep
         // the edges lit past the limit during a busy chat.
@@ -1421,10 +1477,96 @@ public partial class MainWindow : Window
         if (redemption.RewardId.Length > 0)
             _rewards.Remember(new CustomReward(redemption.RewardId, redemption.RewardTitle, redemption.RewardCost ?? 0));
 
+        RunOnUi(() => ShowLastReward(redemption.RewardId, redemption.RewardTitle, redemption.DisplayName));
+
+        // The reading reward is claimed before the pets see it. Without this a channel with no pet
+        // rules configured – where every redemption spawns a pet – would answer the same redemption
+        // twice: once when the pet's time was up and once when the message had been read.
+        if (_settings.Tts.MatchesReward(redemption.RewardId))
+        {
+            HandleTtsRedemption(redemption);
+            return;
+        }
+
         PetRedemptionResult result = _petService.HandleRedemption(redemption);
         AnswerRedemption(redemption, result);
-        RunOnUi(() => ShowLastReward(redemption.RewardId, redemption.RewardTitle, redemption.DisplayName));
     }
+
+    /// <summary>
+    /// A channel points redemption bought a reading. Whether it can be paid back is decided here and
+    /// carried along: the settings can be changed while a request is waiting, and a redemption has
+    /// to be answered on the terms it was accepted under.
+    /// </summary>
+    private void HandleTtsRedemption(RewardRedemption redemption)
+    {
+        var request = new TtsRequest(
+            redemption.Id,
+            TtsSource.Reward,
+            redemption.RewardId,
+            _settings.Tts.CanRefund,
+            redemption.UserId,
+            redemption.DisplayName.Length > 0 ? redemption.DisplayName : redemption.UserLogin,
+            redemption.UserInput ?? string.Empty,
+            redemption.RewardCost ?? 0,
+            redemption.At);
+        _tts.Handle(request);
+    }
+
+    /// <summary>
+    /// A viewer redeemed one of the channel's own bits Power-ups. Nothing here can ever be paid back:
+    /// Twitch has no endpoint for answering a Power-up redemption, so the bits are spent whatever the
+    /// streamer decides. Everything else works exactly as it does for a channel points reward.
+    /// </summary>
+    private void OnCustomPowerUp(CustomPowerUpRedemption redemption)
+    {
+        if (!_settings.Tts.MatchesPowerUp(redemption.PowerUpId)) return;
+
+        _tts.Handle(new TtsRequest(
+            redemption.Id,
+            TtsSource.PowerUp,
+            string.Empty,
+            false,
+            redemption.UserId,
+            redemption.DisplayName.Length > 0 ? redemption.DisplayName : redemption.UserLogin,
+            redemption.UserInput ?? string.Empty,
+            redemption.Bits,
+            redemption.At));
+    }
+
+    /// <summary>
+    /// Tells Twitch what became of a reading that was bought with channel points. Only ever called
+    /// for requests the app accepted as refundable, so the reward is one this client id created and
+    /// the answer is one Twitch will take.
+    /// </summary>
+    /// <summary>
+    /// Where a reading actually comes out. The browser source is the one that reaches the viewers –
+    /// OBS mixes it itself – while the desktop is the streamer's own speakers and only reaches the
+    /// stream if they capture their whole desktop, which most setups deliberately do not.
+    ///
+    /// <para>With both, the browser is what is waited on and what may fail: the local copy is a
+    /// convenience for the streamer, and a sound card that is busy is not a reason to pay a viewer
+    /// back for a reading the channel heard perfectly well.</para>
+    /// </summary>
+    private async Task PlayReadingAsync(string filePath, double volume, CancellationToken cancellationToken)
+    {
+        TtsSettings tts = _settings.Tts;
+
+        if (tts.UsesDesktop)
+        {
+            Task desktop = _audioPlayer.PlayToEndAsync(filePath, volume, cancellationToken);
+            // Only awaited when it is the whole output; alongside the browser it is left to run and
+            // its failures are logged rather than charged to anybody.
+            if (!tts.UsesBrowser) { await desktop.ConfigureAwait(false); return; }
+            _ = desktop.ContinueWith(
+                task => AppLog.Warn($"Uppläsning: kunde inte spela upp lokalt: {task.Exception?.GetBaseException().Message}"),
+                TaskContinuationOptions.OnlyOnFaulted);
+        }
+
+        await _browserTts.PlayAsync(filePath, volume, cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task AnswerTtsAsync(TtsRequest request, RedemptionStatus status, string reason) =>
+        _ledger.AnswerNow(request.Id, request.RewardId, request.DisplayName, request.Cost, status, reason, "tts");
 
     /// <summary>
     /// Tells Twitch what became of a redemption – but only for the rewards this app created, which
@@ -1461,11 +1603,25 @@ public partial class MainWindow : Window
         _ = _ledger.RefundNow(redemption.Id, redemption.RewardId, viewer, cost, reason);
     }
 
-    /// <summary>Says what the ledger just did, so a refund is not something the streamer finds out about later.</summary>
-    private void ShowRedemptionNotice(RedemptionNotice notice) =>
+    /// <summary>
+    /// Says what the ledger just did, so a refund is not something the streamer finds out about
+    /// later. Put next to the feature the redemption paid for: a reading reported under the pets
+    /// would have the streamer looking for a creature that was never involved.
+    /// </summary>
+    private void ShowRedemptionNotice(RedemptionNotice notice)
+    {
+        if (notice.Subject == "tts")
+        {
+            TtsStatusText.Text = notice.Refunded
+                ? $"↩ {notice.ViewerName} fick tillbaka {notice.Cost} poäng – {notice.Reason}."
+                : $"✓ {notice.ViewerName}s uppläsning är bokförd som klar.";
+            return;
+        }
+
         PetRewardStatusText.Text = notice.Refunded
             ? $"↩ {notice.ViewerName} fick tillbaka {notice.Cost} poäng – {notice.Reason}."
             : $"✓ {notice.ViewerName}s pet levde klart.";
+    }
 
     /// <summary>
     /// A Gigantify an Emote power-up. It carries no message id, so the tracker pairs it with the
@@ -1575,6 +1731,7 @@ public partial class MainWindow : Window
         EditHotkeyLabel.Text = _settings.EditHotkeyText;
         PopulateColorBox(EdgeModColorBox);
         PopulateColorBox(EdgeNewColorBox);
+        PopulateColorBox(EdgeTtsColorBox);
         EdgeModEnabledCheck.IsChecked = _settings.EdgeAlerts.ModAlert.Enabled;
         EdgeModCommandBox.Text = _settings.EdgeAlerts.ModCommand;
         SelectColor(EdgeModColorBox, _settings.EdgeAlerts.ModAlert.Color);
@@ -1584,7 +1741,11 @@ public partial class MainWindow : Window
         SelectColor(EdgeNewColorBox, _settings.EdgeAlerts.NewChatterAlert.Color);
         EdgeNewIntensitySlider.Value = _settings.EdgeAlerts.NewChatterAlert.Intensity;
         EdgeNewDurationSlider.Value = _settings.EdgeAlerts.NewChatterAlert.DurationSeconds;
+        SelectColor(EdgeTtsColorBox, _settings.EdgeAlerts.TtsAlert.Color);
+        EdgeTtsIntensitySlider.Value = _settings.EdgeAlerts.TtsAlert.Intensity;
+        EdgeTtsDurationSlider.Value = _settings.EdgeAlerts.TtsAlert.DurationSeconds;
         EdgeWidthSlider.Value = _settings.EdgeAlerts.EdgeWidth;
+        PopulateTtsControls();
         UpdateValueLabels();
     }
 
@@ -1856,6 +2017,11 @@ public partial class MainWindow : Window
         edge.NewChatterAlert.Color = SelectedColor(EdgeNewColorBox, edge.NewChatterAlert.Color);
         edge.NewChatterAlert.Intensity = EdgeNewIntensitySlider.Value;
         edge.NewChatterAlert.DurationSeconds = EdgeNewDurationSlider.Value;
+        // Deliberately no Enabled here: the switch for this one lives next to the feature it belongs
+        // to, on the reading tab, so it is where the streamer is when they decide they want it.
+        edge.TtsAlert.Color = SelectedColor(EdgeTtsColorBox, edge.TtsAlert.Color);
+        edge.TtsAlert.Intensity = EdgeTtsIntensitySlider.Value;
+        edge.TtsAlert.DurationSeconds = EdgeTtsDurationSlider.Value;
         edge.EdgeWidth = EdgeWidthSlider.Value;
         UpdateValueLabels();
         SaveSettings();
@@ -1888,6 +2054,294 @@ public partial class MainWindow : Window
     // and the switch flipped after.
     private void EdgeModTest_Click(object sender, RoutedEventArgs e)
         => _edgeAlerts.Play(_settings.EdgeAlerts.ModAlert, _settings.EdgeAlerts.EdgeWidth);
+
+    private void EdgeTtsTest_Click(object sender, RoutedEventArgs e)
+        => _edgeAlerts.Play(_settings.EdgeAlerts.TtsAlert, _settings.EdgeAlerts.EdgeWidth);
+
+    /* ------------------------------------------------------------ uppläsning */
+
+    private void PopulateTtsControls()
+    {
+        TtsSettings tts = _settings.Tts;
+        TtsEnabledCheck.IsChecked = tts.Enabled;
+        TtsPowerUpRadio.IsChecked = tts.Trigger == TtsTrigger.PowerUp;
+        TtsRewardRadio.IsChecked = tts.Trigger == TtsTrigger.Reward;
+        TtsPowerUpIdBox.Text = tts.PowerUpId;
+        TtsRewardTitleBox.Text = tts.RewardTitle.Length > 0 ? tts.RewardTitle : "Läs upp mitt meddelande";
+        TtsRewardIdBox.Text = tts.RewardId;
+        TtsRewardCostBox.Text = tts.RewardCost.ToString();
+        TtsApprovalCheck.IsChecked = tts.RequireApproval;
+        TtsEdgeAlertCheck.IsChecked = _settings.EdgeAlerts.TtsAlert.Enabled;
+        TtsTimeoutBox.Text = Math.Max(1, tts.ApprovalTimeoutSeconds / 60).ToString();
+        TtsQueueBox.Text = tts.QueueLimit.ToString();
+        TtsVoiceIdBox.Text = tts.VoiceId;
+        TtsModelBox.Text = tts.ElevenLabsModel;
+        TtsVolumeSlider.Value = tts.Volume;
+        TtsMaxCharsSlider.Value = tts.MaxCharacters;
+        TtsAnnounceNameCheck.IsChecked = tts.AnnounceName;
+        TtsOutputBrowserRadio.IsChecked = tts.Output == TtsOutput.Browser;
+        TtsOutputDesktopRadio.IsChecked = tts.Output == TtsOutput.Desktop;
+        TtsOutputBothRadio.IsChecked = tts.Output == TtsOutput.Both;
+        if (tts.VoiceName.Length > 0) TtsVoiceHint.Text = $"Vald röst: {tts.VoiceName}";
+        ShowTtsTrigger();
+    }
+
+    private void TtsOutput_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _settings.Tts.Output = TtsOutputDesktopRadio.IsChecked == true
+            ? TtsOutput.Desktop
+            : TtsOutputBothRadio.IsChecked == true ? TtsOutput.Both : TtsOutput.Browser;
+        SaveSettings();
+    }
+
+    private void CopyTtsUrl_Click(object sender, RoutedEventArgs e)
+    {
+        if (TtsUrlBox.Text.Length == 0) return;
+        try { Clipboard.SetText(TtsUrlBox.Text); }
+        catch (System.Runtime.InteropServices.COMException) { }
+    }
+
+    /// <summary>Only the half that is actually in use, so the tab reads as one choice rather than two.</summary>
+    private void ShowTtsTrigger()
+    {
+        bool powerUp = _settings.Tts.Trigger == TtsTrigger.PowerUp;
+        TtsPowerUpPanel.Visibility = powerUp ? Visibility.Visible : Visibility.Collapsed;
+        TtsRewardPanel.Visibility = powerUp ? Visibility.Collapsed : Visibility.Visible;
+        TtsRewardHint.Text = _settings.Tts.CanRefund
+            ? "🔒 Skapad av appen – att neka ger tillbaka poängen."
+            : _settings.Tts.RewardId.Length > 0
+                ? "— Belöningen är inte skapad av appen, så poängen kan inte lämnas tillbaka härifrån."
+                : "Skapa belöningen härifrån om du vill kunna refundera. Twitch låter bara en app svara på inlösen av belöningar den själv skapat.";
+    }
+
+    private void TtsTrigger_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _settings.Tts.Trigger = TtsPowerUpRadio.IsChecked == true ? TtsTrigger.PowerUp : TtsTrigger.Reward;
+        ShowTtsTrigger();
+        SaveSettings();
+    }
+
+    private void TtsSetting_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        TtsSettings tts = _settings.Tts;
+
+        tts.Enabled = TtsEnabledCheck.IsChecked == true;
+        tts.PowerUpId = TtsPowerUpIdBox.Text;
+        tts.RewardTitle = TtsRewardTitleBox.Text;
+        tts.RequireApproval = TtsApprovalCheck.IsChecked == true;
+        tts.VoiceId = TtsVoiceIdBox.Text;
+        tts.ElevenLabsModel = TtsModelBox.Text;
+        tts.Volume = TtsVolumeSlider.Value;
+        tts.MaxCharacters = (int)Math.Round(TtsMaxCharsSlider.Value);
+        tts.AnnounceName = TtsAnnounceNameCheck.IsChecked == true;
+        _settings.EdgeAlerts.TtsAlert.Enabled = TtsEdgeAlertCheck.IsChecked == true;
+
+        // A hand-typed id points the app at a reward it did not create, so the claim that it may be
+        // refunded has to go with it. Editing the id of a reward the app made is the same thing:
+        // whatever is in the box now is not the reward we were given the right to answer for.
+        string rewardId = TtsRewardIdBox.Text.Trim();
+        if (!string.Equals(rewardId, tts.RewardId, StringComparison.OrdinalIgnoreCase))
+        {
+            tts.RewardId = rewardId;
+            tts.RewardManaged = false;
+        }
+
+        if (int.TryParse(TtsRewardCostBox.Text, out int cost) && cost is >= 1 and <= 10_000_000) tts.RewardCost = cost;
+        if (int.TryParse(TtsTimeoutBox.Text, out int minutes) && minutes is >= 1 and <= 120) tts.ApprovalTimeoutSeconds = minutes * 60;
+        if (int.TryParse(TtsQueueBox.Text, out int queue) && queue is >= 1 and <= 100) tts.QueueLimit = queue;
+
+        tts.Normalize();
+        ShowTtsTrigger();
+        UpdateValueLabels();
+        SaveSettings();
+    }
+
+    private void TtsRewardCost_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        => TtsRewardCostBox.Text = _settings.Tts.RewardCost.ToString();
+
+    private void TtsTimeout_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        => TtsTimeoutBox.Text = Math.Max(1, _settings.Tts.ApprovalTimeoutSeconds / 60).ToString();
+
+    private void TtsQueue_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        => TtsQueueBox.Text = _settings.Tts.QueueLimit.ToString();
+
+    private async void TtsFetchPowerUps_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_session.IsLoggedIn) { TtsStatusText.Text = "Logga in på Twitch först."; return; }
+        if (_hub.BroadcasterId.Length == 0 || _hub.BroadcasterId != _session.UserId)
+        {
+            TtsStatusText.Text = "Anslut till din egen kanal först – Power-ups går bara att läsa där.";
+            return;
+        }
+
+        TtsFetchPowerUpsButton.IsEnabled = false;
+        TtsStatusText.Text = "Hämtar Power-ups …";
+        try
+        {
+            IReadOnlyList<CustomPowerUp> powerUps = await _apiClient.GetCustomPowerUpsAsync(_hub.BroadcasterId);
+            TtsPowerUpBox.ItemsSource = powerUps;
+            TtsPowerUpBox.SelectedItem = powerUps.FirstOrDefault(powerUp =>
+                string.Equals(powerUp.Id, _settings.Tts.PowerUpId, StringComparison.OrdinalIgnoreCase));
+            TtsStatusText.Text = powerUps.Count > 0
+                ? $"{powerUps.Count} Power-ups hämtade. Välj den som ska läsa upp meddelanden."
+                : "Kanalen har inga custom Power-ups – skapa en i Twitchs Creator Dashboard först.";
+        }
+        catch (Exception ex) when (ex is TwitchApiException or TwitchAuthException or System.Net.Http.HttpRequestException)
+        {
+            TtsStatusText.Text = $"Kunde inte hämta Power-ups: {ex.Message}";
+        }
+        finally { TtsFetchPowerUpsButton.IsEnabled = true; }
+    }
+
+    private void TtsPowerUp_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (TtsPowerUpBox.SelectedItem is not CustomPowerUp powerUp) return;
+        _settings.Tts.PowerUpTitle = powerUp.Title;
+        // Writing the id back runs TtsSetting_Changed, which is what saves; the extra save covers
+        // picking the Power-up that was already selected, where the text never changes.
+        TtsPowerUpIdBox.Text = powerUp.Id;
+        TtsStatusText.Text = powerUp.RequiresInput
+            ? $"Vald: {powerUp.Title} ({powerUp.Bits} bits)."
+            : $"Vald: {powerUp.Title} – men den ber inte tittaren skriva något, så det kommer ingen text att läsa upp.";
+        SaveSettings();
+    }
+
+    private async void TtsCreateReward_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_session.IsLoggedIn) { TtsStatusText.Text = "Logga in på Twitch först."; return; }
+        if (!_session.HasScope(TwitchAuth.ManageRedemptionsScope))
+        {
+            TtsStatusText.Text = "Din inloggning är från innan återbetalning fanns – logga ut och in igen.";
+            return;
+        }
+        if (_hub.BroadcasterId.Length == 0 || _hub.BroadcasterId != _session.UserId)
+        {
+            TtsStatusText.Text = "Anslut till din egen kanal först – belöningar kan bara skapas där.";
+            return;
+        }
+
+        string title = TtsRewardTitleBox.Text.Trim();
+        if (title.Length == 0) { TtsStatusText.Text = "Ge belöningen ett namn först."; return; }
+
+        TtsCreateRewardButton.IsEnabled = false;
+        TtsStatusText.Text = $"Skapar “{title}” i Twitch …";
+        try
+        {
+            // RequireInput is not a choice here the way it is for the pets: a reward that asks for
+            // nothing hands us nothing to read out loud.
+            CustomReward created = await _apiClient.CreateCustomRewardAsync(_hub.BroadcasterId, new NewCustomReward(
+                title,
+                _settings.Tts.RewardCost,
+                "Skriv meddelandet du vill få uppläst i sändningen.",
+                RequireInput: true,
+                CooldownSeconds: 0,
+                BackgroundColor: "#A970FF"));
+
+            _settings.Tts.RewardId = created.Id;
+            _settings.Tts.RewardTitle = created.Title;
+            _settings.Tts.RewardManaged = true;
+            _settings.Tts.RewardCost = created.Cost > 0 ? created.Cost : _settings.Tts.RewardCost;
+            _rewards.Remember(created);
+
+            _loading = true;
+            TtsRewardIdBox.Text = created.Id;
+            TtsRewardCostBox.Text = _settings.Tts.RewardCost.ToString();
+            _loading = false;
+
+            ShowTtsTrigger();
+            SaveSettingsNow();
+            TtsStatusText.Text = $"“{created.Title}” skapad. Sätt bilden i Twitchs dashboard – den går inte att ladda upp via API:t.";
+        }
+        catch (Exception ex) when (ex is TwitchApiException or TwitchAuthException or System.Net.Http.HttpRequestException)
+        {
+            TtsStatusText.Text = $"Kunde inte skapa belöningen: {ex.Message} Har du redan en belöning med samma namn?";
+            AppLog.Warn($"Uppläsning: kunde inte skapa belöning “{title}”: {ex.Message}");
+        }
+        finally { TtsCreateRewardButton.IsEnabled = true; }
+    }
+
+    private async void TtsFetchVoices_Click(object sender, RoutedEventArgs e)
+    {
+        string apiKey = _speechSecrets.Current.ElevenLabsApiKey;
+        if (apiKey.Length == 0)
+        {
+            TtsVoiceHint.Text = "Spara ElevenLabs-nyckeln under Uppläsning av namn först.";
+            return;
+        }
+
+        TtsFetchVoicesButton.IsEnabled = false;
+        TtsVoiceHint.Text = "Hämtar röster …";
+        try
+        {
+            IReadOnlyList<VoiceOption> voices = await _nameSpeech.GetVoicesAsync(apiKey);
+            TtsVoiceBox.ItemsSource = voices;
+            TtsVoiceBox.SelectedItem = voices.FirstOrDefault(voice => voice.VoiceId == _settings.Tts.VoiceId);
+            TtsVoiceHint.Text = voices.Count > 0
+                ? $"{voices.Count} röster hämtade. Välj en i listan."
+                : "Kontot har inga röster – lägg till en i ElevenLabs först.";
+        }
+        catch (Exception ex) when (ex is SpeechException or System.Net.Http.HttpRequestException)
+        {
+            TtsVoiceHint.Text = ex.Message;
+        }
+        finally { TtsFetchVoicesButton.IsEnabled = true; }
+    }
+
+    private void TtsVoice_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (TtsVoiceBox.SelectedItem is not VoiceOption voice) return;
+        _settings.Tts.VoiceName = voice.Name;
+        TtsVoiceHint.Text = voice.Description.Length > 0
+            ? $"Vald röst: {voice.Name} ({voice.Description})"
+            : $"Vald röst: {voice.Name}";
+        TtsVoiceIdBox.Text = voice.VoiceId;
+        SaveSettings();
+    }
+
+    private async void TtsTest_Click(object sender, RoutedEventArgs e)
+    {
+        TtsTestButton.IsEnabled = false;
+        TtsStatusText.Text = "Läser upp …";
+        try
+        {
+            await _tts.SpeakTestAsync(TtsTestBox.Text);
+            TtsStatusText.Text = "Klart – hörde du det?";
+        }
+        catch (Exception ex) when (ex is SpeechException or System.Net.Http.HttpRequestException)
+        {
+            TtsStatusText.Text = ex.Message;
+        }
+        finally { TtsTestButton.IsEnabled = true; }
+    }
+
+    /// <summary>
+    /// Puts an invented request in the queue so the dock's bar can be seen and pressed without
+    /// waiting for a viewer to spend anything. It goes through the ordinary path, so approving it
+    /// really does read it out – and it is never refundable, because there is no redemption behind
+    /// it to answer for.
+    /// </summary>
+    private void TtsTestBanner_Click(object sender, RoutedEventArgs e)
+    {
+        TtsOutcome outcome = _tts.Handle(new TtsRequest(
+            "test-" + Guid.NewGuid().ToString("N")[..8],
+            _settings.Tts.Trigger == TtsTrigger.PowerUp ? TtsSource.PowerUp : TtsSource.Reward,
+            string.Empty,
+            Refundable: false,
+            "test",
+            "Testtittaren",
+            TtsTestBox.Text,
+            _settings.Tts.Trigger == TtsTrigger.PowerUp ? 500 : _settings.Tts.RewardCost,
+            DateTimeOffset.UtcNow));
+
+        TtsStatusText.Text = outcome.Accepted
+            ? _settings.Tts.RequireApproval
+                ? "Testinlösen ligger nu i OBS-docken och väntar på ditt svar."
+                : "Testinlösen köades – uppläsningen börjar strax."
+            : $"Testinlösen gick inte igenom: {outcome.Reason}.";
+    }
 
     private void EdgeNewTest_Click(object sender, RoutedEventArgs e)
         => _edgeAlerts.Play(_settings.EdgeAlerts.NewChatterAlert, _settings.EdgeAlerts.EdgeWidth);
@@ -2000,7 +2454,11 @@ public partial class MainWindow : Window
         EdgeModDurationValue.Text = $"{EdgeModDurationSlider.Value:0} s";
         EdgeNewIntensityValue.Text = $"{EdgeNewIntensitySlider.Value:P0}";
         EdgeNewDurationValue.Text = $"{EdgeNewDurationSlider.Value:0} s";
+        EdgeTtsIntensityValue.Text = $"{EdgeTtsIntensitySlider.Value:P0}";
+        EdgeTtsDurationValue.Text = $"{EdgeTtsDurationSlider.Value:0} s";
         EdgeWidthValue.Text = $"{EdgeWidthSlider.Value:0} px";
+        TtsVolumeValue.Text = $"{TtsVolumeSlider.Value:P0}";
+        TtsMaxCharsValue.Text = $"{TtsMaxCharsSlider.Value:0}";
     }
 
     private void SaveSettings()
@@ -2082,6 +2540,12 @@ public partial class MainWindow : Window
         // Anything still waiting on a verdict is left in Twitch's queue rather than answered from a
         // window that is disappearing. The streamer can refund it there, and the next start sweeps
         // whatever they did not.
+        // The readings go first: they settle through the ledger, so letting them go while it is
+        // still alive is the order that cannot answer Twitch from under a disposed object. Reset
+        // marks them abandoned rather than answering, and the sentence being read is cut off with
+        // them – the audio player is about to close underneath it either way.
+        _tts.Reset();
+        _tts.Dispose();
         _ledger.Reset();
         _ledger.Dispose();
         SaveSettingsNow();
@@ -2092,7 +2556,7 @@ public partial class MainWindow : Window
         _hwndSource?.RemoveHook(WndProc);
         _overlay.Close();
         _edgeAlerts.Close();
-        _namePlayer.Close();
+        _audioPlayer.Close();
         await _dockServer.DisposeAsync();
         await _chatClient.DisposeAsync();
         await _eventSubClient.DisposeAsync();

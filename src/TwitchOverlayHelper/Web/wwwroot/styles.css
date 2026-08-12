@@ -66,6 +66,50 @@ body { display: flex; flex-direction: column; }
 .icon-btn:hover { background: var(--surface-alt); color: var(--text); }
 .icon-btn[aria-pressed="true"] { background: var(--accent); color: #fff; }
 
+/* ---------- paid readings waiting for a yes ---------- */
+/* Sized in fixed pixels like the top bar rather than in the reading size: it is a decision to make,
+   not part of the conversation, and the one thing it must not be mistaken for is a message. The
+   text is a stranger's words, so it is given room to be read properly before it is judged. */
+.ttsbar {
+  flex: 0 0 auto;
+  background: var(--surface-alt);
+  border-bottom: 2px solid var(--accent);
+  padding: 6px 8px 7px;
+}
+/* Being read out right now: the decision is made, so the bar steps back. */
+.ttsbar[data-state="speaking"] { border-bottom-color: #22c55e; opacity: 0.85; }
+
+.ttsbar-head { display: flex; align-items: baseline; gap: 6px; }
+.ttsbar-icon { flex: 0 0 auto; font-size: 13px; }
+.ttsbar-who {
+  flex: 1 1 auto; min-width: 0; font-weight: 700; font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ttsbar-cost { flex: 0 0 auto; font-size: 11px; color: var(--muted); }
+.ttsbar-more {
+  flex: 0 0 auto; font-size: 11px; font-weight: 700; color: #fff;
+  background: var(--accent); border-radius: 99px; padding: 1px 7px;
+}
+
+/* Four lines of a pasted paragraph is enough to judge it by; the rest scrolls rather than pushing
+   the chat off the bottom of a narrow dock. */
+.ttsbar-text {
+  margin: 4px 0 0; font-size: 13px; line-height: 1.35; color: var(--text);
+  max-height: 4.05em; overflow-y: auto; overflow-wrap: anywhere;
+}
+
+.ttsbar-actions { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.ttsbar-btn {
+  border: 1px solid var(--line); border-radius: 7px; padding: 4px 10px;
+  font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  background: var(--surface); color: var(--text);
+}
+.ttsbar-btn:hover { border-color: var(--accent); }
+.ttsbar-btn:disabled { opacity: 0.45; cursor: progress; }
+.ttsbar-yes { background: #22c55e; border-color: #22c55e; color: #05240f; }
+.ttsbar-no:hover { border-color: var(--danger); color: var(--danger); }
+.ttsbar-left { margin-left: auto; font-size: 11px; color: var(--muted); }
+
 /* ---------- hype train ---------- */
 /* A train is a state, not a line, so it sits on the same shelf as the pinned mentions and stays put
    for the minutes it lasts. Sized in fixed pixels like the top bar rather than in the reading size:

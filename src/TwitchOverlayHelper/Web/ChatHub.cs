@@ -7,6 +7,7 @@ using TwitchOverlayHelper.Models;
 using TwitchOverlayHelper.Nicknames;
 using TwitchOverlayHelper.Pets;
 using TwitchOverlayHelper.Settings;
+using TwitchOverlayHelper.Speech;
 using TwitchOverlayHelper.Twitch;
 
 namespace TwitchOverlayHelper.Web;
@@ -28,7 +29,15 @@ public enum DockView
     /// an answer to that. A pet overlay from before this view existed still connects as a dock and
     /// still works; it simply cannot vouch for itself, and the rewards that pay back notice.
     /// </summary>
-    Pets
+    Pets,
+
+    /// <summary>
+    /// The paid readings, as sound and nothing else. A page of its own rather than a job for the pet
+    /// lawn: OBS mixes each browser source's audio separately, so this is what gives the readings
+    /// their own volume, their own track and their own monitoring – and a streamer who wants no pets
+    /// should not have to add a lawn in order to be heard.
+    /// </summary>
+    Tts
 }
 
 /// <summary>
@@ -93,6 +102,26 @@ public sealed class ChatHub(
     /// <summary>Raised with the new count whenever a pet overlay connects or goes away.</summary>
     public event Action<int>? PetOverlayCountChanged;
 
+    /// <summary>
+    /// The reading page reporting that it has finished – or failed to start – one clip, by the id it
+    /// was sent. The only signal that a reading actually reached the mix: everything before it
+    /// proves the server sent a frame.
+    /// </summary>
+    public event Action<string, bool>? TtsPlaybackFinished;
+
+    /// <summary>
+    /// Raised with the new count whenever a reading page connects or goes away. What it exists for is
+    /// the going away: a clip in flight when the last page left will never be reported on, because the
+    /// report would go over the socket that has just closed.
+    /// </summary>
+    public event Action<int>? TtsOverlayCountChanged;
+
+    /// <summary>
+    /// How many reading pages are connected. Zero means a reading would be synthesised, paid for and
+    /// heard by nobody – which is the difference between a redemption delivered and one to refund.
+    /// </summary>
+    public int TtsOverlayCount => _clients.Values.Count(client => client.View == DockView.Tts);
+
     /// <summary>Twitch room id of the joined channel; needed as broadcaster_id for moderation.</summary>
     public string BroadcasterId { get; set; } = string.Empty;
 
@@ -101,6 +130,13 @@ public sealed class ChatHub(
     /// nobody meets a button that only ever answers "fyll i API-nycklar".
     /// </summary>
     public bool SpeechEnabled { get; set; }
+
+    /// <summary>
+    /// What the dock's approval bar should be showing. A callback rather than a list held here: the
+    /// readings live in the speech service, and two copies of that queue would be two answers to
+    /// "what is waiting" – the wrong one being the one on screen while the streamer decides.
+    /// </summary>
+    public Func<IReadOnlyList<TtsEntry>>? TtsPending { get; set; }
 
     /// <summary>
     /// Points the dock at another channel. The previous channel's lines are dropped so a dock that
@@ -395,6 +431,40 @@ public sealed class ChatHub(
         SendTo(DockView.Dock, DockJson.Serialize(new DockEnvelope<DockSpeech>("speech", new DockSpeech(SpeechEnabled))));
 
     /// <summary>
+    /// The paid readings waiting on the streamer, to the dock alone. Sent as the whole list rather
+    /// than as one request at a time, the way the hype train is: a bar showing the wrong queue is
+    /// worse than one that redraws a little more often, and a dock that reconnects mid-decision gets
+    /// the same shape in its hello.
+    ///
+    /// <para>Never anywhere but the dock. The text is a stranger's words waiting to be judged, and
+    /// the pages that can be added to a scene are the ones the viewers are looking at.</para>
+    /// </summary>
+    public void PublishTts() =>
+        SendTo(DockView.Dock, DockJson.Serialize(new DockEnvelope<IReadOnlyList<TtsEntry>>("tts", TtsSnapshot())));
+
+    private IReadOnlyList<TtsEntry> TtsSnapshot() => TtsPending?.Invoke() ?? [];
+
+    /// <summary>
+    /// Hands one clip to the reading pages. Addressed to them alone: it carries a playable address,
+    /// and the pages on the broadcast that draw chat have no business fetching it.
+    /// </summary>
+    /// <returns>
+    /// How many pages were told. Zero means the browser source is missing from the scene, and the
+    /// caller has to treat the reading as undelivered rather than wait for an acknowledgement that
+    /// nobody is going to send.
+    /// </returns>
+    public int PublishTtsPlay(string playbackId, string url, double volume)
+    {
+        string payload = DockJson.Serialize(new DockEnvelope<DockTtsPlay>("ttsPlay", new DockTtsPlay(playbackId, url, volume)));
+        Fan(payload, client => client.View == DockView.Tts);
+        return TtsOverlayCount;
+    }
+
+    /// <summary>Stops whatever the reading pages are playing – the dock's stop button, or a shutdown.</summary>
+    public void PublishTtsStop() =>
+        SendTo(DockView.Tts, DockJson.Serialize(new DockEnvelope<object?>("ttsStop", null)));
+
+    /// <summary>
     /// A nickname was given, changed or taken away. Every dock gets it, including the one that made
     /// the change: the name has to land on the lines already on screen, and rendering it from a
     /// lookup rather than from the message means one frame is enough to update the whole column.
@@ -565,7 +635,10 @@ public sealed class ChatHub(
             hypeTrain is { } train && train.IsWorthShowing(DateTimeOffset.Now) ? DockMapper.ToDock(train) : null,
             // The whole book, not the names in the history: a dock that scrolls back to a line from
             // an hour ago should still see the nickname on it.
-            nicknames.Snapshot().Select(entry => new DockNickname(entry.UserId, entry.Login, entry.Text)).ToArray()));
+            nicknames.Snapshot().Select(entry => new DockNickname(entry.UserId, entry.Login, entry.Text)).ToArray(),
+            // A reading waiting for an answer outlives an OBS restart, so the bar has to come back
+            // with it rather than leaving the viewer's purchase to time out unseen.
+            TtsSnapshot()));
     }
 
     private DockMessage ToDock(ChatMessage message) => DockMapper.ToDock(message, badge =>
@@ -633,6 +706,7 @@ public sealed class ChatHub(
         });
         _clients[id] = new Client(outbound, view);
         if (view == DockView.Pets) PetOverlayCountChanged?.Invoke(PetOverlayCount);
+        else if (view == DockView.Tts) TtsOverlayCountChanged?.Invoke(TtsOverlayCount);
 
         try
         {
@@ -640,6 +714,10 @@ public sealed class ChatHub(
             {
                 DockView.Stream => BuildStreamHello(),
                 DockView.Pets => BuildPetsHello(),
+                // The reading page is handed nothing at all. It has no state to restore – a clip
+                // that was playing when OBS restarted is over – and it is a browser source on the
+                // broadcast machine, so the less it is ever sent the better.
+                DockView.Tts => DockJson.Serialize(new DockEnvelope<object?>("hello", null)),
                 _ => BuildHello(canSend)
             };
             await SendFrameAsync(socket, hello, cancellationToken).ConfigureAwait(false);
@@ -661,6 +739,7 @@ public sealed class ChatHub(
             _clients.TryRemove(id, out _);
             outbound.Writer.TryComplete();
             if (view == DockView.Pets) PetOverlayCountChanged?.Invoke(PetOverlayCount);
+            else if (view == DockView.Tts) TtsOverlayCountChanged?.Invoke(TtsOverlayCount);
         }
     }
 
@@ -672,8 +751,9 @@ public sealed class ChatHub(
 
     /// <summary>
     /// Reads what a page sends back. For a dock that is pings only, and reading them is what
-    /// detects a closed socket. The pet overlay also reports each pet it has drawn, which is the
-    /// only thing that can tell a delivered redemption from one the browser source never rendered.
+    /// detects a closed socket. Two pages say more: the pet overlay reports each pet it has drawn,
+    /// and the reading page reports each clip it has played – both being the only thing that can
+    /// tell a delivered redemption from one the browser source never got round to.
     ///
     /// <para>Nothing here may act on a page's say-so beyond that: these sockets sit on the
     /// broadcast machine, so an unknown frame is dropped rather than guessed at.</para>
@@ -688,16 +768,16 @@ public sealed class ChatHub(
             {
                 WebSocketReceiveResult result = await socket.ReceiveAsync(buffer, cancellationToken).ConfigureAwait(false);
                 if (result.MessageType == WebSocketMessageType.Close) break;
-                if (view != DockView.Pets || result.MessageType != WebSocketMessageType.Text) continue;
+                if (view is not (DockView.Pets or DockView.Tts) || result.MessageType != WebSocketMessageType.Text) continue;
 
-                // A frame longer than a pet id is not one of ours; the rest of it is dropped so a
-                // page cannot grow this buffer without limit.
+                // A frame longer than an id is not one of ours; the rest of it is dropped so a page
+                // cannot grow this buffer without limit.
                 if (message.Length < 2048) message.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
                 if (!result.EndOfMessage) continue;
 
                 string payload = message.ToString();
                 message.Clear();
-                if (ReadPetShownId(payload) is { Length: > 0 } petId) PetShown?.Invoke(petId);
+                ReadReport(payload, view);
             }
         }
         catch (OperationCanceledException) { }
@@ -705,7 +785,8 @@ public sealed class ChatHub(
     }
 
     /// <summary>
-    /// The pet id out of a <c>petShown</c> frame, or null for anything else.
+    /// One frame from a page that is allowed to report something. Each view is only ever listened to
+    /// for its own kind of report: a pet lawn cannot answer for a reading, and the reverse.
     ///
     /// <para>Every value is checked for its kind before it is read. <c>GetString</c> on a number or
     /// an object throws <see cref="InvalidOperationException"/>, which is not a
@@ -713,21 +794,37 @@ public sealed class ChatHub(
     /// sending <c>{"type":1}</c> could take the reader down. Both are caught anyway: this parses
     /// input from a browser, and nothing it sends may end a connection.</para>
     /// </summary>
-    private static string? ReadPetShownId(string payload)
+    private void ReadReport(string payload, DockView view)
     {
         try
         {
             JsonElement frame = JsonDocument.Parse(payload).RootElement;
-            if (frame.ValueKind != JsonValueKind.Object) return null;
-            if (!frame.TryGetProperty("type", out JsonElement type) || type.ValueKind != JsonValueKind.String) return null;
-            if (type.GetString() != "petShown") return null;
-            return frame.TryGetProperty("id", out JsonElement id) && id.ValueKind == JsonValueKind.String ? id.GetString() : null;
+            if (frame.ValueKind != JsonValueKind.Object) return;
+            if (!frame.TryGetProperty("type", out JsonElement type) || type.ValueKind != JsonValueKind.String) return;
+            if (Text(frame, "id") is not { Length: > 0 } id) return;
+
+            switch (type.GetString())
+            {
+                case "petShown" when view == DockView.Pets:
+                    PetShown?.Invoke(id);
+                    return;
+                case "ttsPlayed" when view == DockView.Tts:
+                    TtsPlaybackFinished?.Invoke(id, true);
+                    return;
+                case "ttsFailed" when view == DockView.Tts:
+                    TtsPlaybackFinished?.Invoke(id, false);
+                    return;
+            }
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
-            return null;
         }
     }
+
+    private static string? Text(JsonElement frame, string property) =>
+        frame.TryGetProperty(property, out JsonElement value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     private static Task SendFrameAsync(WebSocket socket, string payload, CancellationToken cancellationToken) =>
         socket.SendAsync(Encoding.UTF8.GetBytes(payload), WebSocketMessageType.Text, true, cancellationToken);

@@ -527,6 +527,30 @@ public sealed class PetServiceTests
         Assert.Single(registry.Snapshot());
     }
 
+    /// <summary>
+    /// The reading reward is claimed before the pets ever see it – but only on the EventSub route. The
+    /// chat route runs when EventSub is down, and a channel with no pet rules configured spawns for
+    /// every reward id it meets, so the reading redemption would quietly become a creature on the lawn
+    /// on top of never being read.
+    /// </summary>
+    [Fact]
+    public void TheReadingRewardIsNeverAPetEvenWhenEventSubIsDown()
+    {
+        (PetService service, PetRegistry registry, AppSettings settings) = Build();
+        settings.Tts.Trigger = TtsTrigger.Reward;
+        settings.Tts.RewardId = "tts-belöning";
+        // The case that spawns for anything: no rules pinned, and only IRC to hear it on.
+        Assert.Empty(settings.Pets.Rewards);
+        service.RedemptionsFromEventSub = false;
+
+        service.HandleMessage(Message("läs upp det här", rewardId: "tts-belöning"));
+        Assert.Empty(registry.Snapshot());
+
+        // Every other reward still spawns, so this claims one reward rather than closing the route.
+        service.HandleMessage(Message("en robot tack", rewardId: "någon-annan"));
+        Assert.Single(registry.Snapshot());
+    }
+
     [Fact]
     public void LetsARuleNameTheRewardInsteadOfPastingItsId()
     {

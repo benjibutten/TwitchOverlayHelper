@@ -157,6 +157,35 @@ Knappen syns bara när nycklar, röst och inställningen är på plats – är n
 
 Om DeepSeek inte svarar läses namnet upp som det står, med en notis om varför det kan låta fel. Den tolkningen sparas inte, så nästa klick försöker igen.
 
+## Uppläsning av tittarnas meddelanden
+
+Tittare betalar för att få ett meddelande uppläst i sändningen. Två sätt att sälja det, ett val i appen:
+
+- **Power-up (bits).** En *custom Power-up* som du skapar i Twitchs Creator Dashboard – appen läser dem, men Twitch har inget API för att skapa eller ändra dem. Appen prenumererar på `channel.custom_power_up_redemption.add` (kräver `bits:read` och din egen kanal) och plockar upp texten tittaren skrev.
+- **Belöning (channel points).** Skapas härifrån med `⚡`, precis som pet-belöningarna, med kön påslagen så att inlösen går att svara på.
+
+**Appen kan inte betala tillbaka bits.** Twitch har ingen endpoint för att fullfölja, avbryta eller återbetala en Power-up-inlösen; API:t kan bara *läsa* dem. Twitch personal bekräftade i [lanseringstråden](https://discuss.dev.twitch.com/t/introducing-api-and-eventsub-support-for-custom-power-ups/64708) att hantering av Power-ups är något de "kommer utvärdera senare". Därför heter knappen `🚫 Neka` på bits-spåret och `↩ Refundera` på channel points-spåret: att neka en Power-up betyder att meddelandet inte läses upp, inget mer. Vill du kunna ge tillbaka måste belöningen vara skapad av appen, eftersom Twitch bara låter en app svara på inlösen av belöningar dess eget client-ID skapat.
+
+Inlösen-eventet bär ett `status`-fält som appen inte använder. Twitch har alltså någon form av tillstånd på en Power-up-inlösen, men vad fältet kan innehålla står inte i dokumentationen och frågan om det i lanseringstråden blev obesvarad – så om du kan refundera för hand i Creator Dashboard är inget appen vet något om.
+
+### Godkännande
+
+Med godkännande påslaget hamnar varje inlöst meddelande i en rad högst upp i **OBS-docken**, med vem som betalade, vad det kostade och exakt den text som kommer läsas upp – och `Godkänn` / `Refundera`. Ett i taget, det äldsta först, med en räknare för hur många som står bakom. Raden överlever en omstart av OBS: kön ligger i appen, inte i webbläsaren.
+
+Du kan också låta **kantljuset** tändas när något väntar på svar, i egen färg. Det rankas mellan mod-anropet och nya chattare: en ström av förstagångshälsningar begraver aldrig något du måste ta ställning till, men en mod som kallar på dig går fortfarande före.
+
+Svarar ingen inom svarstiden släpps inlösen – med channel points betyder det att poängen går tillbaka.
+
+Stänger du appen eller byter kanal medan något väntar besvaras det medvetet *inte* från ett fönster som är på väg bort. Inlösen ligger kvar som UNFULFILLED i Twitchs kö, där du eller dina mods kan ta den för hand – och nästa gång appen ansluter städas den upp av samma svep som redan städar pet-belöningarna. Svepet hoppar över det som just nu står i docken och väntar på svar, så en tappad anslutning mitt i en sändning aldrig återbetalar den rad du håller på att läsa. Får appen inte tag i Twitch när den ska svara läggs verdicten tillbaka och försöks om, upp till fem gånger, i stället för att tyst försvinna.
+
+### Var ljudet hamnar
+
+Appens eget ljud går ut på skrivbordet och hörs bara av tittarna om OBS fångar Desktop Audio, vilket de flesta med flit låter bli. Därför är standardvalet en **egen Browser Source** – en tom sida som bara låter. OBS tar in ljudet från en browserkälla av sig själv, med egen volym, egen ljudkanal och egen monitorering, och det blir en källa skild från både pets och overlay-chatten. Adressen kopieras från appen; lägg till den som Browser Source på 1×1 px.
+
+Sidan kvitterar varje klipp när det är slut. Det kvittot är vad som håller nästa uppläsning tillbaka tills den här är färdig, och på channel points-spåret det enda beviset för att uppläsningen faktiskt levererades: en inlösen som aldrig hördes – ingen browserkälla i scenen, inget svar från ElevenLabs – betalas tillbaka i stället för att bokföras som klar.
+
+Rösten är egen och behöver inte vara samma som läser upp namn; ElevenLabs-nyckeln delas med [Uppläsning av namn](#uppläsning-av-namn). En teckengräns styr vad en enskild inlösen kan kosta dig – längre meddelanden klipps vid närmaste ordslut – och upprepade tecken kortas, så `hejjjjjjjjjj` blir `hejjj`.
+
 ## Funktioner
 
 - Anslut anonymt genom att bara ange kanalnamn eller Twitch-länk.
@@ -175,6 +204,7 @@ Om DeepSeek inte svarar läses namnet upp som det står, med en notis om varför
 - Riktiga Twitch-badge-bilder när Client ID och OAuth-token anges.
 - Automatisk återanslutning, PING/PONG-hantering och tydligt stopp vid nekad inloggning.
 - Uppläsning av chattares namn via DeepSeek och ElevenLabs, för namn som är svåra att läsa högt.
+- **Uppläsning av tittarnas meddelanden**, köpta med bits (custom Power-up) eller channel points, med godkännande i docken och ljudet via en egen browserkälla i OBS. Se [Uppläsning av tittarnas meddelanden](#uppläsning-av-tittarnas-meddelanden).
 - Egna smeknamn på chattare, synliga i både dock och overlay, sparade med säkerhetskopia vid varje ändring.
 - Inställningar sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\settings.json`. OAuth-token sparas aldrig.
 - Körs som en enda instans; en ny vanlig start öppnar den redan körande appens inställningsfönster.

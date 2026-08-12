@@ -67,6 +67,8 @@ public sealed class DockServerTests
             Api = api,
             Chat = chat,
             Speech = SpeechFixture.Service(settings),
+            Tts = SpeechFixture.Tts(settings),
+            TtsAudio = new TtsAudioStore(),
             Pets = petCatalog,
             Nicknames = nicknames,
             Emotes = new UsableEmoteCatalog(api)
@@ -892,6 +894,47 @@ public sealed class DockServerTests
 
             using JsonDocument frame = JsonDocument.Parse(frames[0]);
             Assert.Equal("petsClear", frame.RootElement.GetProperty("type").GetString());
+        }
+        client.Dispose();
+    }
+
+    // ------------------------------------------------------------- the reading page
+    //
+    // A browser source added to the scene so OBS has somewhere to mix the readings. Its answer at the
+    // end of a clip is what releases the next one in the queue – and, on the channel points route, the
+    // only evidence the reading was delivered at all.
+
+    /// <summary>
+    /// A reading page that goes away mid-clip cannot report anything: its report would travel over the
+    /// socket that has just closed, and a source taken out of the scene never runs another line of
+    /// script. So the app has to notice for itself – otherwise the queue stands still for the whole
+    /// five minute timeout, and the viewer waits it out for points they were going to get anyway.
+    /// </summary>
+    [Fact]
+    public async Task AReadingPageThatLeavesMidClipDoesNotHoldTheQueue()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            var output = new BrowserTtsOutput(hub, new TtsAudioStore(), () => settings.DockAccessKey);
+            hub.TtsPlaybackFinished += output.OnFinished;
+            hub.TtsOverlayCountChanged += output.OnOverlayCountChanged;
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var page = new ClientWebSocket();
+            await page.ConnectAsync(new Uri(SocketUrl(settings, "tts")), timeout.Token);
+            await page.ReceiveAsync(new byte[64 * 1024], timeout.Token);
+
+            Task playing = output.PlayAsync("uppläsning.mp3", 1, timeout.Token);
+            // The clip is out and nobody has answered for it: this is the wait the timeout guards.
+            Assert.False(playing.IsCompleted);
+
+            // OBS pulling the source, rather than a polite goodbye.
+            page.Dispose();
+
+            SpeechException failed = await Assert.ThrowsAsync<SpeechException>(() => playing.WaitAsync(timeout.Token));
+            // Which is what pays the viewer back: nobody heard the reading.
+            Assert.Contains("OBS", failed.Message);
         }
         client.Dispose();
     }

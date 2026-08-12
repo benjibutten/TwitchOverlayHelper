@@ -23,6 +23,9 @@ const el = {
   nickPanel: $("nickPanel"), nickList: $("nickList"), nickSearch: $("nickSearch"),
   hype: $("hype"), hypeHeadline: $("hypeHeadline"), hypeDetail: $("hypeDetail"),
   hypeBar: $("hypeBar"), hypeFill: $("hypeFill"), hypeTop: $("hypeTop"),
+  ttsBar: $("ttsBar"), ttsWho: $("ttsWho"), ttsCost: $("ttsCost"), ttsMore: $("ttsMore"),
+  ttsText: $("ttsText"), ttsApprove: $("ttsApprove"), ttsReject: $("ttsReject"),
+  ttsStop: $("ttsStop"), ttsLeft: $("ttsLeft"),
 };
 
 const state = {
@@ -43,6 +46,7 @@ const state = {
   sharedPin: "",       // the message this dock last pinned for the viewers, so it can take it down
   channel: "",         // which chat that claim belongs to
   hypeTrain: null,     // last state Twitch sent, kept so the strip survives a settings change
+  tts: [],             // paid readings waiting on the streamer, oldest first
   chatters: new Map(), // login -> who they are, newest first: what the @-list is picked from
   seenEmotes: [],      // emote names we have used ourselves, newest first, for the picker's top row
   emotes: null,        // what Twitch says may be sent here; asked for once per account and channel
@@ -116,6 +120,8 @@ function handle(frame) {
     updateJump();
     // A train that is still running when OBS restarts should be there when the dock comes back.
     applyHypeTrain(frame.hypeTrain || null);
+    // So should a reading somebody paid for and nobody has answered yet.
+    applyTts(frame.tts || []);
 
     drawHistory(frame.history);
     return;
@@ -150,6 +156,9 @@ function handle(frame) {
   // No payload means there is no train. Deliberately not folded into the clear frame below: that
   // one also fires when the first real line replaces the samples, which says nothing about a train.
   if (frame.type === "hypeTrain") { applyHypeTrain(frame.payload || null); return; }
+  // The whole queue every time, not a delta: a bar showing a reading that has already been answered
+  // is how a viewer's points get handed back twice, or not at all.
+  if (frame.type === "tts") { applyTts(frame.payload || []); return; }
   // Both things that send a clear – switching channel, and the first real line replacing the
   // samples – take the whole column with them, and every pin is a copy of a line that was in it.
   // Leaving the strip alone would nail the previous channel's messages above a chat they are not
@@ -740,6 +749,104 @@ function applyHypeTrain(train) {
     hypeTimer = setTimeout(() => { el.hype.hidden = true; state.hypeTrain = null; }, linger);
   }
 }
+
+/* --------------------------------------------------------- paid readings */
+
+/* Someone spent bits or channel points to have something read out loud, and the app is holding it
+   until the streamer says yes. The bar shows one at a time – the oldest, which is the one whose
+   viewer has waited longest – with a count of what is behind it. Deciding on six at once is not a
+   thing anybody does well, and the queue is answered in the order it arrived either way.
+
+   The list is whole every time it arrives, so this is a straight replace and never a merge: the
+   app's queue is the only version of what is still unanswered, and a bar that kept its own copy
+   would eventually offer a button for a reading that had already been paid back. */
+
+let ttsTimer = 0;
+
+function applyTts(list) {
+  state.tts = Array.isArray(list) ? list : [];
+  renderTts();
+}
+
+function renderTts() {
+  clearTimeout(ttsTimer);
+  // The one being read out loud outranks the ones waiting: it is what the viewers are hearing right
+  // now, and the only one the stop button belongs to.
+  const current = state.tts.find((entry) => entry.state === "speaking")
+    || state.tts.find((entry) => entry.state === "pending")
+    || state.tts.find((entry) => entry.state === "queued");
+  if (!current) { el.ttsBar.hidden = true; return; }
+
+  const waiting = state.tts.filter((entry) => entry.id !== current.id).length;
+  el.ttsBar.hidden = false;
+  el.ttsBar.dataset.state = current.state;
+  el.ttsBar.dataset.id = current.id;
+  el.ttsWho.textContent = current.viewer;
+  el.ttsCost.textContent = current.cost > 0
+    ? (current.source === "powerUp" ? `${current.cost} bits` : `${current.cost} poäng`)
+    : "";
+  el.ttsMore.hidden = waiting === 0;
+  el.ttsMore.textContent = `+${waiting}`;
+  el.ttsMore.title = waiting === 1 ? "En uppläsning till väntar" : `${waiting} uppläsningar till väntar`;
+  el.ttsText.textContent = current.text;
+
+  const pending = current.state === "pending";
+  el.ttsApprove.hidden = !pending;
+  el.ttsApprove.disabled = false;
+  el.ttsReject.hidden = !pending;
+  el.ttsReject.disabled = false;
+  /* Worded from what a refusal can actually do, and there are three answers rather than two. Not
+     being refundable has two quite different causes: bits, which nothing can hand back, and a
+     channel points reward the app did not create, where the points are perfectly refundable – just
+     not from here. Telling a streamer their channel points are bits would send them looking for a
+     limitation that is not the one they have. */
+  el.ttsReject.textContent = current.refundable ? "↩ Refundera" : "🚫 Neka";
+  el.ttsReject.title = current.refundable
+    ? "Nekar uppläsningen och ger tillbaka poängen"
+    : current.source === "powerUp"
+      ? "Läser inte upp meddelandet. Appen kan inte betala tillbaka bits – Twitch har inget API för det."
+      : "Läser inte upp meddelandet. Belöningen är inte skapad av appen, så poängen måste lämnas tillbaka i Twitchs egen kö.";
+  el.ttsStop.hidden = current.state !== "speaking";
+  el.ttsStop.disabled = false;
+
+  showTtsCountdown(current);
+}
+
+/* Counts down to the moment the app lets an unanswered reading go, so a bar that has been sitting
+   there for ten minutes says how long is left rather than merely that something is waiting. Its own
+   ticker rather than one that runs all the time: nothing here changes while nothing is pending. */
+function showTtsCountdown(entry) {
+  if (entry.state === "speaking") { el.ttsLeft.textContent = "Läses upp …"; return; }
+  if (entry.state === "queued") { el.ttsLeft.textContent = "Godkänd – väntar på tur"; return; }
+  if (!entry.deadlineAt) { el.ttsLeft.textContent = ""; return; }
+
+  const left = Math.max(0, entry.deadlineAt - Date.now());
+  const minutes = Math.floor(left / 60000);
+  const seconds = Math.floor((left % 60000) / 1000);
+  el.ttsLeft.textContent = minutes > 0 ? `${minutes} min kvar` : `${seconds} s kvar`;
+  // Slower than a clock once there are minutes left: the number would not change anyway, and this
+  // page is redrawn by every message that arrives.
+  ttsTimer = setTimeout(() => showTtsCountdown(entry), minutes > 0 ? 15000 : 1000);
+}
+
+/* The buttons answer the app rather than the bar. Nothing is taken off screen here: the app sends
+   the queue back the moment it has acted, and the reading is only really answered once it has. */
+function decideTts(path) {
+  const id = el.ttsBar.dataset.id;
+  if (!id) return;
+  el.ttsApprove.disabled = true;
+  el.ttsReject.disabled = true;
+  api(path, { method: "POST", body: JSON.stringify({ id }) })
+    .catch((error) => { toast(error.message, "error"); renderTts(); });
+}
+
+el.ttsApprove.addEventListener("click", () => decideTts("/api/tts/approve"));
+el.ttsReject.addEventListener("click", () => decideTts("/api/tts/reject"));
+el.ttsStop.addEventListener("click", () => {
+  el.ttsStop.disabled = true;
+  api("/api/tts/stop", { method: "POST", body: "{}" })
+    .catch((error) => { toast(error.message, "error"); renderTts(); });
+});
 
 /* A line we have already been given, changed: a Gigantify power-up that reached the desktop app
    after the message it belongs to. It may still be waiting in the pacer or already be a card on

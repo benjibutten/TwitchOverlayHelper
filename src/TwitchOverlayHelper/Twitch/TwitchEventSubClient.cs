@@ -12,7 +12,15 @@ public sealed record EventSubCoverage(bool Redemptions, bool Shoutouts, bool Pow
 {
     public static readonly EventSubCoverage Nothing = new(false, false, false, false, []);
 
-    public bool Any => Redemptions || Shoutouts || PowerUps || HypeTrain;
+    /// <summary>
+    /// Whether the channel's own bits Power-ups are being delivered. Written as an init property
+    /// rather than squeezed into the positional list, which every caller of this record spells out.
+    /// It rides on the same scope as <see cref="PowerUps"/> but is asked for on its own, so the two
+    /// can honestly differ.
+    /// </summary>
+    public bool CustomPowerUps { get; init; }
+
+    public bool Any => Redemptions || Shoutouts || PowerUps || CustomPowerUps || HypeTrain;
 }
 
 /// <summary>
@@ -56,6 +64,14 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
     /// belongs to a chat line, and the app's job is to find that line and mark it.
     /// </summary>
     public event Action<GigantifiedEmote>? GigantifyReceived;
+
+    /// <summary>
+    /// Raised when a viewer redeemed one of the channel's own custom Power-ups – the bits answer to
+    /// a channel points reward. Its own topic rather than a case in <c>channel.bits.use</c>: that
+    /// event carries the Power-up's title but not what the viewer typed, and the typed text is the
+    /// whole point of a Power-up that has something read out loud.
+    /// </summary>
+    public event Action<CustomPowerUpRedemption>? CustomPowerUpReceived;
 
     /// <summary>
     /// Raised on every step of a hype train. Not an event card: a train is a state that lives for
@@ -308,8 +324,9 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
         if (type == "channel.channel_points_custom_reward_redemption.add") _covered = _covered with { Redemptions = false };
         else if (type.StartsWith("channel.shoutout", StringComparison.Ordinal)) _covered = _covered with { Shoutouts = false };
         else if (type == "channel.bits.use") _covered = _covered with { PowerUps = false };
+        else if (type == "channel.custom_power_up_redemption.add") _covered = _covered with { CustomPowerUps = false };
         else if (type.StartsWith("channel.hype_train", StringComparison.Ordinal)) _covered = _covered with { HypeTrain = false };
-        else _covered = _covered with { Redemptions = false, Shoutouts = false, PowerUps = false, HypeTrain = false };
+        else _covered = _covered with { Redemptions = false, Shoutouts = false, PowerUps = false, CustomPowerUps = false, HypeTrain = false };
 
         CoverageChanged?.Invoke(_covered);
         StatusChanged?.Invoke("Twitch drog tillbaka en händelseprenumeration – logga in igen om du vill ha den tillbaka.");
@@ -325,6 +342,7 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
         bool redemptions = false;
         bool shoutouts = false;
         bool powerUps = false;
+        bool customPowerUps = false;
         bool hypeTrain = false;
 
         if (plan.Redemptions)
@@ -359,8 +377,16 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
         }
 
         if (plan.PowerUps)
-            powerUps = await TrySubscribeAsync("channel.bits.use", "1",
-                new Dictionary<string, string> { ["broadcaster_user_id"] = broadcasterId }, sessionId, token).ConfigureAwait(false);
+        {
+            var condition = new Dictionary<string, string> { ["broadcaster_user_id"] = broadcasterId };
+            powerUps = await TrySubscribeAsync("channel.bits.use", "1", condition, sessionId, token).ConfigureAwait(false);
+
+            // Asked for separately and never allowed to speak for the power-ups above: the two carry
+            // different things, and a channel with no custom Power-ups at all is the ordinary case.
+            // Losing this one costs the paid readings; losing the other costs the enlarged emotes.
+            customPowerUps = await TrySubscribeAsync("channel.custom_power_up_redemption.add", "1",
+                condition, sessionId, token).ConfigureAwait(false);
+        }
 
         if (plan.HypeTrain)
         {
@@ -381,7 +407,10 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
             hypeTrain = begin && progress && end;
         }
 
-        _covered = new EventSubCoverage(redemptions, shoutouts, powerUps, hypeTrain, plan.MissingScopes);
+        _covered = new EventSubCoverage(redemptions, shoutouts, powerUps, hypeTrain, plan.MissingScopes)
+        {
+            CustomPowerUps = customPowerUps
+        };
         CoverageChanged?.Invoke(_covered);
         StatusChanged?.Invoke(_covered.Any ? "Händelser på" : "Inga extra händelser i den här kanalen");
     }
@@ -447,6 +476,21 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
             case "channel.bits.use":
                 DispatchBitsUse(data, at);
                 return;
+            case "channel.custom_power_up_redemption.add":
+            {
+                JsonElement powerUp = data.TryGetProperty("custom_power_up", out JsonElement nested) ? nested : default;
+                CustomPowerUpReceived?.Invoke(new CustomPowerUpRedemption(
+                    ReadString(data, "id"),
+                    ReadString(powerUp, "id"),
+                    ReadString(powerUp, "title"),
+                    ReadInt(powerUp, "bits") ?? 0,
+                    ReadString(data, "user_id"),
+                    ReadString(data, "user_login"),
+                    ReadString(data, "user_name"),
+                    EmptyToNull(ReadString(data, "user_input")),
+                    at));
+                return;
+            }
             case "channel.shoutout.create":
                 EventReceived?.Invoke(new ChatEvent(ChatEventType.ShoutoutSent, Guid.NewGuid().ToString("N"),
                     ReadString(data, "moderator_user_name"), at)
@@ -527,8 +571,10 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
     /// <item>a gigantified emote belongs to a chat line and is handed to the tracker that finds it;</item>
     /// <item>a celebration is the only one with no message to attach to, so it gets its own card.</item>
     /// </list>
-    /// Custom power-ups are a broadcaster's own bits rewards; they are left alone until there is
-    /// somewhere sensible to show them.
+    /// A channel's own custom Power-up also arrives here, as type <c>custom_power_up</c>, and is
+    /// deliberately ignored: it has a topic of its own that carries the redemption's id and what the
+    /// viewer typed, neither of which this event has. Acting on both would answer one redemption
+    /// twice.
     /// </summary>
     private void DispatchBitsUse(JsonElement data, DateTimeOffset at)
     {
@@ -663,6 +709,25 @@ public sealed record EventSubPlan(bool Redemptions, bool Shoutouts, bool PowerUp
 /// wrote them and by the text itself.
 /// </summary>
 public sealed record GigantifiedEmote(string UserId, string EmoteId, string Text, DateTimeOffset At);
+
+/// <summary>
+/// One redemption of a channel's own bits Power-up.
+///
+/// <para>Shaped like <see cref="RewardRedemption"/> and answerable in none of the same ways. Twitch
+/// offers no endpoint to fulfil, cancel or refund one of these: the bits are spent the moment the
+/// notification is sent, whatever the streamer decides afterwards. <paramref name="Id"/> is
+/// therefore only ever an identity for this app's own bookkeeping, never something to send back.</para>
+/// </summary>
+public sealed record CustomPowerUpRedemption(
+    string Id,
+    string PowerUpId,
+    string Title,
+    int Bits,
+    string UserId,
+    string UserLogin,
+    string DisplayName,
+    string? UserInput,
+    DateTimeOffset At);
 
 /// <summary>
 /// A redemption that changed status. <paramref name="Status"/> is Twitch's own wording –

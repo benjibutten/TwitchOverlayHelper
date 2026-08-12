@@ -18,6 +18,25 @@
   </div>
 </header>
 
+<!-- Someone has paid to have something read out loud and it is waiting for a yes. Above everything
+     else on purpose: it is the one thing here that stops until it is answered, and a viewer's bits
+     or points are sitting in it while it waits. -->
+<section id="ttsBar" class="ttsbar" hidden aria-label="Uppläsning" aria-live="polite">
+  <div class="ttsbar-head">
+    <span class="ttsbar-icon" aria-hidden="true">🗣</span>
+    <span id="ttsWho" class="ttsbar-who"></span>
+    <span id="ttsCost" class="ttsbar-cost"></span>
+    <span id="ttsMore" class="ttsbar-more" hidden></span>
+  </div>
+  <p id="ttsText" class="ttsbar-text"></p>
+  <div class="ttsbar-actions">
+    <button id="ttsApprove" class="ttsbar-btn ttsbar-yes" type="button">▶ Godkänn</button>
+    <button id="ttsReject" class="ttsbar-btn ttsbar-no" type="button">↩ Refundera</button>
+    <button id="ttsStop" class="ttsbar-btn ttsbar-no" type="button" hidden>⏹ Stoppa</button>
+    <span id="ttsLeft" class="ttsbar-left"></span>
+  </div>
+</section>
+
 <!-- A hype train runs for minutes, so it gets a shelf of its own above the column rather than a
      card that the next twenty messages would push out of sight. -->
 <section id="hype" class="hype" hidden aria-label="Hypetåg">

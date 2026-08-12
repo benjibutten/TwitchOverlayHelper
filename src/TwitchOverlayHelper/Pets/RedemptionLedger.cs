@@ -17,8 +17,12 @@ public interface IRedemptionGateway
     Task<IReadOnlyList<QueuedRedemption>> GetUnfulfilledAsync(string rewardId, CancellationToken token);
 }
 
-/// <summary>Something the ledger did, worded for the streamer rather than for the log.</summary>
-public sealed record RedemptionNotice(bool Refunded, string ViewerName, int Cost, string Reason);
+/// <summary>
+/// Something the ledger did, worded for the streamer rather than for the log.
+/// <paramref name="Subject"/> is what the redemption bought – "pet" or "tts" – so the app can put
+/// the sentence next to the feature it belongs to instead of reporting a reading under the pets.
+/// </summary>
+public sealed record RedemptionNotice(bool Refunded, string ViewerName, int Cost, string Reason, string Subject = "pet");
 
 /// <summary>
 /// How long the ledger waits before it calls something undelivered.
@@ -86,6 +90,9 @@ public sealed class RedemptionLedger : IDisposable
         public RedemptionStatus? Verdict { get; set; }
 
         public string Reason { get; set; } = string.Empty;
+
+        /// <summary>What this redemption bought, carried so the notice can be worded for it.</summary>
+        public string Subject { get; init; } = "pet";
     }
 
     private readonly IRedemptionGateway _gateway;
@@ -122,6 +129,18 @@ public sealed class RedemptionLedger : IDisposable
     /// <summary>Raised after Twitch has been told, so the app can say what happened.</summary>
     public event Action<RedemptionNotice>? Answered;
 
+    /// <summary>
+    /// Asks whether some other part of the app is already holding a redemption, by id. Set by the
+    /// reading queue, which owns its own redemptions and settles them itself.
+    ///
+    /// <para>Only the sweep consults this, and it is what keeps the sweep from undoing the very
+    /// thing it exists to back up. A reconnect mid-stream runs the sweep again with a fresh cutoff,
+    /// and every reading currently waiting for the streamer's yes was redeemed before that moment –
+    /// so without this, coming back from a dropped connection would pay back the request sitting on
+    /// screen while the streamer was still reading it.</para>
+    /// </summary>
+    public Func<string, bool>? ClaimedElsewhere { get; set; }
+
     /// <summary>How many redemptions are still waiting on a verdict. For the tests and the log.</summary>
     public int PendingCount
     {
@@ -155,8 +174,25 @@ public sealed class RedemptionLedger : IDisposable
     /// overlay to draw on. Nothing is tracked: there is no pet whose life could change the answer.
     /// </summary>
     public Task RefundNow(string redemptionId, string rewardId, string viewerName, int cost, string reason) =>
-        AnswerAsync(new Entry(redemptionId, rewardId, string.Empty, viewerName, cost, DateTimeOffset.UtcNow),
-            RedemptionStatus.Canceled, reason);
+        AnswerNow(redemptionId, rewardId, viewerName, cost, RedemptionStatus.Canceled, reason);
+
+    /// <summary>
+    /// Answers one redemption whose verdict is already decided, and keeps trying until Twitch takes
+    /// it. Nothing is tracked: unlike a pet there is no life left to run that could change the
+    /// answer, and the only thing still in question is whether the message got through.
+    ///
+    /// <para><b>Why this is not a bare API call.</b> Twitch will only accept a verdict while the
+    /// redemption is still unfulfilled, and a token being refreshed, a dropped connection or a bad
+    /// minute at Twitch would otherwise turn a refusal into a viewer who paid and got neither the
+    /// thing nor their points back. So it goes through the same retrying path as everything else
+    /// here: put back with its verdict attached, tried again on the timer, given up on out loud.</para>
+    /// </summary>
+    public Task AnswerNow(
+        string redemptionId, string rewardId, string viewerName, int cost, RedemptionStatus status, string reason,
+        string subject = "pet") =>
+        AnswerAsync(
+            new Entry(redemptionId, rewardId, string.Empty, viewerName, cost, DateTimeOffset.UtcNow) { Subject = subject },
+            status, reason);
 
     /// <summary>
     /// A pet was taken off the lawn before its time by something other than a refund – the lawn was
@@ -307,6 +343,9 @@ public sealed class RedemptionLedger : IDisposable
                 {
                     if (_pending.ContainsKey(redemption.Id)) continue;
                 }
+                // Somebody else's to settle – a reading still waiting on the streamer. Same reason
+                // as the check above, for a queue this ledger cannot see into.
+                if (ClaimedElsewhere?.Invoke(redemption.Id) == true) continue;
                 // A refund that does not go through here is not lost: AnswerAsync puts the entry
                 // back with its verdict attached, and the timer keeps trying.
                 await AnswerAsync(
@@ -437,9 +476,9 @@ public sealed class RedemptionLedger : IDisposable
 
         if (refund) SendHome(entry);
         AppLog.Info(refund
-            ? $"Pets: {entry.ViewerName} fick tillbaka {entry.Cost} poäng – {reason}."
-            : $"Pets: inlösen för {entry.ViewerName} markerad som klar – {reason}.");
-        Answered?.Invoke(new RedemptionNotice(refund, entry.ViewerName, entry.Cost, reason));
+            ? $"Inlösen: {entry.ViewerName} fick tillbaka {entry.Cost} poäng – {reason}."
+            : $"Inlösen: {entry.ViewerName}s köp markerat som klart – {reason}.");
+        Answered?.Invoke(new RedemptionNotice(refund, entry.ViewerName, entry.Cost, reason, entry.Subject));
     }
 
     /// <summary>Takes the refunded pet off the lawn, so nothing paid back is left walking about.</summary>

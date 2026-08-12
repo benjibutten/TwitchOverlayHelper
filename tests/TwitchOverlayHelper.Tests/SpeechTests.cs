@@ -23,6 +23,21 @@ internal static class SpeechFixture
             play ?? ((_, _) => Task.CompletedTask),
             TempPath(string.Empty));
 
+    /// <summary>
+    /// A reading service that never touches the network or a speaker. <paramref name="play"/> stands
+    /// in for the OBS browser source: returning a completed task is a clip that played through.
+    /// </summary>
+    public static TtsService Tts(
+        AppSettings settings,
+        HttpMessageHandler? handler = null,
+        SpeechSecretStore? secrets = null,
+        Func<string, double, CancellationToken, Task>? play = null) =>
+        new(new HttpClient(handler ?? new StubHandler()),
+            settings,
+            secrets ?? new SpeechSecretStore(TempPath(".bin")),
+            play ?? ((_, _, _) => Task.CompletedTask),
+            TempPath(string.Empty));
+
     /// <summary>Settings and keys that make <see cref="NameSpeechService.IsConfigured"/> true.</summary>
     public static (AppSettings Settings, SpeechSecretStore Secrets) Configured()
     {

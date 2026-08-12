@@ -67,6 +67,9 @@ public sealed class AppSettings
     /// <summary>Reading a chatter's name out loud. The API keys are stored separately and encrypted.</summary>
     public SpeechSettings Speech { get; set; } = new();
 
+    /// <summary>Reading a viewer's message out loud, bought with bits or with channel points.</summary>
+    public TtsSettings Tts { get; set; } = new();
+
     /// <summary>Channel point pets in the OBS pet overlay.</summary>
     public PetSettings Pets { get; set; } = new();
 
@@ -84,6 +87,8 @@ public sealed class AppSettings
         Events ??= new ChatEventVisibility();
         Speech ??= new SpeechSettings();
         Speech.Normalize();
+        Tts ??= new TtsSettings();
+        Tts.Normalize();
         Pets ??= new PetSettings();
         Pets.Normalize();
         EdgeAlerts ??= new EdgeAlertSettings();

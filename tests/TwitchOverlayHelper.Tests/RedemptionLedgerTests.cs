@@ -179,6 +179,64 @@ public sealed class RedemptionLedgerTests
         Assert.Equal(["old"], gateway.Refunded);
     }
 
+    /// <summary>
+    /// The sweep must not undo the very thing it backs up. A reconnect mid-stream runs it again with
+    /// a fresh cutoff, and a reading still waiting for the streamer's yes was redeemed before that
+    /// moment – so it would be paid back while it was sitting on screen being decided.
+    /// </summary>
+    [Fact]
+    public async Task TheSweepLeavesRedemptionsAnotherQueueIsHolding()
+    {
+        (RedemptionLedger ledger, FakeRedemptionGateway gateway, _, _) = Build();
+        DateTimeOffset reconnected = DateTimeOffset.UtcNow;
+        gateway.Queue.Add(new QueuedRedemption("waiting", "reward-1", "Kajsa", 500, reconnected.AddMinutes(-2)));
+        gateway.Queue.Add(new QueuedRedemption("orphan", "reward-1", "Pelle", 500, reconnected.AddMinutes(-2)));
+        ledger.ClaimedElsewhere = id => id == "waiting";
+
+        await ledger.SweepAsync(["reward-1"], reconnected);
+
+        Assert.Equal(["orphan"], gateway.Refunded);
+    }
+
+    /// <summary>
+    /// A verdict that is already decided still has to reach Twitch, and a dropped connection or a
+    /// token being refreshed must not turn a refusal into a viewer who paid and got nothing back.
+    /// </summary>
+    [Fact]
+    public async Task AnImmediateVerdictIsTriedAgainWhenTwitchIsUnhappy()
+    {
+        (RedemptionLedger ledger, FakeRedemptionGateway gateway, _, _) = Build();
+        gateway.FailNext = () => new TwitchApiException("Twitch hade en dålig minut.");
+
+        await ledger.AnswerNow("r1", "reward-1", "Kajsa", 500, RedemptionStatus.Canceled, "nekad", "tts");
+
+        // Held rather than dropped: the entry went back with its verdict attached.
+        Assert.Empty(gateway.Refunded);
+        Assert.Equal(1, ledger.PendingCount);
+
+        gateway.FailNext = null;
+        await ledger.TickAsync();
+
+        Assert.Equal(["r1"], gateway.Refunded);
+        Assert.Equal(0, ledger.PendingCount);
+    }
+
+    /// <summary>
+    /// A reading answered through the ledger is reported as a reading, so the app can put the
+    /// sentence next to the feature it belongs to rather than under the pets.
+    /// </summary>
+    [Fact]
+    public async Task AVerdictSaysWhatTheRedemptionPaidFor()
+    {
+        (RedemptionLedger ledger, _, _, _) = Build();
+        RedemptionNotice? notice = null;
+        ledger.Answered += given => notice = given;
+
+        await ledger.AnswerNow("r1", "reward-1", "Kajsa", 500, RedemptionStatus.Canceled, "nekad", "tts");
+
+        Assert.Equal("tts", notice?.Subject);
+    }
+
     [Fact]
     public async Task ARefundTwitchRefusedRightNowIsTriedAgainRatherThanLost()
     {

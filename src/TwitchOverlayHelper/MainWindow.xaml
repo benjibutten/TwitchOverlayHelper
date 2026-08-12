@@ -3,7 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Twitch Overlay Helper" Width="1160" Height="800" MinWidth="980" MinHeight="640"
         Icon="pack://application:,,,/Assets/app.ico"
-        Background="{StaticResource PageBrush}" Foreground="{StaticResource TextBrush}" WindowStartupLocation="CenterScreen">
+        Background="{StaticResource PageBrush}" Foreground="{StaticResource TextBrush}" WindowStartupLocation="CenterScreen"
+        FontSize="14">
     <Window.Resources>
         <!-- The settings used to be one endless scroll of two columns; a rail turns it into six short
              pages you can point at instead of hunt through. TabControl keeps every control alive in
@@ -88,7 +89,7 @@
         </Style>
         <Style x:Key="TableHeading" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource HintTextBrush}" />
-            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontSize" Value="12" />
             <Setter Property="VerticalAlignment" Value="Bottom" />
         </Style>
     </Window.Resources>
@@ -102,8 +103,8 @@
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="TWITCH OVERLAY HELPER" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" FontSize="11" />
-                    <TextBlock Text="Läs chatten utan att lämna spelet" FontSize="20" FontWeight="SemiBold" Margin="0,2,0,0" />
+                    <TextBlock Text="TWITCH OVERLAY HELPER" Foreground="{StaticResource AccentTextBrush}" FontWeight="Bold" FontSize="12" />
+                    <TextBlock Text="Läs chatten utan att lämna spelet" FontSize="21" FontWeight="SemiBold" Margin="0,2,0,0" />
                 </StackPanel>
                 <Border Grid.Column="1" Background="{StaticResource SunkenBrush}" BorderBrush="{StaticResource LineBrush}"
                         BorderThickness="1" CornerRadius="20" Padding="14,9" VerticalAlignment="Center">
@@ -164,8 +165,8 @@
                                                Style="{StaticResource Lead}" Margin="0,7,0,12" />
                                     <Border Style="{StaticResource Sunken}" Padding="13" Margin="0,0,0,13">
                                         <StackPanel>
-                                            <TextBlock Text="Så skapar du ett Client ID" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold" FontSize="13" />
-                                            <TextBlock TextWrapping="Wrap" Foreground="#B8B4C6" FontSize="12" LineHeight="19" Margin="0,7,0,0">
+                                            <TextBlock Text="Så skapar du ett Client ID" Foreground="{StaticResource AccentTextBrush}" FontWeight="SemiBold" FontSize="15" />
+                                            <TextBlock TextWrapping="Wrap" Foreground="#CBC7D8" FontSize="14" LineHeight="22" Margin="0,7,0,0">
                                                 1. Öppna dev.twitch.tv/console/apps och välj Registrera din applikation.<LineBreak />
                                                 2. Namn: valfritt. OAuth Redirect URL: http://localhost<LineBreak />
                                                 3. Kategori: Chat Bot. <Run FontWeight="Bold">Klienttyp måste vara Public.</Run><LineBreak />
@@ -180,7 +181,7 @@
                                     <Border x:Name="DeviceCodeCard" Style="{StaticResource Sunken}" BorderBrush="#5A3FA0" Padding="14" Margin="0,12,0,0" Visibility="Collapsed">
                                         <StackPanel>
                                             <TextBlock x:Name="DeviceCodeHint" Text="Gå till twitch.tv/activate och skriv in koden:" TextWrapping="Wrap" Foreground="#C8C5D3" />
-                                            <TextBlock x:Name="DeviceCodeText" Text="" FontSize="30" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"
+                                            <TextBlock x:Name="DeviceCodeText" Text="" FontSize="30" FontWeight="Bold" Foreground="{StaticResource AccentTextBrush}"
                                                        HorizontalAlignment="Center" Margin="0,10,0,0" />
                                         </StackPanel>
                                     </Border>
@@ -325,10 +326,32 @@
 
                         <Border Style="{StaticResource StackedCard}">
                             <StackPanel>
-                                <TextBlock Text="Gäller båda färgerna" Style="{StaticResource SubTitle}" />
+                                <TextBlock Text="När en uppläsning väntar på svar" Style="{StaticResource SubTitle}" />
+                                <TextBlock Text="Tänds när någon har betalat för att få ett meddelande uppläst och det ligger och väntar på ditt godkännande. Slås på under Uppläsning."
+                                           Style="{StaticResource Hint}" Margin="0,8,0,0" />
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="22" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Färg" Style="{StaticResource FieldLabel}" Margin="0,0,0,5" />
+                                        <ComboBox x:Name="EdgeTtsColorBox" SelectionChanged="EdgeSetting_Changed" />
+                                        <Button x:Name="EdgeTtsTestButton" Content="Testa uppläsningsljuset" Background="#343B50" Margin="0,14,0,0" Click="EdgeTtsTest_Click" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <DockPanel><TextBlock Text="Styrka" /><TextBlock x:Name="EdgeTtsIntensityValue" Text="70 %" Style="{StaticResource ValueBadge}" /></DockPanel>
+                                        <Slider x:Name="EdgeTtsIntensitySlider" Minimum="0.15" Maximum="1" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed" />
+                                        <DockPanel Margin="0,10,0,0"><TextBlock Text="Varaktighet" /><TextBlock x:Name="EdgeTtsDurationValue" Text="6 s" Style="{StaticResource ValueBadge}" /></DockPanel>
+                                        <Slider x:Name="EdgeTtsDurationSlider" Minimum="2" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed" />
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource StackedCard}">
+                            <StackPanel>
+                                <TextBlock Text="Gäller alla färgerna" Style="{StaticResource SubTitle}" />
                                 <DockPanel Margin="0,12,0,0"><TextBlock Text="Ljusets bredd" /><TextBlock x:Name="EdgeWidthValue" Text="160 px" Style="{StaticResource ValueBadge}" /></DockPanel>
                                 <Slider x:Name="EdgeWidthSlider" Minimum="60" Maximum="320" TickFrequency="10" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="EdgeSetting_Changed"
-                                        ToolTip="Hur långt in från kanten ljuset når – gäller båda färgerna" />
+                                        ToolTip="Hur långt in från kanten ljuset når – gäller alla färgerna" />
                                 <TextBlock Text="Ljuset visas på huvudskärmen och går aldrig att klicka på. Testa-knapparna visar exakt hur det kommer se ut."
                                            Style="{StaticResource Hint}" Margin="0,10,0,0" />
                             </StackPanel>
@@ -351,7 +374,7 @@
                                                Style="{StaticResource Lead}" Margin="0,7,0,12" />
                                     <Border Style="{StaticResource Sunken}" Padding="11,9">
                                         <TextBox x:Name="DockUrlBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
-                                                 Foreground="{StaticResource PrimaryBrush}" FontFamily="Consolas" Padding="0" />
+                                                 Foreground="{StaticResource AccentTextBrush}" FontFamily="Consolas" Padding="0" />
                                     </Border>
                                     <Grid Margin="0,10,0,0">
                                         <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
@@ -379,7 +402,7 @@
                                                Style="{StaticResource Lead}" Margin="0,7,0,12" />
                                     <Border Style="{StaticResource Sunken}" Padding="11,9">
                                         <TextBox x:Name="StreamUrlBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
-                                                 Foreground="{StaticResource PrimaryBrush}" FontFamily="Consolas" Padding="0" />
+                                                 Foreground="{StaticResource AccentTextBrush}" FontFamily="Consolas" Padding="0" />
                                     </Border>
                                     <Grid Margin="0,10,0,0">
                                         <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
@@ -395,7 +418,7 @@
                             <Border Style="{StaticResource StackedCard}">
                                 <StackPanel>
                                     <TextBlock Text="Uppläsning av namn" Style="{StaticResource CardTitle}" />
-                                    <TextBlock Text="Valfritt" Foreground="{StaticResource HintTextBrush}" FontSize="12" Margin="0,3,0,0" />
+                                    <TextBlock Text="Valfritt" Foreground="{StaticResource HintTextBrush}" FontSize="13" Margin="0,3,0,0" />
                                     <TextBlock Text="Lägger en högtalarknapp bredvid varje namn i OBS-docken. Ett klick läser upp hur namnet troligen sägs, här på datorn. Kräver en API-nyckel till DeepSeek och en till ElevenLabs – utan dem syns ingen knapp."
                                                Style="{StaticResource Lead}" Margin="0,9,0,12" />
                                     <Button x:Name="SpeechSettingsButton" Content="Ställ in uppläsning" Background="#343B50" Click="SpeechSettings_Click" />
@@ -424,7 +447,7 @@
                                         <TextBlock Text="Adress till OBS" Style="{StaticResource SubTitle}" />
                                         <Border Style="{StaticResource Sunken}" Padding="11,9" Margin="0,10,0,0">
                                             <TextBox x:Name="PetsUrlBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
-                                                     Foreground="{StaticResource PrimaryBrush}" FontFamily="Consolas" Padding="0" />
+                                                     Foreground="{StaticResource AccentTextBrush}" FontFamily="Consolas" Padding="0" />
                                         </Border>
                                         <Grid Margin="0,10,0,0">
                                             <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
@@ -513,7 +536,7 @@
                                                      Twitch låter oss svara på, och ett ändrat ID skulle lämna 🔒 kvar på en rad som inte
                                                      längre kan återbetala. Peka om en rad genom att ta bort den och skapa en ny. -->
                                                 <TextBox Grid.Column="4" Text="{Binding RewardId, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
-                                                         FontFamily="Consolas" FontSize="12" Padding="9,10"
+                                                         FontFamily="Consolas" FontSize="13" Padding="9,10"
                                                          IsReadOnly="{Binding Managed}"
                                                          ToolTip="Belöningens ID från Twitch. Lämna tomt så gäller raden alla övriga inlösen. Skapade appen belöningen är ID:t låst – ta bort raden och gör en ny för att peka om den." />
                                                 <TextBox Grid.Column="6" Style="{StaticResource NumberField}" Text="{Binding Minutes, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
@@ -548,6 +571,158 @@
                 </ScrollViewer>
             </TabItem>
 
+            <!-- ============================== Uppläsning ============================== -->
+            <TabItem Header="Uppläsning" Tag="🗣">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <StackPanel>
+                        <TextBlock Text="Tittare betalar för att få ett meddelande uppläst i sändningen. Med bits blir det en Power-up, med channel points en vanlig belöning – välj själv. Du kan låta varje meddelande vänta på ditt godkännande: då dyker det upp som en rad högst upp i OBS-docken där du väljer att läsa upp eller neka, innan någon hör ett ord."
+                                   Style="{StaticResource Lead}" Margin="0,0,0,16" />
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="22" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+
+                            <StackPanel Style="{StaticResource Column}">
+                                <Border Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Vad tittaren betalar med" Style="{StaticResource SubTitle}" />
+                                        <CheckBox x:Name="TtsEnabledCheck" Content="Aktivera uppläsning" Margin="0,12,0,0" Checked="TtsSetting_Changed" Unchecked="TtsSetting_Changed" />
+
+                                        <RadioButton x:Name="TtsPowerUpRadio" GroupName="TtsTrigger" Content="Power-up (bits)" Margin="0,14,0,0"
+                                                     Checked="TtsTrigger_Changed"
+                                                     ToolTip="Custom Power-ups skapar du i Twitchs Creator Dashboard. Appen kan läsa dem men aldrig ändra dem." />
+                                        <RadioButton x:Name="TtsRewardRadio" GroupName="TtsTrigger" Content="Belöning (channel points)" Margin="0,7,0,0"
+                                                     Checked="TtsTrigger_Changed"
+                                                     ToolTip="Skapas härifrån med kön påslagen, så att poängen kan lämnas tillbaka när du nekar." />
+
+                                        <StackPanel x:Name="TtsPowerUpPanel" Margin="0,14,0,0">
+                                            <TextBlock Text="Power-up" Style="{StaticResource FieldLabel}" Margin="0,0,0,5" />
+                                            <ComboBox x:Name="TtsPowerUpBox" DisplayMemberPath="Title" SelectionChanged="TtsPowerUp_SelectionChanged"
+                                                      ToolTip="Hämta listan nedan och välj vilken Power-up som ska läsa upp meddelanden" />
+                                            <TextBox x:Name="TtsPowerUpIdBox" Margin="0,7,0,0" FontFamily="Consolas" FontSize="13" Padding="9,10"
+                                                     TextChanged="TtsSetting_Changed"
+                                                     ToolTip="Power-upens ID. Lämna tomt så räknas varje custom Power-up i kanalen." />
+                                            <Button x:Name="TtsFetchPowerUpsButton" Content="Hämta Power-ups från Twitch" Background="#343B50" Margin="0,10,0,0" Click="TtsFetchPowerUps_Click" />
+                                            <TextBlock Text="Power-upen måste be tittaren skriva något, annars kommer det ingen text att läsa upp. Bits kan aldrig betalas tillbaka: Twitch har inget API för det, så “Neka” betyder att meddelandet inte läses upp – inte att bitsen kommer tillbaka."
+                                                       Style="{StaticResource Hint}" Margin="0,10,0,0" />
+                                        </StackPanel>
+
+                                        <StackPanel x:Name="TtsRewardPanel" Margin="0,14,0,0">
+                                            <TextBlock Text="Belöningens namn" Style="{StaticResource FieldLabel}" Margin="0,0,0,5" />
+                                            <TextBox x:Name="TtsRewardTitleBox" TextChanged="TtsSetting_Changed"
+                                                     ToolTip="Namnet belöningen får i Twitch när du skapar den härifrån" />
+                                            <Grid Margin="0,10,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="110" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock Text="Poäng" Style="{StaticResource FieldLabel}" />
+                                                    <TextBox x:Name="TtsRewardCostBox" Style="{StaticResource NumberField}" TextChanged="TtsSetting_Changed"
+                                                             LostKeyboardFocus="TtsRewardCost_LostKeyboardFocus" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Belönings-ID" Style="{StaticResource FieldLabel}" />
+                                                    <TextBox x:Name="TtsRewardIdBox" FontFamily="Consolas" FontSize="13" Padding="9,10" TextChanged="TtsSetting_Changed"
+                                                             ToolTip="Fylls i automatiskt när appen skapar belöningen. Klistrar du in ett ID till en belöning du gjort för hand går den att läsa upp men aldrig att återbetala." />
+                                                </StackPanel>
+                                            </Grid>
+                                            <Button x:Name="TtsCreateRewardButton" Content="⚡ Skapa belöningen i Twitch" Background="#343B50" Margin="0,10,0,0" Click="TtsCreateReward_Click" />
+                                            <TextBlock x:Name="TtsRewardHint" Style="{StaticResource Hint}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource StackedCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="Godkännande" Style="{StaticResource SubTitle}" />
+                                        <CheckBox x:Name="TtsApprovalCheck" Content="Fråga mig innan något läses upp" Margin="0,12,0,0" Checked="TtsSetting_Changed" Unchecked="TtsSetting_Changed"
+                                                  ToolTip="Raden visas högst upp i OBS-docken med Godkänn och Neka. Stänger du av läses varje inlöst meddelande upp direkt." />
+                                        <CheckBox x:Name="TtsEdgeAlertCheck" Content="Tänd kantljuset när något väntar på svar" Checked="TtsSetting_Changed" Unchecked="TtsSetting_Changed"
+                                                  ToolTip="Samma mjuka ljus längs skärmkanterna som mod-kommandot använder, i egen färg. Ställs in under Kantljus." />
+                                        <Grid Margin="0,14,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="Svarstid (minuter)" Style="{StaticResource FieldLabel}" />
+                                                <TextBox x:Name="TtsTimeoutBox" Style="{StaticResource NumberField}" TextChanged="TtsSetting_Changed"
+                                                         LostKeyboardFocus="TtsTimeout_LostKeyboardFocus"
+                                                         ToolTip="Hinner du inte svara släpps inlösen – med channel points får tittaren tillbaka poängen." />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="Max i kö" Style="{StaticResource FieldLabel}" />
+                                                <TextBox x:Name="TtsQueueBox" Style="{StaticResource NumberField}" TextChanged="TtsSetting_Changed"
+                                                         LostKeyboardFocus="TtsQueue_LostKeyboardFocus"
+                                                         ToolTip="Fler inlösen än så nekas direkt i stället för att ställas i en kö ingen hinner igenom." />
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" Style="{StaticResource Column}">
+                                <Border Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Var ljudet hamnar" Style="{StaticResource SubTitle}" />
+                                        <TextBlock Text="OBS tar in ljudet från en Browser Source av sig själv, med egen volym och egen ljudkanal. Appens eget ljud går ut på skrivbordet och hörs bara av tittarna om du fångar Desktop Audio – vilket de flesta med flit låter bli."
+                                                   Style="{StaticResource Hint}" Margin="0,8,0,0" />
+                                        <RadioButton x:Name="TtsOutputBrowserRadio" GroupName="TtsOutput" Content="Browser Source i OBS (rekommenderas)" Margin="0,12,0,0"
+                                                     Checked="TtsOutput_Changed" />
+                                        <RadioButton x:Name="TtsOutputDesktopRadio" GroupName="TtsOutput" Content="Den här datorns högtalare" Margin="0,7,0,0"
+                                                     Checked="TtsOutput_Changed"
+                                                     ToolTip="Bara du hör det, om inte OBS fångar Desktop Audio" />
+                                        <RadioButton x:Name="TtsOutputBothRadio" GroupName="TtsOutput" Content="Båda" Margin="0,7,0,0" Checked="TtsOutput_Changed" />
+
+                                        <TextBlock Text="Adress till OBS" Style="{StaticResource FieldLabel}" Margin="0,14,0,5" />
+                                        <Border Style="{StaticResource Sunken}" Padding="11,9">
+                                            <TextBox x:Name="TtsUrlBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                                     Foreground="{StaticResource AccentTextBrush}" FontFamily="Consolas" Padding="0" />
+                                        </Border>
+                                        <Button x:Name="CopyTtsUrlButton" Content="Kopiera adress" Margin="0,10,0,0" IsEnabled="False" Click="CopyTtsUrl_Click" />
+                                        <TextBlock Text="Lägg till som Browser Source i OBS, 1×1 px – den syns inte, den låter bara. Kryssa i “Control audio via OBS” om du vill ha den som en egen reglage i mixern."
+                                                   Style="{StaticResource Hint}" Margin="0,10,0,0" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource StackedCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="Rösten" Style="{StaticResource SubTitle}" />
+                                        <TextBlock Text="Egen röst för uppläsningar – den behöver inte vara samma som läser upp namn. Samma ElevenLabs-nyckel används; den sparas under Uppläsning av namn."
+                                                   Style="{StaticResource Hint}" Margin="0,8,0,0" />
+                                        <TextBlock Text="Röst" Style="{StaticResource FieldLabel}" Margin="0,14,0,5" />
+                                        <ComboBox x:Name="TtsVoiceBox" DisplayMemberPath="Name" SelectionChanged="TtsVoice_SelectionChanged" />
+                                        <TextBox x:Name="TtsVoiceIdBox" Margin="0,7,0,0" FontFamily="Consolas" FontSize="13" Padding="9,10" TextChanged="TtsSetting_Changed"
+                                                 ToolTip="Röstens ID i ElevenLabs. Fylls i när du väljer en röst i listan." />
+                                        <Button x:Name="TtsFetchVoicesButton" Content="Hämta röster" Background="#343B50" Margin="0,10,0,0" Click="TtsFetchVoices_Click" />
+                                        <TextBlock x:Name="TtsVoiceHint" Style="{StaticResource Hint}" Margin="0,8,0,0" TextWrapping="Wrap" />
+
+                                        <TextBlock Text="Modell" Style="{StaticResource FieldLabel}" Margin="0,14,0,5" />
+                                        <TextBox x:Name="TtsModelBox" TextChanged="TtsSetting_Changed" ToolTip="t.ex. eleven_v3" />
+
+                                        <DockPanel Margin="0,14,0,0"><TextBlock Text="Volym" /><TextBlock x:Name="TtsVolumeValue" Text="90 %" Style="{StaticResource ValueBadge}" /></DockPanel>
+                                        <Slider x:Name="TtsVolumeSlider" Minimum="0" Maximum="1" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="TtsSetting_Changed" />
+
+                                        <DockPanel Margin="0,10,0,0"><TextBlock Text="Max antal tecken" /><TextBlock x:Name="TtsMaxCharsValue" Text="240" Style="{StaticResource ValueBadge}" /></DockPanel>
+                                        <Slider x:Name="TtsMaxCharsSlider" Minimum="20" Maximum="1000" TickFrequency="10" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="TtsSetting_Changed"
+                                                ToolTip="Längre meddelanden klipps vid närmaste ordslut. ElevenLabs tar betalt per tecken, så det här avgör vad en inlösen kan kosta dig." />
+
+                                        <CheckBox x:Name="TtsAnnounceNameCheck" Content="Läs “Namn säger:” före meddelandet" Margin="0,14,0,0" Checked="TtsSetting_Changed" Unchecked="TtsSetting_Changed" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource StackedCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="Testa" Style="{StaticResource SubTitle}" />
+                                        <TextBox x:Name="TtsTestBox" Margin="0,12,0,0" Text="Hej! Det här är ett testmeddelande från chatten." />
+                                        <Grid Margin="0,10,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                            <Button x:Name="TtsTestButton" Content="🔊 Läs upp" Click="TtsTest_Click" />
+                                            <Button x:Name="TtsTestBannerButton" Grid.Column="2" Content="Testa rutan i docken" Background="#343B50" Click="TtsTestBanner_Click"
+                                                    ToolTip="Lägger en påhittad inlösen i kön så du ser hur raden ser ut i OBS-docken" />
+                                        </Grid>
+                                        <TextBlock x:Name="TtsStatusText" Text="" Style="{StaticResource Hint}" Margin="0,10,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <!-- ============================== Program ============================== -->
             <TabItem Header="Program" Tag="⚙">
                 <ScrollViewer Style="{StaticResource Page}">
@@ -564,7 +739,7 @@
                                     <Grid Margin="0,0,0,12">
                                         <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="8" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <Border Style="{StaticResource Sunken}" Padding="11,8">
-                                            <TextBlock x:Name="ToggleHotkeyLabel" Text="Ctrl + F9" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" />
+                                            <TextBlock x:Name="ToggleHotkeyLabel" Text="Ctrl + F9" Foreground="{StaticResource AccentTextBrush}" FontWeight="Bold" />
                                         </Border>
                                         <Button x:Name="RecordToggleHotkeyButton" Grid.Column="2" Content="⌨ Ändra" Background="#343B50" Padding="13,8" Click="RecordToggleHotkey_Click" />
                                     </Grid>
@@ -573,7 +748,7 @@
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="8" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <Border Style="{StaticResource Sunken}" Padding="11,8">
-                                            <TextBlock x:Name="EditHotkeyLabel" Text="Ctrl + F10" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" />
+                                            <TextBlock x:Name="EditHotkeyLabel" Text="Ctrl + F10" Foreground="{StaticResource AccentTextBrush}" FontWeight="Bold" />
                                         </Border>
                                         <Button x:Name="RecordEditHotkeyButton" Grid.Column="2" Content="⌨ Ändra" Background="#343B50" Padding="13,8" Click="RecordEditHotkey_Click" />
                                     </Grid>
@@ -605,12 +780,12 @@
 
         <Border Grid.Row="2" Background="#111521" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="0,1,0,0" Padding="26,12">
             <DockPanel>
-                <TextBlock x:Name="VersionText" DockPanel.Dock="Right" Foreground="#5F5B6E" FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0" />
+                <TextBlock x:Name="VersionText" DockPanel.Dock="Right" Foreground="#8B8799" FontSize="13" VerticalAlignment="Center" Margin="12,0,0,0" />
                 <Button DockPanel.Dock="Right" Content="Sök efter uppdateringar" Click="CheckForUpdates_Click"
-                        Background="#232A3B" Foreground="#AAA7B8" FontSize="12" FontWeight="Normal"
+                        Background="#232A3B" Foreground="#C9C5D8" FontSize="13" FontWeight="Normal"
                         Padding="12,6" Margin="12,0,0,0" VerticalAlignment="Center" />
                 <TextBlock Text="Tips: lås overlayen när den ligger rätt – då blir den helt klickigenom och stjäl aldrig fokus från spelet."
-                           Foreground="#858193" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                           Foreground="#A8A3B8" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
             </DockPanel>
         </Border>
     </Grid>

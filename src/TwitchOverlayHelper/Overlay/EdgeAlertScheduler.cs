@@ -1,13 +1,39 @@
 namespace TwitchOverlayHelper.Overlay;
 
-/// <summary>Which of the two things lit the edge glow. The order matters: a call outranks a welcome.</summary>
+/// <summary>
+/// Which of the three things lit the edge glow. What ranks them is <see cref="EdgeAlertRank.Of"/>
+/// rather than the order they are written in – a call outranks a reading waiting for an answer,
+/// which outranks a welcome.
+/// </summary>
 public enum EdgeAlertKind
 {
     /// <summary>Someone wrote in the channel for the first time ever.</summary>
     NewChatter,
 
     /// <summary>A moderator or the broadcaster wrote the call command.</summary>
-    ModCall
+    ModCall,
+
+    /// <summary>A paid reading is waiting for the streamer to approve or refuse it.</summary>
+    TtsRequest
+}
+
+/// <summary>
+/// How the three kinds are ordered when they ask for the light at the same time. A higher rank takes
+/// the glow off a lower one; the same rank holds the one that is already lit; a lower rank waits its
+/// turn, which in practice means it is dropped.
+///
+/// <para>A reading sits between the other two on purpose. It has to be answered, so it must not be
+/// hidden by a stream of first-time hellos – but a moderator calling for the streamer is still the
+/// more urgent of the two, and the dock's approval bar keeps the reading visible either way.</para>
+/// </summary>
+internal static class EdgeAlertRank
+{
+    public static int Of(EdgeAlertKind kind) => kind switch
+    {
+        EdgeAlertKind.ModCall => 2,
+        EdgeAlertKind.TtsRequest => 1,
+        _ => 0
+    };
 }
 
 /// <summary>
@@ -18,7 +44,8 @@ public enum EdgeAlertKind
 /// lasts, and a welcome landing a second after a moderator's call would quietly replace the more
 /// urgent of the two.
 ///
-/// So: a call always gets through and can never be pushed aside by a welcome, welcomes go quiet for
+/// So: a trigger can only ever be pushed aside by something <see cref="EdgeAlertRank">ranked</see>
+/// above it – a call is never hidden by a welcome – welcomes go quiet for
 /// <see cref="NewChatterCooldown"/> after one has been shown, and a glow that is already lit is
 /// extended rather than restarted – up to <see cref="MaxLitFactor"/> times its own length, so it
 /// always ends eventually no matter how busy chat is.
@@ -62,20 +89,21 @@ public sealed class EdgeAlertScheduler
         lock (_gate)
         {
             bool lit = now < _endsAt;
-
-            if (kind == EdgeAlertKind.ModCall)
+            if (lit)
             {
-                // A second call while the first is still lit says the same thing louder; it holds the
-                // light rather than starting a new one. Anything else – nothing lit, or a welcome
-                // lit – the call takes over outright.
-                if (lit && _kind == EdgeAlertKind.ModCall) return Extend(duration, now);
+                int asking = EdgeAlertRank.Of(kind);
+                int showing = EdgeAlertRank.Of(_kind);
+                // Something more urgent is already up – the streamer is being called for, or a
+                // reading is waiting to be answered. This one is dropped rather than queued.
+                if (asking < showing) return null;
+                // The same thing again says it louder rather than starting over: it holds the light
+                // open, up to the ceiling. Anything more urgent takes the glow outright.
+                if (asking == showing) return Extend(duration, now);
                 return Start(kind, duration, now);
             }
 
-            // The streamer is being called; a first-time chatter is not the thing to interrupt it with.
-            if (lit && _kind == EdgeAlertKind.ModCall) return null;
-            if (lit) return Extend(duration, now);
-            return now >= _quietUntil ? Start(kind, duration, now) : null;
+            // Nothing is lit. Only welcomes have a cooldown, so only they can be turned away here.
+            return now >= _quietUntil || kind != EdgeAlertKind.NewChatter ? Start(kind, duration, now) : null;
         }
     }
 

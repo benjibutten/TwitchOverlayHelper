@@ -13,3 +13,5 @@ internal sealed record SpeakNameRequest(string? Login, string? DisplayName);
 internal sealed record TrimHistoryRequest(long Before);
 /// <summary>An empty or blank text is a removal – there is no separate endpoint for taking one back.</summary>
 internal sealed record SetNicknameRequest(string? UserId, string? Login, string? Text);
+/// <summary>Which paid reading the streamer just answered. The verdict is in the path, not here.</summary>
+internal sealed record TtsDecisionRequest(string? Id);

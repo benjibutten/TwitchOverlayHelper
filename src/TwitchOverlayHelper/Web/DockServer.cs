@@ -25,6 +25,8 @@ public sealed class DockServerContext
     public required TwitchApiClient Api { get; init; }
     public required TwitchChatClient Chat { get; init; }
     public required NameSpeechService Speech { get; init; }
+    public required TtsService Tts { get; init; }
+    public required TtsAudioStore TtsAudio { get; init; }
     public required PetCatalog Pets { get; init; }
     public required NicknameBook Nicknames { get; init; }
     public required UsableEmoteCatalog Emotes { get; init; }
@@ -49,6 +51,13 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
 
     /// <summary>The chat as the viewers see it – a transparent browser source on the stream itself.</summary>
     public string StreamUrl => $"http://127.0.0.1:{Port}/stream.html?key={context.Settings.DockAccessKey}";
+
+    /// <summary>
+    /// The readings, as an OBS browser source that draws nothing and only carries sound. Its own
+    /// source rather than a job for one of the others, so OBS gives it a fader and a track of its
+    /// own – and so a scene without pets or overlay chat can still have readings.
+    /// </summary>
+    public string TtsUrl => $"http://127.0.0.1:{Port}/tts.html?key={context.Settings.DockAccessKey}";
 
     public async Task<bool> StartAsync()
     {
@@ -161,6 +170,7 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
             {
                 "stream" => DockView.Stream,
                 "pets" => DockView.Pets,
+                "tts" => DockView.Tts,
                 _ => DockView.Dock
             };
             using WebSocket socket = await http.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
@@ -194,6 +204,30 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
                 return Problem(ex.Message);
             }
         });
+
+        // Answering a paid reading. Behind the dock key like everything else and behind no login at
+        // all: the decision is about this machine's speakers, and the refund that may follow is the
+        // app answering Twitch with its own token rather than the browser doing anything.
+        //
+        // The id is checked against what is actually waiting – the service answers false for
+        // anything it does not hold – so a stale bar cannot approve a reading that has already
+        // timed out and been paid back.
+        app.MapPost("/api/tts/approve", (TtsDecisionRequest request) =>
+            TtsAnswer(context.Tts.Approve(request.Id ?? string.Empty)));
+
+        app.MapPost("/api/tts/reject", (TtsDecisionRequest request) =>
+            TtsAnswer(context.Tts.Reject(request.Id ?? string.Empty)));
+
+        // No id: there is only ever one reading at the speakers.
+        app.MapPost("/api/tts/stop", () => TtsAnswer(context.Tts.Stop()));
+
+        // One synthesised clip, for the browser source that plays it. Only tokens the app minted
+        // resolve to anything, so this can never name a file the app did not make itself – see
+        // TtsAudioStore. Under /api like everything else, which is what puts it behind the key.
+        app.MapGet("/api/tts/audio/{token}", (string token) =>
+            context.TtsAudio.TryGet(token, out string path) && File.Exists(path)
+                ? Results.File(path, "audio/mpeg")
+                : Results.NotFound());
 
         // Naming a chatter is a reading aid on this machine: it changes nothing on Twitch, nobody
         // but this reader ever sees it, and it works in any channel. So it sits outside everything a
@@ -361,6 +395,14 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
     /// <summary>The display name is what the reader sees, so it is what should be read back.</summary>
     private static string Pick(string? displayName, string? login) =>
         !string.IsNullOrWhiteSpace(displayName) ? displayName : login ?? string.Empty;
+
+    /// <summary>
+    /// A decision the service did not recognise is answered as an ordinary problem rather than as a
+    /// failure: the usual cause is a bar that was showing a reading which has since been answered
+    /// somewhere else, and the frame that follows will put that right by itself.
+    /// </summary>
+    private static IResult TtsAnswer(bool handled) =>
+        handled ? Results.Ok() : Problem("Uppläsningen är redan besvarad.");
 
     private static IResult Problem(string message) =>
         Results.Json(new { error = message }, DockJson.Options, statusCode: StatusCodes.Status400BadRequest);

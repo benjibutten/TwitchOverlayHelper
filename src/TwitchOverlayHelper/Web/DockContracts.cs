@@ -121,7 +121,8 @@ internal sealed record DockHello(
     IReadOnlyList<DockPetDefinition> PetCatalog,
     IReadOnlyList<DockPet> Pets,
     DockHypeTrain? HypeTrain,
-    IReadOnlyList<DockNickname> Nicknames);
+    IReadOnlyList<DockNickname> Nicknames,
+    IReadOnlyList<Speech.TtsEntry> Tts);
 
 /// <summary>
 /// What a socket from the stream overlay is handed when it opens. Deliberately not
@@ -189,6 +190,12 @@ internal sealed record DockPetRemoved(string Id);
 
 /// <summary>Whether the speaker button next to every name has anything to call.</summary>
 internal sealed record DockSpeech(bool Enabled);
+
+/// <summary>
+/// One clip for the reading page to play. The address is a token the app minted, never a path, and
+/// it is good for exactly this file – see <see cref="TtsAudioStore"/>.
+/// </summary>
+internal sealed record DockTtsPlay(string Id, string Url, double Volume);
 
 internal sealed record DockEnvelope<T>(string Type, T Payload);
 
