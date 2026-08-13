@@ -501,12 +501,13 @@ function appendItem(item, isHistory) {
   const node = buildItem(item);
   el.chat.appendChild(node);
 
-  trimToLimit();
+  const lines = trimToLimit();
 
   // Replayed lines are drawn in a run, so their marker is placed once at the end of the run instead.
   // A live line needs the check of its own: the first "hej" of the evening is exactly the line that
-  // turns everything above it into an earlier sitting.
-  if (!isHistory) syncSessionSplit();
+  // turns everything above it into an earlier sitting. Handed what the trim just counted – nothing
+  // touches the column in between, so walking it a second time would find the same thing.
+  if (!isHistory) syncSessionSplit(lines);
 
   if (!isHistory && node.dataset.mention === "true" && state.settings.pinMentions) pinMessage(item.data, "mention");
   if (follow) scrollToEnd(); else if (!isHistory) state.missed++;
@@ -516,10 +517,25 @@ function appendItem(item, isHistory) {
    between two sittings shares the column with them: a limit of 200 that quietly means 199 messages
    and a signpost is the setting saying one thing and doing another. Event cards do count – they are
    lines in the same column and take up the same room. A marker left with nothing above it is not
-   removed here but by syncSessionSplit, which is the one place that decides where it belongs. */
+   removed here but by syncSessionSplit, which is the one place that decides where it belongs.
+
+   Returns the lines that survived, so the caller does not have to count the column a second time. */
 function trimToLimit() {
-  const lines = [...el.chat.children].filter((node) => node.item);
-  for (let i = 0; i < lines.length - state.settings.maxMessages; i++) lines[i].remove();
+  const lines = chatLines();
+  const excess = lines.length - state.settings.maxMessages;
+  if (excess <= 0) return lines;
+  for (let i = 0; i < excess; i++) lines[i].remove();
+  return lines.slice(excess);
+}
+
+/* The cards in the column, without the session marker that shares it. Walked fresh each time rather
+   than kept: the column is changed from a dozen places, and a stale copy here would be a card that
+   is off the page but still in the reckoning – which is how the marker would end up pointing at
+   nothing. Passed from caller to caller instead, but only across steps that touch nothing. */
+function chatLines() {
+  const lines = [];
+  for (const node of el.chat.children) if (node.item) lines.push(node);
+  return lines;
 }
 
 /* --------------------------------------------------------- earlier sittings */
@@ -539,8 +555,7 @@ const itemTime = (item) => (item.kind === "event" ? item.data.at : item.data.sen
 
 /* The newest gap only. Two restarts in one day would otherwise leave several boundaries in the
    column and no way to tell which one "hide the earlier chat" meant. */
-function sessionBoundary() {
-  const lines = [...el.chat.children].filter((node) => node.item);
+function sessionBoundary(lines = chatLines()) {
   for (let i = lines.length - 1; i > 0; i--) {
     const quiet = itemTime(lines[i].item) - itemTime(lines[i - 1].item);
     if (quiet >= SESSION_GAP_MS) return { node: lines[i], older: i, quiet };
@@ -551,9 +566,9 @@ function sessionBoundary() {
 /* Rebuilt from where the lines now are rather than remembered, so it cannot drift: the marker has to
    survive a reading setting changing, follow the oldest lines as they scroll out of the column, and
    take itself away when nothing is left above it to hide. */
-function syncSessionSplit() {
+function syncSessionSplit(lines) {
   const existing = el.chat.querySelector(".session-split");
-  const boundary = sessionBoundary();
+  const boundary = sessionBoundary(lines ?? chatLines());
   if (!boundary) {
     if (existing) existing.remove();
     return;
@@ -883,9 +898,27 @@ function applyModeration(payload) {
     : "Borttaget";
 
   for (const node of nodes) {
-    state.removed.set(node.dataset.id, note);
+    rememberRemoved(node.dataset.id, note);
     markRemoved(node, note);
   }
+}
+
+/* Why a note is kept at all: a re-render rebuilds every card from the message it came from, and the
+   strike-through is not part of that message – without this, changing a reading setting would quietly
+   un-delete every line a moderator had dealt with.
+
+   Why it is capped: only lines still in the column can ever be rebuilt, and the column holds at most
+   a few hundred. The map used to grow for as long as the page was open, which for a dock in OBS is
+   the whole stream, so an evening of bot waves left thousands of ids nothing could ever ask for
+   again. The oldest go first – they name lines that scrolled off long ago. */
+const REMOVED_LIMIT = 500;
+
+function rememberRemoved(id, note) {
+  if (!id) return;
+  // Deleted first so a repeat moves the id to the newest end rather than keeping its old place.
+  state.removed.delete(id);
+  state.removed.set(id, note);
+  while (state.removed.size > REMOVED_LIMIT) state.removed.delete(state.removed.keys().next().value);
 }
 
 function formatDuration(seconds) {
@@ -1571,6 +1604,9 @@ function rememberEmotes(data) {
 function forgetChannel() {
   state.chatters.clear();
   state.seenEmotes.length = 0;
+  // The notes belong to lines from the old room, and every caller of this has just emptied the
+  // column those lines were in. Nothing left can ask for them.
+  state.removed.clear();
   // The @-list is gone with the people in it, so it cannot stay up. The emote picker can: it refills
   // itself in place, and closing it here would have shut it under the reader every time the sample
   // lines were replaced by the first real message – which is a clear frame like any other.

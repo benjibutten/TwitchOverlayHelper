@@ -82,7 +82,7 @@ public sealed class ChatHub(
     /// which is the difference between a redemption that was delivered and one that has to be paid
     /// back.
     /// </summary>
-    public int PetOverlayCount => _clients.Values.Count(client => client.View == DockView.Pets);
+    public int PetOverlayCount => CountOf(DockView.Pets);
 
     /// <summary>
     /// Lines were dropped from the timeline by a reader rather than by chat moving on – today only
@@ -120,7 +120,7 @@ public sealed class ChatHub(
     /// How many reading pages are connected. Zero means a reading would be synthesised, paid for and
     /// heard by nobody – which is the difference between a redemption delivered and one to refund.
     /// </summary>
-    public int TtsOverlayCount => _clients.Values.Count(client => client.View == DockView.Tts);
+    public int TtsOverlayCount => CountOf(DockView.Tts);
 
     /// <summary>Twitch room id of the joined channel; needed as broadcaster_id for moderation.</summary>
     public string BroadcasterId { get; set; } = string.Empty;
@@ -682,14 +682,28 @@ public sealed class ChatHub(
     /// </summary>
     private void SendEverywhere(string payload) => Fan(payload, _ => true);
 
+    /// <summary>
+    /// Enumerated over the dictionary rather than over its <c>Values</c>: that property builds a
+    /// fresh list of every client each time it is read, and this runs on every chat line.
+    /// </summary>
     private void Fan(string payload, Func<Client, bool> wants)
     {
-        foreach (Client client in _clients.Values)
+        foreach (KeyValuePair<Guid, Client> entry in _clients)
         {
+            Client client = entry.Value;
             if (!wants(client)) continue;
             // A dock that cannot keep up is dropped rather than allowed to stall the whole fan-out.
             if (!client.Outbound.Writer.TryWrite(payload)) client.Outbound.Writer.TryComplete();
         }
+    }
+
+    /// <summary>How many connected pages are of one kind. Same reason as <see cref="Fan"/>.</summary>
+    private int CountOf(DockView view)
+    {
+        int count = 0;
+        foreach (KeyValuePair<Guid, Client> entry in _clients)
+            if (entry.Value.View == view) count++;
+        return count;
     }
 
     /// <summary>Runs one dock connection until the socket closes.</summary>
@@ -798,7 +812,10 @@ public sealed class ChatHub(
     {
         try
         {
-            JsonElement frame = JsonDocument.Parse(payload).RootElement;
+            // Disposed rather than left to the collector: JsonDocument rents its backing buffer
+            // from the shared ArrayPool, and one that is never disposed never gives it back.
+            using JsonDocument document = JsonDocument.Parse(payload);
+            JsonElement frame = document.RootElement;
             if (frame.ValueKind != JsonValueKind.Object) return;
             if (!frame.TryGetProperty("type", out JsonElement type) || type.ValueKind != JsonValueKind.String) return;
             if (Text(frame, "id") is not { Length: > 0 } id) return;

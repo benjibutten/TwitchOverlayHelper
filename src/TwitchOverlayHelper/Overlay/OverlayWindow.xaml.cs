@@ -39,8 +39,45 @@ public partial class OverlayWindow : Window
     private readonly AnimatedEmoteLoader _animatedEmotes = new(EmoteHttpClient);
     private readonly DispatcherTimer _topmostTimer;
     private readonly Dictionary<string, BitmapImage> _imageCache = new(StringComparer.Ordinal);
+    /// <summary>Insertion order for <see cref="_imageCache"/>, so the cap evicts rather than empties.</summary>
+    private readonly Queue<string> _imageOrder = new();
     private RenderSettings? _renderSettings;
     private bool _editMode;
+
+    /// <summary>
+    /// The fonts and brushes the cards are built from. A rebuild draws up to
+    /// <see cref="AppSettings.MaxMessages"/> cards with three or four <see cref="FontFamily"/>
+    /// objects each, and dragging a slider rebuilds several times a second – so constructing them
+    /// per TextBlock meant hundreds of font lookups per frame for a handful of distinct values.
+    ///
+    /// <para>Instance fields rather than statics, and unlocked: like every other field on this
+    /// window they are only ever touched while building cards, which happens on the UI thread and
+    /// nowhere else. Capped so a channel full of custom name colours cannot grow them without
+    /// limit; past the cap the value is built fresh each time, which is what happened everywhere
+    /// before.</para>
+    /// </summary>
+    private const int MaxCachedValues = 512;
+    private readonly Dictionary<string, FontFamily> _fontCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<Color, SolidColorBrush> _brushCache = [];
+
+    private FontFamily Font(string name)
+    {
+        if (_fontCache.TryGetValue(name, out FontFamily? cached)) return cached;
+        var family = new FontFamily(name);
+        if (_fontCache.Count < MaxCachedValues) _fontCache[name] = family;
+        return family;
+    }
+
+    private SolidColorBrush Fill(Color color)
+    {
+        if (_brushCache.TryGetValue(color, out SolidColorBrush? cached)) return cached;
+        var brush = new SolidColorBrush(color);
+        // Frozen so WPF can skip change tracking and share it freely – nothing here ever mutates a
+        // brush after building it.
+        brush.Freeze();
+        if (_brushCache.Count < MaxCachedValues) _brushCache[color] = brush;
+        return brush;
+    }
 
     public event Action? PlacementChanged;
 
@@ -67,7 +104,7 @@ public partial class OverlayWindow : Window
     private void ApplySettings(bool forceRefresh)
     {
         byte alpha = (byte)Math.Round(Math.Clamp(_settings.BackgroundOpacity, 0, 0.96) * 255);
-        Surface.Background = new SolidColorBrush(Color.FromArgb(alpha, 14, 17, 25));
+        Surface.Background = Fill(Color.FromArgb(alpha, 14, 17, 25));
         while (MessagePanel.Children.Count > _settings.MaxMessages) RemoveOldestMessage();
 
         RenderSettings current = RenderSettings.From(_settings);
@@ -189,7 +226,7 @@ public partial class OverlayWindow : Window
         _editMode = enabled;
         EditBanner.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
         ResizeThumb.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
-        Surface.BorderBrush = enabled ? new SolidColorBrush(Color.FromRgb(169, 112, 255)) : Brushes.Transparent;
+        Surface.BorderBrush = enabled ? Fill(Color.FromRgb(169, 112, 255)) : Brushes.Transparent;
         Focusable = enabled;
         ShowActivated = enabled;
         UpdateExtendedStyles();
@@ -205,12 +242,12 @@ public partial class OverlayWindow : Window
             && (message.Text.Contains("@" + mentionName, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(message.Reply?.ParentLogin, mentionName, StringComparison.OrdinalIgnoreCase));
         byte messageAlpha = (byte)Math.Round(Math.Clamp(_settings.MessageBackgroundOpacity, 0, 0.9) * 255);
-        card.Background = new SolidColorBrush(isMention
+        card.Background = Fill(isMention
             ? Color.FromArgb(112, 245, 158, 11)
             : message.IsHighlighted ? Color.FromArgb(92, 169, 112, 255) : Color.FromArgb(messageAlpha, 255, 255, 255));
         if (isMention)
         {
-            card.BorderBrush = new SolidColorBrush(Color.FromRgb(251, 191, 36));
+            card.BorderBrush = Fill(Color.FromRgb(251, 191, 36));
             card.BorderThickness = new Thickness(2);
         }
         var stack = new StackPanel();
@@ -224,16 +261,16 @@ public partial class OverlayWindow : Window
         }
 
         if (_settings.ShowTimestamps)
-            identity.Children.Add(new TextBlock { Text = message.SentAt.LocalDateTime.ToString("HH:mm") + "  ", Foreground = new SolidColorBrush(Color.FromRgb(183, 180, 194)), FontSize = Math.Max(12, _settings.FontSize * 0.62), VerticalAlignment = VerticalAlignment.Center });
+            identity.Children.Add(new TextBlock { Text = message.SentAt.LocalDateTime.ToString("HH:mm") + "  ", Foreground = Fill(Color.FromRgb(183, 180, 194)), FontSize = Math.Max(12, _settings.FontSize * 0.62), VerticalAlignment = VerticalAlignment.Center });
 
         Color nameColor = Color.FromRgb(214, 202, 255);
         if (_settings.UseTwitchNameColors && !string.IsNullOrWhiteSpace(message.NameColor))
             try { nameColor = (Color)ColorConverter.ConvertFromString(message.NameColor)!; } catch (FormatException) { }
-        identity.Children.Add(new TextBlock { Text = message.DisplayName, Foreground = new SolidColorBrush(EnsureReadable(nameColor)), FontWeight = FontWeights.Bold, FontSize = _settings.FontSize * 0.78, FontFamily = new FontFamily(_settings.FontFamily), VerticalAlignment = VerticalAlignment.Center });
+        identity.Children.Add(new TextBlock { Text = message.DisplayName, Foreground = Fill(EnsureReadable(nameColor)), FontWeight = FontWeights.Bold, FontSize = _settings.FontSize * 0.78, FontFamily = Font(_settings.FontFamily), VerticalAlignment = VerticalAlignment.Center });
         // Beside the Twitch name, never instead of it, and in the quiet grey the timestamps use: it
         // is a note about who is writing, not a second thing shouting for the same attention.
         if (_nicknames.For(message.UserId, message.UserLogin) is { Length: > 0 } nickname)
-            identity.Children.Add(new TextBlock { Text = $"  {nickname}", Foreground = new SolidColorBrush(Color.FromRgb(183, 180, 194)), FontSize = _settings.FontSize * 0.7, FontFamily = new FontFamily(_settings.FontFamily), VerticalAlignment = VerticalAlignment.Center });
+            identity.Children.Add(new TextBlock { Text = $"  {nickname}", Foreground = Fill(Color.FromRgb(183, 180, 194)), FontSize = _settings.FontSize * 0.7, FontFamily = Font(_settings.FontFamily), VerticalAlignment = VerticalAlignment.Center });
         if (message.IsFirstMessage)
             identity.Children.Add(CreateLabel("NY", Color.FromRgb(95, 214, 200)));
         if (isMention)
@@ -283,15 +320,15 @@ public partial class OverlayWindow : Window
             Margin = new Thickness(0, 0, 0, 8),
             Padding = new Thickness(11, 8, 11, 9),
             Tag = ChatTimelineItem.Of(chatEvent),
-            Background = new SolidColorBrush(Color.FromArgb(78, accent.R, accent.G, accent.B)),
-            BorderBrush = new SolidColorBrush(accent),
+            Background = Fill(Color.FromArgb(78, accent.R, accent.G, accent.B)),
+            BorderBrush = Fill(accent),
             BorderThickness = new Thickness(4, 0, 0, 0)
         };
 
         var stack = new StackPanel();
         var identity = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 3) };
         if (_settings.ShowTimestamps)
-            identity.Children.Add(new TextBlock { Text = chatEvent.At.LocalDateTime.ToString("HH:mm") + "  ", Foreground = new SolidColorBrush(Color.FromRgb(183, 180, 194)), FontSize = Math.Max(12, _settings.FontSize * 0.62), VerticalAlignment = VerticalAlignment.Center });
+            identity.Children.Add(new TextBlock { Text = chatEvent.At.LocalDateTime.ToString("HH:mm") + "  ", Foreground = Fill(Color.FromRgb(183, 180, 194)), FontSize = Math.Max(12, _settings.FontSize * 0.62), VerticalAlignment = VerticalAlignment.Center });
         identity.Children.Add(CreateLabel(label, accent));
         identity.Children.Add(new TextBlock
         {
@@ -299,7 +336,7 @@ public partial class OverlayWindow : Window
             Foreground = Brushes.White,
             FontWeight = FontWeights.Bold,
             FontSize = _settings.FontSize * 0.78,
-            FontFamily = new FontFamily(_settings.FontFamily),
+            FontFamily = Font(_settings.FontFamily),
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center
         });
@@ -307,9 +344,9 @@ public partial class OverlayWindow : Window
             identity.Children.Add(new TextBlock
             {
                 Text = $"  {nickname}",
-                Foreground = new SolidColorBrush(Color.FromRgb(183, 180, 194)),
+                Foreground = Fill(Color.FromRgb(183, 180, 194)),
                 FontSize = _settings.FontSize * 0.7,
-                FontFamily = new FontFamily(_settings.FontFamily),
+                FontFamily = Font(_settings.FontFamily),
                 VerticalAlignment = VerticalAlignment.Center
             });
         stack.Children.Add(identity);
@@ -363,8 +400,8 @@ public partial class OverlayWindow : Window
     private TextBlock CreateReplyLine(ChatReply reply) => new()
     {
         Text = $"↩ {reply.ParentDisplayName}: {reply.ParentText}",
-        Foreground = new SolidColorBrush(Color.FromRgb(183, 180, 194)),
-        FontFamily = new FontFamily(_settings.FontFamily),
+        Foreground = Fill(Color.FromRgb(183, 180, 194)),
+        FontFamily = Font(_settings.FontFamily),
         FontSize = Math.Max(11, _settings.FontSize * 0.56),
         TextTrimming = TextTrimming.CharacterEllipsis,
         TextWrapping = TextWrapping.NoWrap,
@@ -561,7 +598,11 @@ public partial class OverlayWindow : Window
     {
         string key = decodePixelWidth + ":" + url;
         if (_imageCache.TryGetValue(key, out BitmapImage? cached)) return cached;
-        if (_imageCache.Count >= 512) _imageCache.Clear();
+        // The oldest goes, rather than the whole cache. Emptying it meant every emote, badge and
+        // emoji on screen was fetched from the CDN again the moment the cap was reached – a burst
+        // of a few hundred requests, in the middle of whatever chat was busy enough to fill it.
+        while (_imageCache.Count >= 512 && _imageOrder.TryDequeue(out string? oldest))
+            _imageCache.Remove(oldest);
 
         var image = new BitmapImage();
         image.BeginInit();
@@ -569,12 +610,13 @@ public partial class OverlayWindow : Window
         image.DecodePixelWidth = decodePixelWidth;
         image.EndInit();
         _imageCache[key] = image;
+        _imageOrder.Enqueue(key);
         return image;
     }
 
-    private static Border CreateLabel(string text, Color color) => new()
+    private Border CreateLabel(string text, Color color) => new()
     {
-        Background = new SolidColorBrush(color),
+        Background = Fill(color),
         CornerRadius = new CornerRadius(4),
         Margin = new Thickness(0, 0, 6, 0),
         Padding = new Thickness(5, 2, 5, 2),
@@ -589,7 +631,7 @@ public partial class OverlayWindow : Window
     {
         if (card.Child is not StackPanel stack || stack.Children.Count < 2) return;
         if (stack.Children[^1] is not TextBlock body) return;
-        body.FontFamily = new FontFamily(_settings.FontFamily);
+        body.FontFamily = Font(_settings.FontFamily);
         body.FontSize = _settings.FontSize;
 
         // Every line is normally locked to the same height, which is what makes a column of messages

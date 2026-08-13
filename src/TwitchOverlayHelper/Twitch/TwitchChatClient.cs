@@ -307,11 +307,16 @@ public sealed class TwitchChatClient : IAsyncDisposable
             if (result.MessageType != WebSocketMessageType.Text) continue;
             pending.Append(Encoding.UTF8.GetString(messageBytes.GetBuffer(), 0, checked((int)messageBytes.Length)));
             string buffered = pending.ToString();
+            // Walked with an index rather than by re-slicing the remainder after every line. Twitch
+            // batches lines into one frame when chat is busy, which is exactly when it matters:
+            // cutting the front off a string copies everything behind it, so a frame of n lines used
+            // to cost n copies of the whole frame.
+            int start = 0;
             int lineEnd;
-            while ((lineEnd = buffered.IndexOf("\r\n", StringComparison.Ordinal)) >= 0)
+            while ((lineEnd = buffered.IndexOf("\r\n", start, StringComparison.Ordinal)) >= 0)
             {
-                string line = buffered[..lineEnd];
-                buffered = buffered[(lineEnd + 2)..];
+                string line = buffered[start..lineEnd];
+                start = lineEnd + 2;
                 if (line.Length == 0) continue;
                 if (line.StartsWith("PING", StringComparison.Ordinal))
                 {
@@ -360,8 +365,9 @@ public sealed class TwitchChatClient : IAsyncDisposable
                 if (IrcMessageParser.TryParseModerationEvent(line, out ChatModerationEvent? moderation)) { ModerationReceived?.Invoke(moderation!); continue; }
                 if (IrcMessageParser.TryParseUserNotice(line, out ChatEvent? chatEvent)) EventReceived?.Invoke(chatEvent!);
             }
+            // Whatever is left after the last complete line is the start of the next one.
             pending.Clear();
-            pending.Append(buffered);
+            pending.Append(buffered, start, buffered.Length - start);
         }
     }
 
