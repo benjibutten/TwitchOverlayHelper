@@ -76,6 +76,12 @@ public sealed class AppSettings
     /// <summary>The edge glow that catches the streamer's eye – mod call and new chatters.</summary>
     public EdgeAlertSettings EdgeAlerts { get; set; } = new();
 
+    /// <summary>
+    /// A chat bot that tells the viewers what the app until now only told the streamer: why a
+    /// redemption was paid back, that a reading is still waiting, that the overlay is down.
+    /// </summary>
+    public BotSettings Bot { get; set; } = new();
+
     public void Normalize()
     {
         DockServerPort = DockServerPort is >= 1024 and <= 65535 ? DockServerPort : 4747;
@@ -93,6 +99,8 @@ public sealed class AppSettings
         Pets.Normalize();
         EdgeAlerts ??= new EdgeAlertSettings();
         EdgeAlerts.Normalize();
+        Bot ??= new BotSettings();
+        Bot.Normalize();
         OverlayLeft = FiniteOrDefault(OverlayLeft, 42);
         OverlayTop = FiniteOrDefault(OverlayTop, 120);
         OverlayWidth = Math.Clamp(FiniteOrDefault(OverlayWidth, 520), 320, 4000);

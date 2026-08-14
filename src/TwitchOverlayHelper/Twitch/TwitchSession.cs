@@ -12,6 +12,7 @@ public sealed class TwitchSession : IDisposable
 {
     private readonly TwitchAuth _auth;
     private readonly TokenStore _tokenStore;
+    private readonly IReadOnlyList<string> _scopes;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
 
     private StoredCredentials? _credentials;
@@ -28,9 +29,16 @@ public sealed class TwitchSession : IDisposable
     /// </summary>
     private int _generation;
 
-    public TwitchSession(HttpClient httpClient, TokenStore? tokenStore = null)
+    /// <param name="scopes">
+    /// What this login asks Twitch for. Left out for the streamer's own session, which wants
+    /// everything the app can use; handed in for the chat bot, whose token is only ever allowed to
+    /// read and write in chat. It also decides what <see cref="MissingScopes"/> compares against, so
+    /// a bot login is never told it is missing permissions it was never meant to have.
+    /// </param>
+    public TwitchSession(HttpClient httpClient, TokenStore? tokenStore = null, IReadOnlyList<string>? scopes = null)
     {
-        _auth = new TwitchAuth(httpClient);
+        _scopes = scopes is { Count: > 0 } ? scopes : TwitchAuth.RequiredScopes;
+        _auth = new TwitchAuth(httpClient, _scopes);
         _tokenStore = tokenStore ?? new TokenStore();
         _credentials = _tokenStore.Load();
     }
@@ -54,7 +62,7 @@ public sealed class TwitchSession : IDisposable
 
     /// <summary>The scopes a stored login predates; empty when there is nothing to re-authorise.</summary>
     public IReadOnlyList<string> MissingScopes() =>
-        _credentials is null ? [] : TwitchAuth.MissingScopes(_credentials.Scopes);
+        _credentials is null ? [] : TwitchAuth.MissingScopes(_credentials.Scopes, _scopes);
 
     public SessionState Snapshot() => new(
         IsLoggedIn,

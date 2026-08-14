@@ -105,6 +105,18 @@ public sealed class TtsService : IDisposable
     /// <summary>Roughly a stream's worth of readings kept on disk, so replaying one costs nothing.</summary>
     private const int AudioFileLimit = 60;
 
+    /// <summary>
+    /// The three refusals something outside this class needs to be able to tell apart, named rather
+    /// than repeated. The chat bot words each of them differently for the viewer – a full queue is
+    /// "try again shortly" while a missing key is "this is not running" – and matching on a sentence
+    /// spelled out in two files is a bug waiting for the day one of them is reworded.
+    /// </summary>
+    internal const string QueueFullReason = "kön för uppläsning är full";
+
+    internal const string DisabledReason = "uppläsning är avstängd i appen";
+
+    internal const string NotConfiguredReason = "ingen röst eller ElevenLabs-nyckel är inställd";
+
     /// <summary>How often unanswered requests are checked against their deadline.</summary>
     private static readonly TimeSpan SweepInterval = TimeSpan.FromSeconds(5);
 
@@ -171,6 +183,15 @@ public sealed class TtsService : IDisposable
     public event Action<string>? Noticed;
 
     /// <summary>
+    /// Raised for every ending, refundable or not, with the request as it was accepted and the
+    /// verdict it reached. Sibling to <see cref="Answered"/> rather than a replacement: that one is
+    /// about what Twitch is owed and fires only when there is something to owe, while this one is
+    /// about what happened – which is what the chat bot has to be able to tell a viewer, including
+    /// for a request that was refused before it ever reached the queue.
+    /// </summary>
+    public event Action<TtsRequest, TtsState, string>? Finished;
+
+    /// <summary>
     /// Takes a redemption that matched the configured trigger. Answers rather than returning
     /// quietly, because the caller may owe Twitch a verdict either way.
     /// </summary>
@@ -178,8 +199,8 @@ public sealed class TtsService : IDisposable
     {
         TtsSettings tts = _settings.Tts;
 
-        if (!tts.Enabled) return Refuse(request, TtsState.Rejected, "uppläsning är avstängd i appen");
-        if (!CanSpeak) return Refuse(request, TtsState.Failed, "ingen röst eller ElevenLabs-nyckel är inställd");
+        if (!tts.Enabled) return Refuse(request, TtsState.Rejected, DisabledReason);
+        if (!CanSpeak) return Refuse(request, TtsState.Failed, NotConfiguredReason);
 
         string text = TtsText.Clean(request.Text, tts.MaxCharacters);
         if (text.Length == 0) return Refuse(request, TtsState.Rejected, "inlösen innehöll ingen text att läsa upp");
@@ -208,7 +229,7 @@ public sealed class TtsService : IDisposable
         // and on the channel points route the refusal hands the points straight back. Answered
         // outside the lock, because refusing raises the events that redraw the dock and answer
         // Twitch, and nothing that reaches the network belongs inside this lock.
-        if (full) return Refuse(request, TtsState.Rejected, "kön för uppläsning är full");
+        if (full) return Refuse(request, TtsState.Rejected, QueueFullReason);
 
         Changed?.Invoke();
         if (entry.State == TtsState.Pending)
@@ -656,6 +677,12 @@ public sealed class TtsService : IDisposable
         AppLog.Info(spoken
             ? $"Uppläsning: {viewer}s meddelande lästes upp – {reason}."
             : $"Uppläsning: {viewer}s meddelande lästes inte upp – {reason}.");
+
+        // The verdict has been handed over, which is not the same as Twitch having taken it: the
+        // ledger retries for as long as that takes. So this says what happened to the reading and
+        // nothing about the money – a listener that wants to tell a viewer their points are back has
+        // to wait for the ledger to say they are.
+        Finished?.Invoke(entry.Request, state, reason);
 
         // Three endings, not two. A refusal that cannot pay back has two quite different causes, and
         // saying "bits" about a channel points reward would point the streamer at the wrong

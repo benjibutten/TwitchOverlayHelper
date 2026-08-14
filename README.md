@@ -186,6 +186,53 @@ Sidan kvitterar varje klipp när det är slut. Det kvittot är vad som håller n
 
 Rösten är egen och behöver inte vara samma som läser upp namn; ElevenLabs-nyckeln delas med [Uppläsning av namn](#uppläsning-av-namn). En teckengräns styr vad en enskild inlösen kan kosta dig – längre meddelanden klipps vid närmaste ordslut – och upprepade tecken kortas, så `hejjjjjjjjjj` blir `hejjj`.
 
+## Chatbot
+
+Appen vet redan varför en inlösen betalades tillbaka, att en uppläsning fortfarande väntar på ditt svar och att pet-overlayen ligger nere. Hittills har den bara sagt det till dig, i en statusrad i appen – den enda som aldrig fick veta var tittaren som betalade. Boten säger det i chatten i stället.
+
+**Vem som skriver** väljs under fliken *Bot*:
+
+- **Eget botkonto.** Ett andra Twitch-konto med egen inloggning, egen token på disk (`credentials.bot.bin`, krypterad med DPAPI precis som din egen) och en egen IRC-anslutning – Twitch låter inte en anslutning tala som två konton. Inloggningen begär bara `chat:read` och `chat:edit`: ett botkonto ska kunna säga saker, inte vara en andra uppsättning moderatorrättigheter som ligger och skräpar med en token på disk. Samma Client ID som din egen inloggning används. Gör gärna boten till moderator i kanalen – det höjer Twitchs skrivtak från 20 till 100 meddelanden per 30 sekunder och släpper förbi follower- och slow mode.
+- **Mitt eget konto.** Går över anslutningen appen redan har. Fungerar direkt utan något andra konto, men meddelandena ser ut att komma från dig.
+- **Av.** Ingenting skrivs.
+
+Logga in som boten i ett privat webbläsarfönster, annars godkänns koden med ditt eget konto.
+
+### Vad boten säger
+
+Varje sak boten säger av sig själv är en egen rad som går att slå av och skriva om, med förhandsvisning under varje textruta. `{viewer}`, `{cost}`, `{reason}`, `{link}` och de andra byts ut när meddelandet skickas.
+
+Påslaget från början är den halvan en tittare är svarad skyldig: poängen kom tillbaka och varför, uppläsningen ligger kvar och väntar, gräsmattan är full, overlayen är nere så vänta med att lösa in, mod-anropet gick fram eller inte, välkommen till chatten, tack för raiden. Den festliga halvan – subs, hypetåg, en pet som levde klart – är avstängd, eftersom Twitch redan säger det mesta av det och en kanal ska få lägga till det själv i stället för att behöva stänga av det.
+
+### Egna kommandon
+
+Ovanför meddelandelistan skriver du dina egna kommandon: ett ord någon skriver i chatten, och vad boten svarar. Appen levereras utan några – vad din kanal vill kunna svara på är inget den kan gissa, och gissningar hade bara blivit kommandon någon måste gå och stänga av.
+
+Svaret är en mall som alla andra, så `{viewer}` blir den som skrev och dina egna ord för streamern och pets fungerar direkt:
+
+```
+!discord   →  Häng med i vår Discord: exempel.se/discord
+!regler    →  {viewer}: var schysst mot varandra, det är hela regeln.
+```
+
+Varje rad har en paus i sekunder innan samma kommando får svara igen — 30 från början. Det är den enda saken här tittare kan utlösa med flit, och därmed enda sättet ett rum kan tömma botens hela sändningsbudget genom att komma överens om att skriva samma ord. Rader kan också märkas som **endast mods**; andra som skriver dem får inget svar alls, inte en tillsägelse, eftersom en bot som annonserar varje avvisning är en bot chatten lär sig utlösa på skoj.
+
+Ett ord som står på fler än en rad varnar fönstret för — bara den första raden hade svarat.
+
+### Ord är kanalens, inte appens
+
+Kallar din kanal dem något annat än "pets" skriver du det under *Ord boten använder* – i tre rutor, för svenskan går inte att räkna ut: *en vän*, *två vänner*, *vännen*. Orden slår igenom överallt, också i förklaringen till varför något betalades tillbaka. Detsamma gäller dig själv: tomt fält betyder att boten säger "streamern", annars ditt namn.
+
+### Vad den vägrar göra
+
+- **Upprepa sig.** Twitch släcker tyst ett meddelande som är identiskt med ett från samma konto inom 30 sekunder – en bot som skickade det skulle se ut att ha slutat fungera. Det hoppas över här i stället, där det kan skrivas i loggen.
+- **Skrika.** Allt går genom en kö med Twitchs eget tak. Straffet för att gå över är skrivstopp på hela kontot, inte ett tappat meddelande.
+- **Läsa upp trettio återbetalningar.** Svepet efter en omstart svarar på allt som blev kvar från förra sändningen, ibland inom en sekund. Från tre och uppåt blir det en enda rad.
+- **Läcka ett felmeddelande.** Skälet till en misslyckad uppläsning är vad syntesen kastade – en HTTP-status, en kvotvarning, ordet "Unauthorized". Bara skäl appen känner igen släpps ut i chatten; allt annat blir en neutral formulering.
+- **Svara sig själv.** Botens egna rader triggar varken pets, kantljus eller välkomnanden.
+- **Lova en återbetalning som inte finns.** En uppläsning som inte blev av annonseras bara som återbetald när poängen faktiskt gick tillbaka.
+- **Fylla overlayen.** Botens rader döljs som standard i overlayen över spelet, men syns i docken.
+
 ## Funktioner
 
 - Anslut anonymt genom att bara ange kanalnamn eller Twitch-länk.
@@ -205,6 +252,7 @@ Rösten är egen och behöver inte vara samma som läser upp namn; ElevenLabs-ny
 - Automatisk återanslutning, PING/PONG-hantering och tydligt stopp vid nekad inloggning.
 - Uppläsning av chattares namn via DeepSeek och ElevenLabs, för namn som är svåra att läsa högt.
 - **Uppläsning av tittarnas meddelanden**, köpta med bits (custom Power-up) eller channel points, med godkännande i docken och ljudet via en egen browserkälla i OBS. Se [Uppläsning av tittarnas meddelanden](#uppläsning-av-tittarnas-meddelanden).
+- **Chatbot** på ett eget Twitch-konto som säger till tittaren varför poängen kom tillbaka, att uppläsningen fortfarande väntar på svar och att overlayen ligger nere – plus egna kommandon du skriver själv. Varje meddelande går att slå av och skriva om, med kanalens egna ord för både dig och dina pets. Se [Chatbot](#chatbot).
 - Egna smeknamn på chattare, synliga i både dock och overlay, sparade med säkerhetskopia vid varje ändring.
 - Inställningar sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\settings.json`. OAuth-token sparas aldrig.
 - Körs som en enda instans; en ny vanlig start öppnar den redan körande appens inställningsfönster.

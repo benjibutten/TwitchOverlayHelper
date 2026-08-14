@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using TwitchOverlayHelper.Bot;
 using TwitchOverlayHelper.Diagnostics;
 using TwitchOverlayHelper.History;
 using TwitchOverlayHelper.Interop;
@@ -111,6 +112,15 @@ public partial class MainWindow : Window
 
     /// <summary>A sweep is out. Coverage is reported more than once, and two sweeps would read the same queue twice.</summary>
     private bool _sweeping;
+    /// <summary>
+    /// The chat bot: a second Twitch account, the queue that spaces its lines out, and the layer
+    /// that decides what is worth saying at all. Everything the app already knew and only told the
+    /// streamer now has somewhere to go.
+    /// </summary>
+    private readonly BotAccount _botAccount;
+
+    private readonly BotSender _botSender;
+    private readonly BotService _bot;
     private readonly DockServer _dockServer;
     private readonly DockServerContext _dockContext;
     private readonly AppSettings _settings;
@@ -136,6 +146,7 @@ public partial class MainWindow : Window
     private DockSettingsWindow? _dockSettingsWindow;
     private StreamSettingsWindow? _streamSettingsWindow;
     private SpeechSettingsWindow? _speechSettingsWindow;
+    private BotSettingsWindow? _botSettingsWindow;
     private string? _lastBadgeRoom;
     private string? _lastSeenRewardId;
     private string? _lastSeenRewardName;
@@ -173,6 +184,13 @@ public partial class MainWindow : Window
             new TwitchRedemptionGateway(_apiClient, () => _hub.BroadcasterId),
             _petRegistry,
             _hub.PublishPetRemoved);
+        _botAccount = new BotAccount(_httpClient);
+        // Which account carries the line is decided at send time rather than captured: the mode can
+        // be changed while the app runs, and a queued line should go out as whoever the bot is now.
+        _botSender = new BotSender(SendBotLineAsync, () => _settings.Bot.MessagesPer30Seconds);
+        _bot = new BotService(_settings, _botSender, new BotContext(
+            _tts.Snapshot,
+            () => _settings.Bot.Mode == BotMode.Bot ? _botAccount.Login : _session.Login));
         _dockContext = new DockServerContext
         {
             Settings = _settings,
@@ -232,11 +250,21 @@ public partial class MainWindow : Window
         // drawn, and whether any lawn is connected in the first place.
         _hub.PetShown += _ledger.MarkShown;
         _hub.PetOverlayCountChanged += _ledger.OverlayCountChanged;
+        // The bot is told the same thing, and holds it against a grace period of its own: a scene
+        // change in OBS drops every lawn for a second or two, and announcing that to the channel
+        // would be announcing the streamer's scene changes.
+        _hub.PetOverlayCountChanged += _bot.OnPetOverlayCountChanged;
         // A full lawn pushes the oldest pet home to fit a new one, and that pet may be one somebody
         // paid for. The chat route and the test button both do it; a refundable reward refuses
         // instead, so it is only ever on the receiving end.
         _petService.PetEvicted += _ledger.PetEvicted;
-        _ledger.Answered += notice => RunOnUi(() => ShowRedemptionNotice(notice));
+        _ledger.Answered += notice =>
+        {
+            RunOnUi(() => ShowRedemptionNotice(notice));
+            // The same sentence, said to the person it is actually about. Until now a viewer whose
+            // points came back was the one party never told.
+            _bot.OnRedemptionAnswered(notice);
+        };
         // Nothing is connected yet, and the ledger has to start out knowing that rather than
         // assuming a lawn it has never seen.
         _ledger.OverlayCountChanged(_hub.PetOverlayCount);
@@ -262,10 +290,14 @@ public partial class MainWindow : Window
         _tts.Noticed += text => RunOnUi(() => TtsStatusText.Text = text);
         // Checked here rather than in RaiseEdgeAlert, the same way the chat triggers do it: the
         // settings window's test buttons preview a switched-off glow on purpose.
-        _tts.ApprovalNeeded += _ =>
+        _tts.ApprovalNeeded += request =>
         {
             if (_settings.EdgeAlerts.TtsAlert.Enabled) RaiseEdgeAlert(EdgeAlertKind.TtsRequest);
+            _bot.OnReadingPending(request);
         };
+        // Every ending, refundable or not. The bot has four different things to say about them and
+        // works out which from the verdict, so nothing here has to know about templates.
+        _tts.Finished += _bot.OnReadingFinished;
         _eventSubClient.HypeTrainChanged += OnHypeTrain;
         _eventSubClient.StatusChanged += status => RunOnUi(() => SetEventStatus(status));
         _eventSubClient.CoverageChanged += coverage => RunOnUi(() => ApplyEventCoverage(coverage));
@@ -273,8 +305,15 @@ public partial class MainWindow : Window
         _chatClient.RoomDiscovered += room => RunOnUi(() => _ = PrepareRoomAsync(room));
         _chatClient.ConnectionStopped += () => RunOnUi(() => SetConnectionButtons(false));
         _session.StateChanged += () => RunOnUi(UpdateLoginUi);
+        // A device flow finishing is what turns "logged out" into a connection, so the bot's login is
+        // also the moment it can join the channel.
+        _botAccount.StateChanged += () => RunOnUi(ApplyBotConfiguration);
+        _botAccount.StatusChanged += status => RunOnUi(() => BotStatusText.Text = status);
+        _botSender.Sent += line => RunOnUi(() => BotLastLineText.Text = "Senast skrivet: " + line);
+        _botSender.Failed += reason => RunOnUi(() => BotStatusText.Text = "Boten kunde inte skriva: " + reason);
 
         UpdateLoginUi();
+        ApplyBotConfiguration();
         UpdateLoginButtonState();
         ApplySpeechConfiguration();
         RestoreChatHistory();
@@ -938,6 +977,192 @@ public partial class MainWindow : Window
         _speechSettingsWindow.Show();
     }
 
+    // ── Bot ─────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Where a bot line actually leaves the machine. Read from the settings at send time rather than
+    /// captured when the sender was built: the mode is a radio button the streamer can move while a
+    /// line is still sitting in the queue, and the line should go out as whoever the bot is now.
+    /// </summary>
+    private Task SendBotLineAsync(string text, CancellationToken cancellationToken) => _settings.Bot.Mode switch
+    {
+        BotMode.Bot => _botAccount.SendAsync(text, cancellationToken),
+        BotMode.Streamer => _chatClient.SendMessageAsync(text, cancellationToken),
+        _ => Task.CompletedTask
+    };
+
+    /// <summary>
+    /// Brings the bot's connection in line with the settings and with whether the app is in a channel
+    /// at all. Safe to call on any change – the account works out for itself whether it has anything
+    /// to do – which is why every one of the four things that can change calls exactly this.
+    /// </summary>
+    private void ApplyBotConfiguration()
+    {
+        BotSettings bot = _settings.Bot;
+        if (!bot.IsActive || !_chatClient.IsRunning)
+        {
+            // Nothing left over from a mode that is no longer on, or from a channel the app has left:
+            // a queue of refund notices written under the old settings would otherwise go out as the
+            // new account, minutes later.
+            _bot.Reset();
+        }
+        else
+        {
+            // Told how many lawns there are rather than left to wait for one to say so. With no pet
+            // overlay running at all there is no event coming – the count has been zero since before
+            // the bot existed – so its clock would never start and the one thing worth saying about
+            // an overlay that is down would only ever be said after one had been up first.
+            _bot.OnPetOverlayCountChanged(_hub.PetOverlayCount);
+        }
+        _ = _botAccount.ApplyAsync(_settings.Channel, bot.Mode == BotMode.Bot && _chatClient.IsRunning);
+        UpdateBotUi();
+    }
+
+    private void UpdateBotUi()
+    {
+        BotSettings bot = _settings.Bot;
+        SessionState state = _botAccount.Snapshot();
+
+        BotLoginButton.Content = state.IsLoggedIn ? "Logga ut boten" : "Logga in som bot";
+        BotDeviceCard.Visibility = state.PendingUserCode is null ? Visibility.Collapsed : Visibility.Visible;
+        if (state.PendingUserCode is not null) BotDeviceText.Text = state.PendingUserCode;
+
+        BotStatusText.Text = state.Error ?? bot.Mode switch
+        {
+            BotMode.Off => "Avstängd – ingenting skrivs i chatten.",
+            BotMode.Streamer => "Skriver som ditt eget konto över anslutningen appen redan har.",
+            _ when !state.IsLoggedIn => "Inget botkonto inloggat – välj Logga in som bot, eller byt till ditt eget konto.",
+            _ when _botAccount.CanSend => $"Inloggad som {state.Login} och ansluten till #{_settings.Channel}.",
+            _ when !_chatClient.IsRunning => $"Inloggad som {state.Login}. Boten ansluter när du kopplar upp chatten.",
+            _ => $"Inloggad som {state.Login} – ansluter …"
+        };
+
+        int on = bot.Messages.Count(rule => rule.Enabled);
+        int commands = bot.Commands.Count(command => command.IsUsable);
+        string counted = commands == 0
+            ? $"{on} av {bot.Messages.Count} meddelanden är påslagna, inga egna kommandon."
+            : $"{on} av {bot.Messages.Count} meddelanden är påslagna, och {commands} {(commands == 1 ? "eget kommando" : "egna kommandon")}.";
+        BotMessageCountText.Text = bot.IsActive ? counted : counted[..^1] + " – men boten är avstängd.";
+    }
+
+    private void PopulateBotControls()
+    {
+        BotSettings bot = _settings.Bot;
+        BotModeOffRadio.IsChecked = bot.Mode == BotMode.Off;
+        BotModeBotRadio.IsChecked = bot.Mode == BotMode.Bot;
+        BotModeStreamerRadio.IsChecked = bot.Mode == BotMode.Streamer;
+        BotStreamerNameBox.Text = bot.StreamerName;
+        BotPetWordBox.Text = bot.PetWord;
+        BotPetPluralBox.Text = bot.PetWordPlural;
+        BotPetDefiniteBox.Text = bot.PetWordDefinite;
+        BotWaitSecondsBox.Text = bot.TtsWaitingSeconds.ToString();
+        BotRateBox.Text = bot.MessagesPer30Seconds.ToString();
+        BotBatchBox.Text = bot.RefundBatchThreshold.ToString();
+        BotHideOwnCheck.IsChecked = bot.HideOwnMessagesInOverlay;
+        BotIgnoreOwnCheck.IsChecked = bot.IgnoreOwnMessages;
+    }
+
+    private void BotMode_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _settings.Bot.Mode = BotModeBotRadio.IsChecked == true ? BotMode.Bot
+            : BotModeStreamerRadio.IsChecked == true ? BotMode.Streamer
+            : BotMode.Off;
+        SaveSettings();
+        ApplyBotConfiguration();
+    }
+
+    private void BotSetting_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        BotSettings bot = _settings.Bot;
+        bot.StreamerName = BotStreamerNameBox.Text;
+        bot.PetWord = BotPetWordBox.Text;
+        bot.PetWordPlural = BotPetPluralBox.Text;
+        bot.PetWordDefinite = BotPetDefiniteBox.Text;
+        bot.HideOwnMessagesInOverlay = BotHideOwnCheck.IsChecked == true;
+        bot.IgnoreOwnMessages = BotIgnoreOwnCheck.IsChecked == true;
+        // The three numbers are only taken when they parse. Normalize would otherwise turn a box the
+        // user has emptied on the way to typing "120" into the clamped minimum under their cursor.
+        if (int.TryParse(BotWaitSecondsBox.Text, out int wait)) bot.TtsWaitingSeconds = wait;
+        if (int.TryParse(BotRateBox.Text, out int rate)) bot.MessagesPer30Seconds = rate;
+        if (int.TryParse(BotBatchBox.Text, out int batch)) bot.RefundBatchThreshold = batch;
+        SaveSettings();
+        UpdateBotUi();
+    }
+
+    /// <summary>Writes the clamped value back once the box is done being typed in.</summary>
+    private void BotNumber_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        _settings.Bot.Normalize();
+        bool loading = _loading;
+        _loading = true;
+        BotWaitSecondsBox.Text = _settings.Bot.TtsWaitingSeconds.ToString();
+        BotRateBox.Text = _settings.Bot.MessagesPer30Seconds.ToString();
+        BotBatchBox.Text = _settings.Bot.RefundBatchThreshold.ToString();
+        _loading = loading;
+        SaveSettings();
+    }
+
+    private void BotUseChannelName_Click(object sender, RoutedEventArgs e)
+    {
+        string channel = _settings.Channel.Trim();
+        if (channel.Length == 0) { BotStatusText.Text = "Fyll i kanalen under Anslutning först."; return; }
+        BotStreamerNameBox.Text = channel;
+    }
+
+    private async void BotLogin_Click(object sender, RoutedEventArgs e)
+    {
+        if (_botAccount.IsLoggedIn)
+        {
+            await _botAccount.LogoutAsync();
+            ApplyBotConfiguration();
+            return;
+        }
+
+        string clientId = ClientIdBox.Text.Trim();
+        if (clientId.Length == 0)
+        {
+            BotStatusText.Text = "Fyll i Client ID under Anslutning först – boten använder samma app.";
+            return;
+        }
+
+        BotLoginButton.IsEnabled = false;
+        BotStatusText.Text = "Kontaktar Twitch …";
+        try
+        {
+            DeviceCodePrompt prompt = await _botAccount.BeginLoginAsync(clientId);
+            BotDeviceCard.Visibility = Visibility.Visible;
+            BotDeviceHint.Text = $"Gå till {prompt.VerificationUri} – inloggad som boten, inte som du själv – och skriv in koden:";
+            BotDeviceText.Text = prompt.UserCode;
+            BotStatusText.Text = "Väntar på att koden godkänns i webbläsaren …";
+            OpenInBrowser(prompt.VerificationUri);
+        }
+        catch (Exception ex) when (ex is TwitchAuthException or System.Net.Http.HttpRequestException)
+        {
+            BotDeviceCard.Visibility = Visibility.Collapsed;
+            BotStatusText.Text = ex.Message;
+        }
+        finally { BotLoginButton.IsEnabled = true; }
+    }
+
+    private void BotMessages_Click(object sender, RoutedEventArgs e)
+    {
+        if (_botSettingsWindow is { IsLoaded: true })
+        {
+            _botSettingsWindow.Activate();
+            return;
+        }
+
+        _botSettingsWindow = new BotSettingsWindow(_settings, line => _botSender.Enqueue(line), () =>
+        {
+            SaveSettings();
+            UpdateBotUi();
+        }) { Owner = this };
+        _botSettingsWindow.Closed += (_, _) => _botSettingsWindow = null;
+        _botSettingsWindow.Show();
+    }
+
     /// <summary>Keeps the dock's speaker button in step with what is actually configured.</summary>
     private void ApplySpeechConfiguration()
     {
@@ -1369,18 +1594,34 @@ public partial class MainWindow : Window
     private void OnChatMessage(ChatMessage message)
     {
         message = _rewards.Enrich(message);
+        // A line the bot wrote itself. It is chat like any other to the views, but it must not set
+        // anything off: a welcome greeting the bot's own welcome, or "{pet} levde klart" spawning a
+        // pet through the chat route, is a loop the whole channel would have to sit through.
+        bool own = _bot.IsOwnMessage(message);
         // Marking and publishing are one step, see _publishGate.
         lock (_publishGate)
         {
             message = _powerUps.Enrich(message);
-            Queue(ChatTimelineItem.Of(message));
+            // The overlay lies over a game, where the bot's answers are a stream of notifications
+            // nobody asked for; in the dock they are the conversation they belong to, so only the
+            // overlay drops them.
+            if (!own || !_settings.Bot.HideOwnMessagesInOverlay) Queue(ChatTimelineItem.Of(message));
             _hub.PublishMessage(message);
         }
+        if (own) return;
+
         _petService.HandleMessage(message);
         TrackLastReward(message);
+        // The welcome and the two commands. Ahead of the edge alerts because it answers rather than
+        // lights up, and the two have nothing to do with each other.
+        _bot.OnChatMessage(message);
         // The edge glow. A mod calling outranks the welcome: when a moderator's very first message
         // is the command, the streamer is being called, not introduced to their own mod.
-        if (_settings.EdgeAlerts.TriggersModAlert(message)) RaiseEdgeAlert(EdgeAlertKind.ModCall);
+        if (_settings.EdgeAlerts.TriggersModAlert(message))
+        {
+            RaiseEdgeAlert(EdgeAlertKind.ModCall);
+            _bot.OnModCall(message);
+        }
         else
         {
             ExplainMissedModCall(message);
@@ -1412,9 +1653,14 @@ public partial class MainWindow : Window
         string badges = message.Badges.Count == 0
             ? "inga"
             : string.Join(", ", message.Badges.Select(badge => badge.SetId));
-        string reason = !edge.ModAlert.Enabled
+        bool alertDisabled = !edge.ModAlert.Enabled;
+        string reason = alertDisabled
             ? "mod-ljuset är avstängt i inställningarna"
             : "avsändaren är varken moderator eller broadcaster";
+        // The person who wrote it is the one who cannot see any of this. The bot words the same two
+        // answers for them – neither of which is the sentence written to the log here, because a
+        // moderator wants to know what to do and the log wants to know what happened.
+        _bot.OnModCallMissed(message, alertDisabled);
         // The mod tag is what the decision actually rests on, so it is written down next to the
         // badges: badges alone once made a lead moderator look like an ordinary viewer here.
         string modTag = message.HasModTag ? "ja" : "nej";
@@ -1450,6 +1696,7 @@ public partial class MainWindow : Window
     {
         Queue(ChatTimelineItem.Of(chatEvent));
         _hub.PublishEvent(chatEvent);
+        _bot.OnChatEvent(chatEvent);
     }
 
     /// <summary>
@@ -1464,7 +1711,11 @@ public partial class MainWindow : Window
         _hub.PublishHypeTrain(train);
         // The card's id names the train and which of its two moments this is, so a moment that has
         // already been carded cannot be carded again – whatever order Twitch delivers in.
-        if (train.ToChatEvent() is { } card && _hypeCards.IsNew(card.Id)) Queue(ChatTimelineItem.Of(card));
+        if (train.ToChatEvent() is not { } card || !_hypeCards.IsNew(card.Id)) return;
+        Queue(ChatTimelineItem.Of(card));
+        // Deduplicated first, so the bot cannot congratulate the same train twice when Twitch
+        // delivers a begin after the progress that started it.
+        _bot.OnChatEvent(card);
     }
 
     /// <summary>
@@ -1490,6 +1741,13 @@ public partial class MainWindow : Window
 
         PetRedemptionResult result = _petService.HandleRedemption(redemption);
         AnswerRedemption(redemption, result);
+        // Told the outcome rather than the verdict: a redemption that bought nothing is worth a word
+        // in chat whether or not the points can be handed back, because the next viewer about to
+        // spend theirs is the one who benefits from hearing it.
+        _bot.OnPetOutcome(
+            redemption.DisplayName.Length > 0 ? redemption.DisplayName : redemption.UserLogin,
+            redemption.RewardCost ?? 0,
+            result.Outcome);
     }
 
     /// <summary>
@@ -1689,6 +1947,7 @@ public partial class MainWindow : Window
 
     private void PopulateControls()
     {
+        PopulateBotControls();
         ChannelBox.Text = _settings.Channel;
         RecentMessagesCheck.IsChecked = _settings.FetchRecentMessages;
         ClientIdBox.Text = _settings.ClientId;
@@ -1935,6 +2194,9 @@ public partial class MainWindow : Window
                 _session.IsLoggedIn ? _session.TryGetIrcTokenAsync : null,
                 _session.UserId);
             _hub.PublishAuth(_chatClient.CanSend);
+            // The bot follows the app into the channel rather than sitting in one of its own; a
+            // channel switch takes it along the same way.
+            ApplyBotConfiguration();
         }
         catch (Exception ex) { SetConnectionButtons(false); SetStatus(ex.Message, true); }
     }
@@ -1943,6 +2205,11 @@ public partial class MainWindow : Window
     {
         await _chatClient.DisconnectAsync();
         await _eventSubClient.StopAsync();
+        // Nothing the bot was about to say is still true of a channel the app has left, and the
+        // account leaves with it.
+        _bot.Reset();
+        await _botAccount.DisconnectAsync();
+        UpdateBotUi();
         // Nothing will reach us about the train from here, so the strip must not outlive the
         // connection that was feeding it.
         _hub.ClearHypeTrain();
@@ -2544,6 +2811,9 @@ public partial class MainWindow : Window
         // still alive is the order that cannot answer Twitch from under a disposed object. Reset
         // marks them abandoned rather than answering, and the sentence being read is cut off with
         // them – the audio player is about to close underneath it either way.
+        // First of the three: a verdict raised on the way out would otherwise be queued for a chat
+        // connection that is already being torn down, and nobody is left in the channel to read it.
+        _bot.Dispose();
         _tts.Reset();
         _tts.Dispose();
         _ledger.Reset();
@@ -2558,6 +2828,10 @@ public partial class MainWindow : Window
         _edgeAlerts.Close();
         _audioPlayer.Close();
         await _dockServer.DisposeAsync();
+        // The sender before the account it writes through, so a line still in the queue cannot be
+        // handed to a chat connection that has already gone.
+        await _botSender.DisposeAsync();
+        await _botAccount.DisposeAsync();
         await _chatClient.DisposeAsync();
         await _eventSubClient.DisposeAsync();
         _session.Dispose();

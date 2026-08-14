@@ -723,6 +723,127 @@
                 </ScrollViewer>
             </TabItem>
 
+            <!-- ============================== Bot ============================== -->
+            <TabItem Header="Bot" Tag="🤖">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <StackPanel>
+                        <TextBlock Text="Appen vet redan varför en inlösen betalades tillbaka, att en uppläsning fortfarande väntar på ditt svar och att overlayen ligger nere – men hittills har den bara sagt det till dig. Boten säger det till den som faktiskt betalade. Använd gärna ett eget Twitch-konto: logga in med det här, gör det till moderator i din kanal, så syns dess meddelanden som kanalens och inte som dina."
+                                   Style="{StaticResource Lead}" Margin="0,0,0,16" />
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="22" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+
+                            <StackPanel Style="{StaticResource Column}">
+                                <Border Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Vem skriver" Style="{StaticResource CardTitle}" />
+                                        <RadioButton x:Name="BotModeOffRadio" GroupName="BotMode" Content="Av – ingenting skrivs i chatten" Margin="0,14,0,0" Checked="BotMode_Changed" />
+                                        <RadioButton x:Name="BotModeBotRadio" GroupName="BotMode" Content="Eget botkonto" Margin="0,7,0,0" Checked="BotMode_Changed"
+                                                     ToolTip="Ett andra Twitch-konto med egen inloggning. Begär bara rätten att läsa och skriva i chatten – ingen moderering, inga belöningar." />
+                                        <RadioButton x:Name="BotModeStreamerRadio" GroupName="BotMode" Content="Mitt eget konto" Margin="0,7,0,0" Checked="BotMode_Changed"
+                                                     ToolTip="Använder anslutningen appen redan har. Fungerar direkt, men meddelandena ser ut att komma från dig." />
+
+                                        <Border Style="{StaticResource Rule}" Margin="0,16,0,16" />
+
+                                        <TextBlock Text="Botens Twitch-konto" Style="{StaticResource FieldLabel}" />
+                                        <TextBlock Text="Logga ut från Twitch i webbläsaren först, eller använd ett privat fönster – annars godkänns koden med ditt eget konto. Samma Client ID som under Anslutning används."
+                                                   Style="{StaticResource Hint}" Margin="0,6,0,10" TextWrapping="Wrap" />
+                                        <Button x:Name="BotLoginButton" Content="Logga in som bot" Click="BotLogin_Click" />
+
+                                        <Border x:Name="BotDeviceCard" Style="{StaticResource Sunken}" Padding="14" Margin="0,12,0,0" Visibility="Collapsed">
+                                            <StackPanel>
+                                                <TextBlock x:Name="BotDeviceHint" Style="{StaticResource Hint}" TextWrapping="Wrap" />
+                                                <TextBlock x:Name="BotDeviceText" FontSize="26" FontWeight="Bold" FontFamily="Consolas"
+                                                           Foreground="{StaticResource AccentTextBrush}" Margin="0,6,0,0" />
+                                            </StackPanel>
+                                        </Border>
+
+                                        <TextBlock x:Name="BotStatusText" Text="Ingen bot inloggad." Style="{StaticResource Hint}" Margin="0,10,0,0" TextWrapping="Wrap" />
+                                        <TextBlock x:Name="BotLastLineText" Text="" Style="{StaticResource Hint}" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource StackedCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="Meddelanden" Style="{StaticResource CardTitle}" />
+                                        <TextBlock Text="Här skriver du egna kommandon – ett ord någon skriver i chatten och vad boten svarar. Samma ställe rymmer allt appen säger av sig själv: återbetalningar, väntande uppläsningar, välkomsthälsningar och raids, var och en att slå av eller skriva om."
+                                                   Style="{StaticResource Lead}" Margin="0,7,0,14" />
+                                        <Button x:Name="BotMessagesButton" Content="Ställ in vad boten säger" Background="#343B50" HorizontalAlignment="Left" Click="BotMessages_Click" />
+                                        <TextBlock x:Name="BotMessageCountText" Text="" Style="{StaticResource Hint}" Margin="0,10,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" Style="{StaticResource Column}">
+                                <Border Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Ord boten använder" Style="{StaticResource CardTitle}" />
+                                        <TextBlock Text="Ingenting här är appens sak att döpa. Kallar din kanal dem något annat än pets så skriver du det – orden slår igenom i alla meddelanden, även i förklaringen till varför något betalades tillbaka."
+                                                   Style="{StaticResource Lead}" Margin="0,7,0,14" />
+
+                                        <TextBlock Text="Vad boten kallar dig" Style="{StaticResource FieldLabel}" />
+                                        <Grid Margin="0,0,0,4">
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="8" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <TextBox x:Name="BotStreamerNameBox" TextChanged="BotSetting_Changed" />
+                                            <Button x:Name="BotUseChannelNameButton" Grid.Column="2" Content="Kanalnamnet" Background="#343B50" Padding="13,8" Click="BotUseChannelName_Click" />
+                                        </Grid>
+                                        <TextBlock Text="Tomt betyder “streamern”." Style="{StaticResource Hint}" Margin="0,0,0,14" />
+
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="8" /><ColumnDefinition /><ColumnDefinition Width="8" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="En" Style="{StaticResource FieldLabel}" />
+                                                <TextBox x:Name="BotPetWordBox" TextChanged="BotSetting_Changed" ToolTip="Obestämd form, singular: en pet" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="Flera" Style="{StaticResource FieldLabel}" />
+                                                <TextBox x:Name="BotPetPluralBox" TextChanged="BotSetting_Changed" ToolTip="Plural: två pets" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="4">
+                                                <TextBlock Text="Bestämd form" Style="{StaticResource FieldLabel}" />
+                                                <TextBox x:Name="BotPetDefiniteBox" TextChanged="BotSetting_Changed" ToolTip="Bestämd form, singular: peten. Egen ruta för att svenskan inte går att räkna ut – vän blir vännen, pet blir peten." />
+                                            </StackPanel>
+                                        </Grid>
+
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource StackedCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="Takt och gränser" Style="{StaticResource CardTitle}" />
+
+                                        <Grid Margin="0,14,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="8" /><ColumnDefinition Width="96" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Vänta på svar innan boten puffar (sekunder)" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                            <TextBox x:Name="BotWaitSecondsBox" Grid.Column="2" Style="{StaticResource NumberField}" TextChanged="BotSetting_Changed"
+                                                     LostKeyboardFocus="BotNumber_LostKeyboardFocus" ToolTip="Hur länge en uppläsning får ligga obesvarad innan boten talar om för tittaren att den ligger kvar. 10–3600." />
+                                        </Grid>
+
+                                        <Grid Margin="0,10,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="8" /><ColumnDefinition Width="96" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Meddelanden per 30 sekunder" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                            <TextBox x:Name="BotRateBox" Grid.Column="2" Style="{StaticResource NumberField}" TextChanged="BotSetting_Changed"
+                                                     LostKeyboardFocus="BotNumber_LostKeyboardFocus" ToolTip="Twitchs eget tak är 20 för ett vanligt konto och 100 för en moderator. Straffet för att gå över är skrivstopp på hela kontot, inte ett tappat meddelande – så håll marginal." />
+                                        </Grid>
+
+                                        <Grid Margin="0,10,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="8" /><ColumnDefinition Width="96" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Slå ihop återbetalningar från och med" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                            <TextBox x:Name="BotBatchBox" Grid.Column="2" Style="{StaticResource NumberField}" TextChanged="BotSetting_Changed"
+                                                     LostKeyboardFocus="BotNumber_LostKeyboardFocus" ToolTip="Städningen efter en omstart kan svara på en hel sändnings inlösen på några sekunder. Så många eller fler blir en enda rad i stället för en rad var." />
+                                        </Grid>
+
+                                        <CheckBox x:Name="BotHideOwnCheck" Content="Dölj botens meddelanden i overlayen" Margin="0,16,0,0" Checked="BotSetting_Changed" Unchecked="BotSetting_Changed"
+                                                  ToolTip="Överst på spelet är botens svar en ström av notiser. I docken syns de fortfarande." />
+                                        <CheckBox x:Name="BotIgnoreOwnCheck" Content="Låt inte botens egna rader trigga något" Margin="0,8,0,0" Checked="BotSetting_Changed" Unchecked="BotSetting_Changed"
+                                                  ToolTip="Utan den kan boten hälsa på sin egen hälsning eller spawna en pet ur sitt eget meddelande." />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <!-- ============================== Program ============================== -->
             <TabItem Header="Program" Tag="⚙">
                 <ScrollViewer Style="{StaticResource Page}">

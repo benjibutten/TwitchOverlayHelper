@@ -1,0 +1,110 @@
+<Window x:Class="TwitchOverlayHelper.BotSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Vad boten säger" Width="820" Height="880" MinWidth="680" MinHeight="560"
+        Icon="pack://application:,,,/Assets/app.ico"
+        Background="{StaticResource PageBrush}" Foreground="{StaticResource TextBrush}"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="24">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+
+        <StackPanel>
+            <TextBlock Text="BOT" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" FontSize="12" />
+            <TextBlock Text="Vad boten säger" FontSize="26" FontWeight="SemiBold" Margin="0,3,0,0" />
+            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" FontSize="13" Margin="0,6,0,4" LineHeight="20"
+                       Text="Överst dina egna kommandon: ett ord någon skriver, och vad boten svarar. Under dem det appen säger av sig själv – slå av det du inte vill ha och skriv om resten. Texten inom klammer byts ut när meddelandet skickas: {viewer} blir tittarens namn, {pets} blir ordet du valt för dem. Förhandsvisningen visar hur raden blir." />
+            <TextBlock x:Name="WarningText" TextWrapping="Wrap" Foreground="#F0A85C" FontSize="13" Margin="0,6,0,14" LineHeight="20" Visibility="Collapsed" />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="0,0,14,0">
+
+            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                    CornerRadius="12" Padding="16" Margin="0,0,0,20">
+                <StackPanel>
+                    <TextBlock Text="Egna kommandon" FontSize="17" FontWeight="SemiBold" />
+                    <TextBlock TextWrapping="Wrap" Foreground="#A8A3B8" FontSize="12.5" LineHeight="18" Margin="0,5,0,12"
+                               Text="Ett ord någon skriver i chatten, och vad boten svarar. Svaret är en mall som alla andra, så {viewer} blir den som skrev och dina egna ord för streamern och pets fungerar direkt. Pausen är sekunder innan samma kommando får svara igen – noll betyder varje gång, vilket är hur ett rum kan tömma botens hela sändningsbudget på tio sekunder." />
+
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="26" /><ColumnDefinition Width="140" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="60" /><ColumnDefinition Width="8" /><ColumnDefinition Width="52" /><ColumnDefinition Width="6" /><ColumnDefinition Width="34" /></Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="1" Text="Kommando" Foreground="#8F8B9E" FontSize="11.5" />
+                        <TextBlock Grid.Column="3" Text="Svar" Foreground="#8F8B9E" FontSize="11.5" />
+                        <TextBlock Grid.Column="5" Text="Paus" Foreground="#8F8B9E" FontSize="11.5" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="7" Text="Endast mods" Foreground="#8F8B9E" FontSize="11.5" TextWrapping="Wrap" HorizontalAlignment="Center" />
+                    </Grid>
+
+                    <ItemsControl x:Name="CommandList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,0,0,7">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="26" /><ColumnDefinition Width="140" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="60" /><ColumnDefinition Width="8" /><ColumnDefinition Width="52" /><ColumnDefinition Width="6" /><ColumnDefinition Width="34" /></Grid.ColumnDefinitions>
+                                    <CheckBox IsChecked="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"
+                                              Checked="Command_Changed" Unchecked="Command_Changed" ToolTip="Av här svarar kommandot inte, men raden ligger kvar." />
+                                    <TextBox Grid.Column="1" Text="{Binding Command, UpdateSourceTrigger=PropertyChanged}" TextChanged="Command_Changed"
+                                             FontFamily="Consolas" FontSize="13" Padding="9,10" ToolTip="Ett ord. Saknas ! läggs det till." />
+                                    <TextBox Grid.Column="3" Text="{Binding Response, UpdateSourceTrigger=PropertyChanged}" TextChanged="Command_Changed"
+                                             TextWrapping="Wrap" ToolTip="Vad boten skriver. {viewer} blir den som skrev kommandot." />
+                                    <TextBox Grid.Column="5" Text="{Binding Cooldown, UpdateSourceTrigger=PropertyChanged}" TextChanged="Command_Changed"
+                                             TextAlignment="Center" ToolTip="Sekunder innan kommandot får svara igen." />
+                                    <CheckBox Grid.Column="7" IsChecked="{Binding ModeratorsOnly, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" Checked="Command_Changed" Unchecked="Command_Changed"
+                                              ToolTip="Andra som skriver kommandot får inget svar alls – ingen tillsägelse." />
+                                    <Button Grid.Column="9" Content="✕" Background="#343B50" Padding="0,8" Click="RemoveCommand_Click" ToolTip="Ta bort raden." />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock x:Name="CommandEmptyText" Text="Inga egna kommandon än. Lägg till ett och skriv vad boten ska svara."
+                               Foreground="#8F8B9E" FontSize="12" Margin="0,2,0,0" TextWrapping="Wrap" />
+                    <Button x:Name="AddCommandButton" Content="+ Lägg till kommando" Background="#343B50" HorizontalAlignment="Left" Margin="0,10,0,0" Click="AddCommand_Click" />
+                    <TextBlock x:Name="CommandHintText" Text="" Foreground="#7C7890" FontSize="11.5" Margin="0,10,0,0" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="Meddelanden appen skickar själv" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,12" />
+
+            <ItemsControl x:Name="FlowList">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                                CornerRadius="12" Padding="16" Margin="0,0,0,12">
+                            <StackPanel>
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding CooldownLabel}" Foreground="#8F8B9E" FontSize="12" VerticalAlignment="Center" />
+                                    <CheckBox IsChecked="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Content="{Binding Title}"
+                                              FontWeight="SemiBold" Checked="Rule_Changed" Unchecked="Rule_Changed" />
+                                </DockPanel>
+                                <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Foreground="#A8A3B8" FontSize="12.5" LineHeight="18" Margin="24,5,0,10" />
+
+                                <Grid Margin="24,0,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="8" /><ColumnDefinition Width="86" /></Grid.ColumnDefinitions>
+                                    <TextBox Text="{Binding Template, UpdateSourceTrigger=PropertyChanged}" TextChanged="Rule_Changed"
+                                             TextWrapping="Wrap" AcceptsReturn="False"
+                                             ToolTip="{Binding PlaceholderHint}" />
+                                    <TextBox Grid.Column="2" Text="{Binding Cooldown, UpdateSourceTrigger=PropertyChanged}" TextChanged="Rule_Changed"
+                                             TextAlignment="Center" ToolTip="Sekunder innan just den här raden får sägas igen. 0 = varje gång." />
+                                </Grid>
+
+                                <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" Foreground="{StaticResource AccentTextBrush}"
+                                           FontSize="12.5" LineHeight="18" Margin="24,8,0,0" />
+                                <TextBlock Text="{Binding PlaceholderHint}" TextWrapping="Wrap" Foreground="#7C7890" FontSize="11.5" Margin="24,4,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+
+        <DockPanel Grid.Row="2" Margin="0,18,0,0">
+            <Button DockPanel.Dock="Right" Content="Stäng" Background="#343B50" Click="Close_Click" />
+            <Button x:Name="TestButton" DockPanel.Dock="Right" Content="💬 Skicka en testrad" Background="#343B50" Margin="0,0,10,0" Click="Test_Click"
+                    ToolTip="Skriver den första påslagna raden i chatten, med exempelvärden, precis som boten hade gjort." />
+            <Button x:Name="ResetButton" DockPanel.Dock="Right" Content="Återställ texterna" Background="#343B50" Margin="0,0,10,0" Click="Reset_Click"
+                    ToolTip="Skriver tillbaka appens egna formuleringar. Vilka rader som är påslagna rörs inte." />
+            <TextBlock x:Name="StatusText" Text="Ändringarna sparas direkt." Foreground="#858193" FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,10,0" />
+        </DockPanel>
+    </Grid>
+</Window>

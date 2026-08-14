@@ -23,8 +23,16 @@ public sealed class TwitchAuthTransientException(string message) : TwitchAuthExc
 /// Device Code Flow. Chosen over the authorization-code flow because it needs no client secret
 /// and no redirect URI, which is the only shape that fits a desktop app we ship as a single exe.
 /// </summary>
-public sealed class TwitchAuth(HttpClient httpClient)
+public sealed class TwitchAuth(HttpClient httpClient, IReadOnlyList<string>? scopes = null)
 {
+    /// <summary>
+    /// What this instance asks Twitch for. Handed in rather than fixed, because the app now logs in
+    /// twice: once as the streamer, who needs everything below, and once as a chat bot, who needs to
+    /// read and write in chat and nothing else. Asking a bot account for permission to ban people and
+    /// answer redemptions would be a consent screen nobody should be shown, let alone agree to.
+    /// </summary>
+    private readonly IReadOnlyList<string> _scopes = scopes is { Count: > 0 } ? scopes : RequiredScopes;
+
     /// <summary>Channel point redemptions, in your own channel only.</summary>
     public const string RedemptionsScope = "channel:read:redemptions";
 
@@ -77,6 +85,13 @@ public sealed class TwitchAuth(HttpClient httpClient)
         EmotesScope
     ];
 
+    /// <summary>
+    /// All a chat bot ever needs: read the room it is in, and write in it. Deliberately nothing
+    /// else – a second account exists to say things, not to be a second set of moderator powers
+    /// lying around with a token on disk.
+    /// </summary>
+    public static readonly string[] BotScopes = ["chat:read", "chat:edit"];
+
     public static string ScopeString => string.Join(' ', RequiredScopes);
 
     /// <summary>
@@ -85,10 +100,14 @@ public sealed class TwitchAuth(HttpClient httpClient)
     /// way to notice – and the app says "log in again to switch X on" instead of letting the user
     /// meet a silent 403 from Twitch weeks later.
     /// </summary>
-    public static IReadOnlyList<string> MissingScopes(IEnumerable<string>? granted)
+    public static IReadOnlyList<string> MissingScopes(IEnumerable<string>? granted) =>
+        MissingScopes(granted, RequiredScopes);
+
+    /// <summary>The same question for a login that was never meant to carry every scope – the bot's.</summary>
+    public static IReadOnlyList<string> MissingScopes(IEnumerable<string>? granted, IReadOnlyList<string> wanted)
     {
         var have = new HashSet<string>(granted ?? [], StringComparer.OrdinalIgnoreCase);
-        return RequiredScopes.Where(scope => !have.Contains(scope)).ToArray();
+        return wanted.Where(scope => !have.Contains(scope)).ToArray();
     }
 
     /// <summary>The feature behind a scope, worded for someone deciding whether to log in again.</summary>
@@ -116,7 +135,7 @@ public sealed class TwitchAuth(HttpClient httpClient)
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["client_id"] = clientId.Trim(),
-            ["scopes"] = ScopeString
+            ["scopes"] = string.Join(' ', _scopes)
         });
         using HttpResponseMessage response = await httpClient.PostAsync("https://id.twitch.tv/oauth2/device", content, cancellationToken).ConfigureAwait(false);
         JsonElement json = await ReadJsonAsync(response, cancellationToken).ConfigureAwait(false);
@@ -145,7 +164,7 @@ public sealed class TwitchAuth(HttpClient httpClient)
             {
                 ["client_id"] = clientId.Trim(),
                 ["device_code"] = prompt.DeviceCode,
-                ["scopes"] = ScopeString,
+                ["scopes"] = string.Join(' ', _scopes),
                 ["grant_type"] = "urn:ietf:params:oauth:grant-type:device_code"
             });
             using HttpResponseMessage response = await httpClient.PostAsync("https://id.twitch.tv/oauth2/token", content, cancellationToken).ConfigureAwait(false);
