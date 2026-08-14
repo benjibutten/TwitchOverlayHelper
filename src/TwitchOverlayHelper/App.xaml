@@ -288,7 +288,9 @@
                             </ToggleButton>
                             <ContentPresenter x:Name="Selected" Margin="{TemplateBinding Padding}" IsHitTestVisible="False" VerticalAlignment="Center"
                                               Content="{TemplateBinding SelectionBoxItem}"
-                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" />
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}" />
                             <!-- Editable combos (the dock's font field) let you type a name that is not in
                                  the list, so they need a real text box – the presenter above only displays. -->
                             <TextBox x:Name="PART_EditableTextBox" Visibility="Collapsed" Margin="{TemplateBinding Padding}"
