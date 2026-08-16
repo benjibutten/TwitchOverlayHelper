@@ -673,8 +673,17 @@
                                                      Foreground="{StaticResource AccentTextBrush}" FontFamily="Consolas" Padding="0" />
                                         </Border>
                                         <Button x:Name="CopyTtsUrlButton" Content="Kopiera adress" Margin="0,10,0,0" IsEnabled="False" Click="CopyTtsUrl_Click" />
-                                        <TextBlock Text="Lägg till som Browser Source i OBS, 1×1 px – den syns inte, den låter bara. Kryssa i “Control audio via OBS” om du vill ha den som en egen reglage i mixern."
-                                                   Style="{StaticResource Hint}" Margin="0,10,0,0" />
+                                        <TextBlock x:Name="TtsSourceHint" Style="{StaticResource Hint}" Margin="0,10,0,0" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource StackedCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="Rutan i bild" Style="{StaticResource SubTitle}" />
+                                        <TextBlock Text="Samma browserkälla kan också rita en ruta medan uppläsningen pågår: vem som betalade, vad de skrev och en liten rad staplar som rör sig. Då gör du källan lika stor som scenen i stället för 1×1 px, och ställer in var i bild rutan ska sitta."
+                                                   Style="{StaticResource Hint}" Margin="0,8,0,0" />
+                                        <Button x:Name="TtsWidgetButton" Content="Ställ in rutan" Background="#343B50" Margin="0,12,0,0" HorizontalAlignment="Left" Click="TtsWidget_Click" />
+                                        <TextBlock x:Name="TtsWidgetStatusText" Style="{StaticResource Hint}" Margin="0,10,0,0" />
                                     </StackPanel>
                                 </Border>
 

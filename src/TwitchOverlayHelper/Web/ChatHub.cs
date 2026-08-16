@@ -453,10 +453,46 @@ public sealed class ChatHub(
     /// caller has to treat the reading as undelivered rather than wait for an acknowledgement that
     /// nobody is going to send.
     /// </returns>
-    public int PublishTtsPlay(string playbackId, string url, double volume)
+    public int PublishTtsPlay(string playbackId, string url, TtsClip clip)
     {
-        string payload = DockJson.Serialize(new DockEnvelope<DockTtsPlay>("ttsPlay", new DockTtsPlay(playbackId, url, volume)));
-        Fan(payload, client => client.View == DockView.Tts);
+        // Whose words these are travels with the clip only when there is a card to draw them on.
+        // Deciding it here rather than in the page is the whole point: a frame that was never sent
+        // cannot be read by a browser source sitting on the broadcast, and this is the one place in
+        // the app that knows both what the settings say and who is listening.
+        bool card = settings.Tts.ShowsWidget;
+        var play = card
+            ? new DockTtsPlay(
+                playbackId,
+                url,
+                clip.Volume,
+                clip.Viewer,
+                clip.Text,
+                clip.Cost > 0 ? clip.Cost : null,
+                clip.Source == TtsSource.PowerUp ? "powerUp" : "reward")
+            : new DockTtsPlay(playbackId, url, clip.Volume);
+
+        Fan(DockJson.Serialize(new DockEnvelope<DockTtsPlay>("ttsPlay", play)), client => client.View == DockView.Tts);
+        return TtsOverlayCount;
+    }
+
+    /// <summary>
+    /// Pushes the card's appearance, so a slider in the app lands without anyone reloading OBS. To
+    /// the reading pages alone: nothing else draws it.
+    /// </summary>
+    public void PublishTtsWidget() =>
+        SendTo(DockView.Tts, DockJson.Serialize(new DockEnvelope<DockTtsWidget>("ttsWidget", DockTtsWidget.From(settings.Tts))));
+
+    /// <summary>
+    /// Draws the card for a few seconds with nothing playing, for the preview button in the settings.
+    /// The only way to see where it has landed in the scene without spending a viewer's money on
+    /// finding out – and unlike the test reading it costs no ElevenLabs characters either.
+    /// </summary>
+    /// <returns>How many reading pages drew it, so the app can say when there is nothing to preview on.</returns>
+    public int PublishTtsPreview(string viewer, string text, int cost, TtsSource source, int milliseconds)
+    {
+        var preview = new DockTtsPreview(
+            viewer, text, cost, source == TtsSource.PowerUp ? "powerUp" : "reward", milliseconds);
+        SendTo(DockView.Tts, DockJson.Serialize(new DockEnvelope<DockTtsPreview>("ttsPreview", preview)));
         return TtsOverlayCount;
     }
 
@@ -728,10 +764,10 @@ public sealed class ChatHub(
             {
                 DockView.Stream => BuildStreamHello(),
                 DockView.Pets => BuildPetsHello(),
-                // The reading page is handed nothing at all. It has no state to restore – a clip
-                // that was playing when OBS restarted is over – and it is a browser source on the
-                // broadcast machine, so the less it is ever sent the better.
-                DockView.Tts => DockJson.Serialize(new DockEnvelope<object?>("hello", null)),
+                // The reading page is handed its own appearance and nothing else. It has no state to
+                // restore – a clip that was playing when OBS restarted is over – and it is a browser
+                // source on the broadcast machine, so the less it is ever sent the better.
+                DockView.Tts => DockJson.Serialize(new DockTtsHello("hello", DockTtsWidget.From(settings.Tts))),
                 _ => BuildHello(canSend)
             };
             await SendFrameAsync(socket, hello, cancellationToken).ConfigureAwait(false);

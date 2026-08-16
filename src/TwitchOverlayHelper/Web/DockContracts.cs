@@ -194,8 +194,109 @@ internal sealed record DockSpeech(bool Enabled);
 /// <summary>
 /// One clip for the reading page to play. The address is a token the app minted, never a path, and
 /// it is good for exactly this file – see <see cref="TtsAudioStore"/>.
+///
+/// <para>Everything from <paramref name="Viewer"/> on is what the card draws, and all of it is left
+/// out when the card is switched off. That is not tidiness: with no card there is nothing on that
+/// page that could show a name or a message, so sending them would put a stranger's words on the
+/// broadcast machine for no reason at all.</para>
 /// </summary>
-internal sealed record DockTtsPlay(string Id, string Url, double Volume);
+internal sealed record DockTtsPlay(
+    string Id,
+    string Url,
+    double Volume,
+    string? Viewer = null,
+    string? Text = null,
+    int? Cost = null,
+    /// <summary>"powerUp" or "reward", so the card can word the price in bits or in points.</summary>
+    string? Source = null);
+
+/// <summary>
+/// A card with nothing to play, for the preview button in the settings. Its own frame rather than a
+/// clip with no address: the page answers for every clip it is handed, and a reading nobody paid for
+/// must never reach the machinery that decides whether a viewer gets their points back.
+/// </summary>
+internal sealed record DockTtsPreview(string Viewer, string Text, int Cost, string Source, int Milliseconds);
+
+/// <summary>
+/// What the reading page opens onto. Only ever the card's appearance: a clip that was playing when
+/// OBS restarted is over, and there is nothing else on this page to restore.
+/// </summary>
+internal sealed record DockTtsHello(string Type, DockTtsWidget Widget);
+
+/// <summary>
+/// The card, as the page needs it. Its own shape rather than <see cref="TtsWidgetSettings"/> on the
+/// wire, because the two enums would travel as the numbers they happen to have in this build –
+/// and a browser source cached from an older version would read them as something else entirely.
+/// </summary>
+internal sealed record DockTtsWidget(
+    bool Enabled,
+    string Position,
+    double OffsetX,
+    double OffsetY,
+    double Width,
+    double FontSize,
+    string FontFamily,
+    string AccentColor,
+    double BackgroundOpacity,
+    double CornerRadius,
+    string Label,
+    bool ShowName,
+    bool ShowText,
+    bool ShowCost,
+    bool ShowWave,
+    bool TextOutline,
+    string Animation,
+    int LingerMilliseconds)
+{
+    public static DockTtsWidget From(TtsSettings tts)
+    {
+        TtsWidgetSettings widget = tts.Widget;
+        return new DockTtsWidget(
+            // The page is told the card is off when the sound is not going through it either: with
+            // the readings on the desktop only, no clip ever reaches this page, and a card that
+            // waits for one would sit there being invisible for reasons nobody could see.
+            tts.ShowsWidget,
+            Word(widget.Position),
+            widget.OffsetX,
+            widget.OffsetY,
+            widget.Width,
+            widget.FontSize,
+            widget.FontFamily,
+            widget.AccentColor,
+            widget.BackgroundOpacity,
+            widget.CornerRadius,
+            widget.Label,
+            widget.ShowName,
+            widget.ShowText,
+            widget.ShowCost,
+            widget.ShowWave,
+            widget.TextOutline,
+            Word(widget.Animation),
+            widget.LingerMilliseconds);
+    }
+
+    /// <summary>Two words the page can key its CSS off, rather than a number it has to translate.</summary>
+    private static string Word(TtsWidgetPosition position) => position switch
+    {
+        TtsWidgetPosition.TopLeft => "top-left",
+        TtsWidgetPosition.TopCenter => "top-center",
+        TtsWidgetPosition.TopRight => "top-right",
+        TtsWidgetPosition.MiddleLeft => "middle-left",
+        TtsWidgetPosition.MiddleCenter => "middle-center",
+        TtsWidgetPosition.MiddleRight => "middle-right",
+        TtsWidgetPosition.BottomLeft => "bottom-left",
+        TtsWidgetPosition.BottomRight => "bottom-right",
+        _ => "bottom-center"
+    };
+
+    private static string Word(TtsWidgetAnimation animation) => animation switch
+    {
+        TtsWidgetAnimation.None => "none",
+        TtsWidgetAnimation.Fade => "fade",
+        TtsWidgetAnimation.Pop => "pop",
+        _ => "slide"
+    };
+}
 
 internal sealed record DockEnvelope<T>(string Type, T Payload);
 

@@ -140,9 +140,9 @@ public sealed class TtsServiceTests
         var secrets = new SpeechSecretStore(SpeechFixture.TempPath(".bin"));
         secrets.Save(new SpeechSecrets("deepseek", "eleven"));
         var played = new List<string>();
-        TtsService service = SpeechFixture.Tts(settings, secrets: secrets, play: (path, _, _) =>
+        TtsService service = SpeechFixture.Tts(settings, secrets: secrets, play: (clip, _) =>
         {
-            lock (played) played.Add(path);
+            lock (played) played.Add(clip.FilePath);
             return Task.CompletedTask;
         });
         return (service, played);
@@ -262,7 +262,7 @@ public sealed class TtsServiceTests
         var secrets = new SpeechSecretStore(SpeechFixture.TempPath(".bin"));
         secrets.Save(new SpeechSecrets("deepseek", "eleven"));
         TtsService service = SpeechFixture.Tts(settings, secrets: secrets,
-            play: (_, _, _) => throw new SpeechException("ingen ljudkälla i OBS"));
+            play: (_, _) => throw new SpeechException("ingen ljudkälla i OBS"));
         var answers = new List<RedemptionStatus>();
         service.Answered += (_, status, _) => answers.Add(status);
 
@@ -340,7 +340,7 @@ public sealed class TtsServiceTests
         // A handler that never answers stands in for a slow ElevenLabs: the stop lands while the
         // synthesis is still in flight, before any audio could reach an output.
         TtsService service = SpeechFixture.Tts(settings, new HangingHandler(), secrets,
-            play: (_, _, _) => Task.CompletedTask);
+            play: (_, _) => Task.CompletedTask);
         var answers = new List<RedemptionStatus>();
         service.Answered += (_, status, _) => answers.Add(status);
 
@@ -364,7 +364,7 @@ public sealed class TtsServiceTests
         var secrets = new SpeechSecretStore(SpeechFixture.TempPath(".bin"));
         secrets.Save(new SpeechSecrets("deepseek", "eleven"));
         var reached = new TaskCompletionSource();
-        TtsService service = SpeechFixture.Tts(settings, secrets: secrets, play: async (_, _, token) =>
+        TtsService service = SpeechFixture.Tts(settings, secrets: secrets, play: async (_, token) =>
         {
             reached.TrySetResult();
             await Task.Delay(Timeout.Infinite, token);
@@ -392,7 +392,7 @@ public sealed class TtsServiceTests
         var secrets = new SpeechSecretStore(SpeechFixture.TempPath(".bin"));
         secrets.Save(new SpeechSecrets("deepseek", "eleven"));
         var reached = new TaskCompletionSource();
-        TtsService service = SpeechFixture.Tts(settings, secrets: secrets, play: async (_, _, token) =>
+        TtsService service = SpeechFixture.Tts(settings, secrets: secrets, play: async (_, token) =>
         {
             reached.TrySetResult();
             await Task.Delay(Timeout.Infinite, token);
@@ -417,7 +417,7 @@ public sealed class TtsServiceTests
         var secrets = new SpeechSecretStore(SpeechFixture.TempPath(".bin"));
         secrets.Save(new SpeechSecrets("deepseek", "eleven"));
         var reached = new TaskCompletionSource();
-        TtsService service = SpeechFixture.Tts(settings, secrets: secrets, play: async (_, _, token) =>
+        TtsService service = SpeechFixture.Tts(settings, secrets: secrets, play: async (_, token) =>
         {
             reached.TrySetResult();
             await Task.Delay(Timeout.Infinite, token);
@@ -487,9 +487,9 @@ public sealed class TtsServiceTests
         secrets.Save(new SpeechSecrets("deepseek", "eleven"));
         var played = new List<string>();
         // Neither a SpeechException nor a network one: nothing on the way up catches this.
-        TtsService service = SpeechFixture.Tts(settings, secrets: secrets, play: (path, _, _) =>
+        TtsService service = SpeechFixture.Tts(settings, secrets: secrets, play: (clip, _) =>
         {
-            lock (played) played.Add(path);
+            lock (played) played.Add(clip.FilePath);
             return played.Count == 1 ? throw new InvalidOperationException("något oväntat") : Task.CompletedTask;
         });
         var answers = new List<RedemptionStatus>();
@@ -543,7 +543,7 @@ public sealed class TtsServiceTests
         var secrets = new SpeechSecretStore(SpeechFixture.TempPath(".bin"));
         secrets.Save(new SpeechSecrets("deepseek", "eleven"));
         var reached = new TaskCompletionSource();
-        TtsService service = SpeechFixture.Tts(settings, secrets: secrets, play: async (_, _, token) =>
+        TtsService service = SpeechFixture.Tts(settings, secrets: secrets, play: async (_, token) =>
         {
             reached.TrySetResult();
             await Task.Delay(Timeout.Infinite, token);

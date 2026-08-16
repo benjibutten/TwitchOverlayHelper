@@ -1,0 +1,142 @@
+<Window x:Class="TwitchOverlayHelper.TtsWidgetWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Rutan under uppläsning" Width="560" Height="840" MinWidth="480" MinHeight="600"
+        Icon="pack://application:,,,/Assets/app.ico"
+        Background="{StaticResource PageBrush}" Foreground="{StaticResource TextBrush}"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="24">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+
+        <StackPanel>
+            <TextBlock Text="UPPLÄSNING" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" FontSize="12" />
+            <TextBlock Text="Rutan i bild" FontSize="26" FontWeight="SemiBold" Margin="0,3,0,0" />
+            <TextBlock Text="En ruta som dyker upp medan ett betalt meddelande läses upp och försvinner när rösten tystnar. Den ritas av samma browserkälla som ljudet – gör den källan lika stor som scenen, så placerar rutan sig själv där du väljer nedan."
+                       Foreground="{StaticResource MutedTextBrush}" FontSize="13" Margin="0,6,0,16" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="0,0,14,0">
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20">
+                    <StackPanel>
+                        <CheckBox x:Name="EnabledCheck" Content="Visa rutan under uppläsning" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <TextBlock x:Name="EnabledHint" TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Var i bild" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <TextBlock Text="Samma nio lägen som när du placerar en källa i OBS. Rutan växer med meddelandet från den kanten den sitter i."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,0,0,12" />
+                        <Grid HorizontalAlignment="Left">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="18" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="18" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="6" /><RowDefinition Height="Auto" /><RowDefinition Height="6" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <RadioButton x:Name="PosTopLeft" GroupName="Pos" Content="Uppe vänster" Checked="Setting_Changed" />
+                            <RadioButton x:Name="PosTopCenter" Grid.Column="2" GroupName="Pos" Content="Uppe mitten" Checked="Setting_Changed" />
+                            <RadioButton x:Name="PosTopRight" Grid.Column="4" GroupName="Pos" Content="Uppe höger" Checked="Setting_Changed" />
+                            <RadioButton x:Name="PosMiddleLeft" Grid.Row="2" GroupName="Pos" Content="Mitten vänster" Checked="Setting_Changed" />
+                            <RadioButton x:Name="PosMiddleCenter" Grid.Row="2" Grid.Column="2" GroupName="Pos" Content="Mitt i bild" Checked="Setting_Changed" />
+                            <RadioButton x:Name="PosMiddleRight" Grid.Row="2" Grid.Column="4" GroupName="Pos" Content="Mitten höger" Checked="Setting_Changed" />
+                            <RadioButton x:Name="PosBottomLeft" Grid.Row="4" GroupName="Pos" Content="Nere vänster" Checked="Setting_Changed" />
+                            <RadioButton x:Name="PosBottomCenter" Grid.Row="4" Grid.Column="2" GroupName="Pos" Content="Nere mitten" Checked="Setting_Changed" />
+                            <RadioButton x:Name="PosBottomRight" Grid.Row="4" Grid.Column="4" GroupName="Pos" Content="Nere höger" Checked="Setting_Changed" />
+                        </Grid>
+
+                        <DockPanel Margin="0,18,0,0"><TextBlock Text="Avstånd från sidokanten" /><TextBlock x:Name="OffsetXValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="OffsetXSlider" Minimum="0" Maximum="600" TickFrequency="4" IsSnapToTickEnabled="True" Margin="0,4,0,4" ValueChanged="Setting_Changed" />
+                        <TextBlock Text="Gäller inte de lägen som är centrerade i sidled – en centrerad ruta är centrerad."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,0,0,12" />
+
+                        <DockPanel><TextBlock Text="Avstånd från över- eller underkanten" /><TextBlock x:Name="OffsetYValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="OffsetYSlider" Minimum="0" Maximum="600" TickFrequency="4" IsSnapToTickEnabled="True" Margin="0,4,0,12" ValueChanged="Setting_Changed" />
+
+                        <DockPanel><TextBlock Text="Största bredd" /><TextBlock x:Name="WidthValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="WidthSlider" Minimum="240" Maximum="1800" TickFrequency="10" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="Setting_Changed" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Utseende" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14" />
+
+                        <TextBlock Text="Typsnitt" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6" />
+                        <ComboBox x:Name="FontBox" IsEditable="True" SelectionChanged="Setting_Changed" LostKeyboardFocus="Setting_Changed">
+                            <ComboBoxItem Content="Verdana" /><ComboBoxItem Content="Tahoma" /><ComboBoxItem Content="Segoe UI" />
+                            <ComboBoxItem Content="Arial" /><ComboBoxItem Content="Impact" /><ComboBoxItem Content="Comic Sans MS" />
+                            <ComboBoxItem Content="Atkinson Hyperlegible" /><ComboBoxItem Content="Lexend" />
+                        </ComboBox>
+                        <TextBlock Text="Typsnittet måste vara installerat i Windows – OBS ritar sidan på den här datorn."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,7,0,16" />
+
+                        <TextBlock Text="Färg" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6" />
+                        <ComboBox x:Name="ColorBox" SelectionChanged="Setting_Changed" />
+                        <TextBlock Text="Namnet, texten överst och staplarna får den här färgen."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,7,0,16" />
+
+                        <DockPanel><TextBlock Text="Textstorlek" /><TextBlock x:Name="FontSizeValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="FontSizeSlider" Minimum="12" Maximum="72" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,12" ValueChanged="Setting_Changed" />
+
+                        <DockPanel><TextBlock Text="Platta bakom texten" /><TextBlock x:Name="PlateValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="PlateSlider" Minimum="0" Maximum="1" TickFrequency="0.02" IsSnapToTickEnabled="True" Margin="0,4,0,4" ValueChanged="Setting_Changed" />
+                        <TextBlock Text="Noll = bara text över videon, vilket kräver konturen nedan."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,0,0,12" />
+
+                        <DockPanel><TextBlock Text="Rundade hörn" /><TextBlock x:Name="RadiusValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="RadiusSlider" Minimum="0" Maximum="48" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,12" ValueChanged="Setting_Changed" />
+
+                        <CheckBox x:Name="OutlineCheck" Content="Mörk kontur runt bokstäverna" ToolTip="Det enda som håller texten läsbar mot både ett snölandskap och en nattbana" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="WaveCheck" Content="Visa staplar som rör sig medan rösten talar" ToolTip="Följer inte ljudet – de finns för att rutan ska läsas som “det här sägs nu” och inte som en notis som fastnat." Checked="Setting_Changed" Unchecked="Setting_Changed" />
+
+                        <TextBlock Text="Hur den kommer in" Foreground="{StaticResource MutedTextBrush}" Margin="0,16,0,6" />
+                        <ComboBox x:Name="AnimationBox" SelectionChanged="Setting_Changed">
+                            <ComboBoxItem Content="Glider in från kanten" Tag="Slide" />
+                            <ComboBoxItem Content="Tonar in" Tag="Fade" />
+                            <ComboBoxItem Content="Studsar upp" Tag="Pop" />
+                            <ComboBoxItem Content="Ingen rörelse" Tag="None" />
+                        </ComboBox>
+
+                        <DockPanel Margin="0,16,0,0"><TextBlock Text="Ligger kvar efter sista ordet" /><TextBlock x:Name="LingerValue" HorizontalAlignment="Right" Foreground="{StaticResource PrimaryBrush}" /></DockPanel>
+                        <Slider x:Name="LingerSlider" Minimum="0" Maximum="5000" TickFrequency="100" IsSnapToTickEnabled="True" Margin="0,4,0,4" ValueChanged="Setting_Changed" />
+                        <TextBlock Text="En kort paus gör att rutan känns färdig i stället för avklippt, och täcker glappet mellan två uppläsningar i kö."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,0,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Vad som står i rutan" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14" />
+
+                        <TextBlock Text="Liten text överst" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6" />
+                        <TextBox x:Name="LabelBox" MaxLength="40" TextChanged="Setting_Changed" />
+                        <TextBlock Text="Så att rutan säger vad den är och inte ser ut som ett chattmeddelande. Lämna tomt för att hoppa över den."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,7,0,14" />
+
+                        <CheckBox x:Name="NameCheck" Content="Visa vem som betalade" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="TextCheck" Content="Visa meddelandet i text" ToolTip="Av: rutan säger bara vem som talar. Den enda inställningen här som sätter en främmandes ord i bild." Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="CostCheck" Content="Visa vad det kostade" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+
+                        <TextBlock Text="Meddelandet klipps efter åtta rader i rutan – rösten läser upp resten ändå."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,12,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Testa" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <TextBlock Text="Visar rutan i OBS i några sekunder utan att spela upp något. Kostar inga tecken hos ElevenLabs och rör inte kön."
+                                   TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" LineHeight="18" Margin="0,0,0,12" />
+                        <Button x:Name="PreviewButton" Content="👁 Visa rutan i OBS" Background="#343B50" HorizontalAlignment="Left" Click="Preview_Click" />
+                        <TextBlock x:Name="PreviewStatus" Text="" TextWrapping="Wrap" Foreground="#8F8B9E" FontSize="12" Margin="0,10,0,0" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <DockPanel Grid.Row="2" Margin="0,18,0,0">
+            <Button DockPanel.Dock="Right" Content="Stäng" Background="#343B50" Click="Close_Click" />
+            <Button x:Name="ResetButton" DockPanel.Dock="Right" Content="Återställ" Background="#343B50" Margin="0,0,10,0" Click="Reset_Click" />
+            <TextBlock Text="Öppna Browser Source-förhandsvisningen i OBS medan du drar." Foreground="#858193" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        </DockPanel>
+    </Grid>
+</Window>

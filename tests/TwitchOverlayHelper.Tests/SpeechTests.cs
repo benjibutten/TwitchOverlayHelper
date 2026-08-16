@@ -31,11 +31,11 @@ internal static class SpeechFixture
         AppSettings settings,
         HttpMessageHandler? handler = null,
         SpeechSecretStore? secrets = null,
-        Func<string, double, CancellationToken, Task>? play = null) =>
+        Func<TtsClip, CancellationToken, Task>? play = null) =>
         new(new HttpClient(handler ?? new StubHandler()),
             settings,
             secrets ?? new SpeechSecretStore(TempPath(".bin")),
-            play ?? ((_, _, _) => Task.CompletedTask),
+            play ?? ((_, _) => Task.CompletedTask),
             TempPath(string.Empty));
 
     /// <summary>Settings and keys that make <see cref="NameSpeechService.IsConfigured"/> true.</summary>

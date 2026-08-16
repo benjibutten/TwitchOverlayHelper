@@ -1,0 +1,223 @@
+/* The card the viewers see while a paid message is being read out loud.
+
+   Same medium as the stream chat and the same rules follow from it: this is drawn over video nobody
+   knows the colour of, so the text carries its own plate and its own rim rather than trusting the
+   scene behind it. What is different is how long it is there. The chat column is permanent furniture
+   read in passing; this appears for the twenty seconds a reading lasts and is the thing on screen
+   while it does – which is why it may be this big, and why it has to leave cleanly rather than being
+   left to be pushed off by something newer. */
+
+:root {
+  --font: Verdana, sans-serif;
+  --size: 26px;
+  --accent: #a970ff;
+  --plate: 0.72;
+  --radius: 16px;
+  --width: 720px;
+  --offset-x: 64px;
+  --offset-y: 64px;
+  --text: #ffffff;
+  --muted: #d8d5e4;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  /* OBS composites the page over the scene; anything opaque here would be a black box on the stream. */
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font);
+  font-size: var(--size);
+  color: var(--text);
+  /* No selection, no caret, no drag: this page is a picture, and OBS should never render either. */
+  user-select: none;
+  cursor: default;
+}
+
+/* The "is it alive" dot, for a streamer looking at this address in a browser. At the 1×1 size a
+   sound-only source is given, nobody ever sees it – but a source made big enough to hold the card is
+   a source the viewers are looking at, and a grey dot in its corner would be on the broadcast. */
+#state {
+  position: fixed; left: 4px; top: 4px; width: 8px; height: 8px; border-radius: 50%;
+  background: #6b7280; transition: background 200ms linear;
+}
+#state[data-live="true"] { background: #22c55e; }
+#state[data-playing="true"] { background: var(--accent); }
+body[data-widget="true"] #state { display: none; }
+
+/* ------------------------------------------------------------------ placement
+
+   The whole picture, with the card pushed into one of nine corners by the flexbox. Placing it this
+   way rather than with nine sets of top/left rules means the card keeps its own size: it grows with
+   the message up to the width the settings allow, and stays put while it does. */
+
+.stage {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  padding: var(--offset-y) var(--offset-x);
+  pointer-events: none;
+}
+
+.stage[data-position^="top"] { align-items: flex-start; }
+.stage[data-position^="middle"] { align-items: center; }
+.stage[data-position^="bottom"] { align-items: flex-end; }
+.stage[data-position$="left"] { justify-content: flex-start; }
+.stage[data-position$="center"] { justify-content: center; }
+.stage[data-position$="right"] { justify-content: flex-end; }
+/* The middle row is centred vertically, so an inset from the top or bottom edge means nothing there. */
+.stage[data-position^="middle"] { padding-top: 0; padding-bottom: 0; }
+/* Likewise across: a centred card is centred, and an inset would only make it not be. */
+.stage[data-position$="center"] { padding-left: 0; padding-right: 0; }
+
+/* ------------------------------------------------------------------ the card */
+
+.card {
+  max-width: var(--width);
+  min-width: min(240px, 100%);
+  padding: 0.6em 0.85em;
+  border-radius: var(--radius);
+  /* No rule along an edge and no frame. The colour belongs to the words that need it – the caption,
+     the name, the bars – and a card that takes its colour from its own contents reads as part of the
+     channel, where a black box with a coloured stripe on top reads as a box something was dropped
+     into. What is left is a plate and a shadow to lift it off the video. */
+  background: rgba(14, 12, 22, var(--plate));
+  box-shadow: 0 14px 34px rgba(0, 0, 0, calc(var(--plate) * 0.5));
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 200ms ease, transform 260ms cubic-bezier(0.2, 0.9, 0.3, 1), visibility 0s linear 200ms;
+}
+
+.card[data-visible="true"] {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 200ms ease, transform 320ms cubic-bezier(0.2, 1.3, 0.4, 1), visibility 0s;
+}
+
+/* With no plate the card is only its letters, so the rim has to do the work the background did –
+   and the shadow has nothing left to sit on. */
+body[data-plate="false"] .card {
+  background: none;
+  box-shadow: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+body[data-outline="true"] .card {
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.95),
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    1px 0 2px rgba(0, 0, 0, 0.55),
+    -1px 0 2px rgba(0, 0, 0, 0.55);
+}
+
+/* Where the card comes from, and where it goes back to. Written as the state it is *not* in rather
+   than as the state it rests in: these selectors are more specific than the one that says the card
+   has arrived, so a resting "transform: none" over there would lose to them and the card would sit
+   permanently displaced – nudged out of place with slide, permanently shrunk with pop, and moving
+   for neither.
+
+   Slide comes in from whichever edge the card is anchored to: a card at the bottom rising into place
+   reads as arriving, while the same card dropping in from above reads as falling. */
+body[data-animation="slide"] .stage[data-position^="bottom"] .card:not([data-visible="true"]) { transform: translateY(22px); }
+body[data-animation="slide"] .stage[data-position^="top"] .card:not([data-visible="true"]) { transform: translateY(-22px); }
+body[data-animation="slide"] .stage[data-position="middle-left"] .card:not([data-visible="true"]) { transform: translateX(-22px); }
+body[data-animation="slide"] .stage[data-position="middle-right"] .card:not([data-visible="true"]) { transform: translateX(22px); }
+body[data-animation="slide"] .stage[data-position="middle-center"] .card:not([data-visible="true"]) { transform: translateY(14px); }
+body[data-animation="pop"] .card:not([data-visible="true"]) { transform: scale(0.85); }
+/* None still fades, and deliberately: a card that blinks in and out on a single frame is the one
+   thing here that looks like a glitch rather than like a choice. */
+body[data-animation="none"] .card { transition-duration: 90ms; }
+
+.label {
+  font-size: 0.44em;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.15em;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45em;
+  min-width: 0;
+}
+
+.name {
+  font-weight: 700;
+  color: var(--accent);
+  /* A display name is short; one that is not gets cut rather than wrapping the card open. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cost {
+  font-size: 0.5em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.message {
+  margin-top: 0.2em;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  /* The character limit allows a good deal more than fits on a corner of a stream. Eight lines is
+     what a viewer glances through; the voice is reading the rest of it out anyway. */
+  display: -webkit-box;
+  -webkit-line-clamp: 8;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Empty parts are taken out rather than left as gaps, so a card with the message switched off is a
+   name and nothing else instead of a name with a hole under it. */
+.label:empty, .cost:empty, .message:empty { display: none; }
+
+/* ------------------------------------------------------------------ the bars
+
+   Not an equaliser: the audio is nowhere near this element, and reading it would mean routing the
+   clip through the Web Audio API for a decoration. What the bars are for is the difference between
+   "this is being said right now" and "a notification got stuck on screen" – and for that, moving at
+   all is what matters, not moving in time with the voice. */
+
+.wave {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 0.11em;
+  /* Tall enough to read as bars rather than as a row of dots at their quietest, and short enough
+     that a name still sets the height of the line it shares. */
+  height: 0.78em;
+  flex: none;
+}
+
+.wave i {
+  display: block;
+  width: 0.17em;
+  height: 100%;
+  border-radius: 0.08em;
+  background: var(--accent);
+  transform-origin: bottom;
+  animation: bar 900ms ease-in-out infinite alternate;
+}
+
+.wave i:nth-child(2) { animation-duration: 620ms; }
+.wave i:nth-child(3) { animation-duration: 1080ms; }
+.wave i:nth-child(4) { animation-duration: 760ms; }
+.wave i:nth-child(5) { animation-duration: 980ms; }
+
+/* Stopped while the card is away: an animation running behind a hidden element is work the encoder
+   pays for on every frame of the stream. */
+.card:not([data-visible="true"]) .wave i { animation-play-state: paused; }
+
+@keyframes bar {
+  from { transform: scaleY(0.35); }
+  to { transform: scaleY(1); }
+}

@@ -146,6 +146,7 @@ public partial class MainWindow : Window
     private DockSettingsWindow? _dockSettingsWindow;
     private StreamSettingsWindow? _streamSettingsWindow;
     private SpeechSettingsWindow? _speechSettingsWindow;
+    private TtsWidgetWindow? _ttsWidgetWindow;
     private BotSettingsWindow? _botSettingsWindow;
     private string? _lastBadgeRoom;
     private string? _lastSeenRewardId;
@@ -1805,13 +1806,13 @@ public partial class MainWindow : Window
     /// convenience for the streamer, and a sound card that is busy is not a reason to pay a viewer
     /// back for a reading the channel heard perfectly well.</para>
     /// </summary>
-    private async Task PlayReadingAsync(string filePath, double volume, CancellationToken cancellationToken)
+    private async Task PlayReadingAsync(TtsClip clip, CancellationToken cancellationToken)
     {
         TtsSettings tts = _settings.Tts;
 
         if (tts.UsesDesktop)
         {
-            Task desktop = _audioPlayer.PlayToEndAsync(filePath, volume, cancellationToken);
+            Task desktop = _audioPlayer.PlayToEndAsync(clip.FilePath, clip.Volume, cancellationToken);
             // Only awaited when it is the whole output; alongside the browser it is left to run and
             // its failures are logged rather than charged to anybody.
             if (!tts.UsesBrowser) { await desktop.ConfigureAwait(false); return; }
@@ -1820,7 +1821,7 @@ public partial class MainWindow : Window
                 TaskContinuationOptions.OnlyOnFaulted);
         }
 
-        await _browserTts.PlayAsync(filePath, volume, cancellationToken).ConfigureAwait(false);
+        await _browserTts.PlayAsync(clip, cancellationToken).ConfigureAwait(false);
     }
 
     private Task AnswerTtsAsync(TtsRequest request, RedemptionStatus status, string reason) =>
@@ -2351,6 +2352,7 @@ public partial class MainWindow : Window
         TtsOutputBothRadio.IsChecked = tts.Output == TtsOutput.Both;
         if (tts.VoiceName.Length > 0) TtsVoiceHint.Text = $"Vald röst: {tts.VoiceName}";
         ShowTtsTrigger();
+        ShowTtsWidget();
     }
 
     private void TtsOutput_Changed(object sender, RoutedEventArgs e)
@@ -2360,6 +2362,77 @@ public partial class MainWindow : Window
             ? TtsOutput.Desktop
             : TtsOutputBothRadio.IsChecked == true ? TtsOutput.Both : TtsOutput.Browser;
         SaveSettings();
+        // Where the sound goes decides whether the card can ever be drawn: no clip reaches the
+        // reading page when the readings are played on this machine's speakers, so a page that was
+        // told to expect one has to hear about the change.
+        ShowTtsWidget();
+        _hub.PublishTtsWidget();
+    }
+
+    /// <summary>
+    /// What the OBS source is for right now – a size, and whether it draws anything. Both lines say
+    /// what to do rather than what is set, because the difference between the two states is a source
+    /// that has to be resized by hand in OBS and nowhere else.
+    /// </summary>
+    private void ShowTtsWidget()
+    {
+        // The same question the page is answered with: a card that is switched on but whose sound
+        // never goes through the browser is a card that cannot be drawn, and telling somebody to
+        // resize the source for it would send them to OBS to fix the wrong thing.
+        bool card = _settings.Tts.ShowsWidget;
+        TtsSourceHint.Text = card
+            ? "Lägg till som Browser Source i OBS och gör den lika stor som scenen – rutan placerar sig själv i bilden och resten av sidan är genomskinlig. Kryssa i “Control audio via OBS” om du vill ha ett eget reglage i mixern."
+            : "Lägg till som Browser Source i OBS, 1×1 px – den syns inte, den låter bara. Kryssa i “Control audio via OBS” om du vill ha den som ett eget reglage i mixern.";
+
+        TtsWidgetStatusText.Text = !_settings.Tts.Widget.Enabled
+            ? "Av – browserkällan ritar ingenting."
+            : card
+                ? "På. Kom ihåg att göra browserkällan lika stor som scenen i OBS."
+                : "På, men ljudet är satt till den här datorns högtalare – då går uppläsningen aldrig via browserkällan och rutan syns aldrig.";
+    }
+
+    private void TtsWidget_Click(object sender, RoutedEventArgs e)
+    {
+        if (_ttsWidgetWindow is { IsLoaded: true })
+        {
+            _ttsWidgetWindow.Activate();
+            return;
+        }
+
+        _ttsWidgetWindow = new TtsWidgetWindow(
+            _settings,
+            () =>
+            {
+                SaveSettings();
+                ShowTtsWidget();
+                _hub.PublishTtsWidget();
+            },
+            PreviewTtsWidget) { Owner = this };
+        _ttsWidgetWindow.Closed += (_, _) => _ttsWidgetWindow = null;
+        _ttsWidgetWindow.Show();
+    }
+
+    /// <summary>
+    /// Draws the card in OBS with an invented reading. Nothing is synthesised, nothing is queued and
+    /// nobody is charged: it exists so the placement can be settled before a viewer's money is spent
+    /// finding out where the card landed.
+    /// </summary>
+    private string PreviewTtsWidget()
+    {
+        if (!_dockServer.IsRunning) return "Chattservern kör inte – starta den under Anslutning först.";
+        if (!_settings.Tts.Widget.Enabled) return "Kryssa i “Visa rutan under uppläsning” först.";
+        if (!_settings.Tts.UsesBrowser) return "Uppläsningen är satt till den här datorns högtalare, så browserkällan får aldrig något att rita.";
+
+        int pages = _hub.PublishTtsPreview(
+            _settings.UserName.Length > 0 ? _settings.UserName : "Kajsa_92",
+            "Så här ser rutan ut medan ett meddelande läses upp. Ändringarna syns direkt i OBS.",
+            _settings.Tts.Trigger == TtsTrigger.PowerUp ? 300 : _settings.Tts.RewardCost,
+            _settings.Tts.Trigger == TtsTrigger.PowerUp ? TtsSource.PowerUp : TtsSource.Reward,
+            5000);
+
+        return pages > 0
+            ? "Visas i OBS i fem sekunder."
+            : "Ingen browserkälla för uppläsning är ansluten – lägg till adressen från Uppläsning-fliken i din scen.";
     }
 
     private void CopyTtsUrl_Click(object sender, RoutedEventArgs e)

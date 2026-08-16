@@ -106,6 +106,13 @@ public sealed class TtsSettings
 
     public TtsOutput Output { get; set; } = TtsOutput.Browser;
 
+    /// <summary>
+    /// The card the viewers see while a message is read. Lives on the same browser source as the
+    /// sound: it is one thing happening – somebody's words are being said out loud – and two sources
+    /// would need two placements in OBS and could still fall out of step with each other.
+    /// </summary>
+    public TtsWidgetSettings Widget { get; set; } = new();
+
     public double Volume { get; set; } = 0.9;
 
     /// <summary>Whether the reading is meant to reach OBS rather than only this machine's speakers.</summary>
@@ -148,8 +155,17 @@ public sealed class TtsSettings
         && RewardId.Length > 0
         && string.Equals(RewardId, rewardId, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Whether the reading page has anything to draw. Both halves have to be true: a card is only
+    /// ever shown while a clip is playing on that page, and nothing plays there unless the sound is
+    /// meant for OBS in the first place.
+    /// </summary>
+    public bool ShowsWidget => Widget.Enabled && UsesBrowser;
+
     public void Normalize()
     {
+        Widget ??= new TtsWidgetSettings();
+        Widget.Normalize();
         PowerUpId = PowerUpId?.Trim() ?? string.Empty;
         PowerUpTitle = PowerUpTitle?.Trim() ?? string.Empty;
         RewardId = RewardId?.Trim() ?? string.Empty;

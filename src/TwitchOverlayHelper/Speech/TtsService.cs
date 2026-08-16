@@ -78,6 +78,26 @@ public sealed record TtsEntry(
     /// <summary>When an unanswered request will be let go, so the bar can count down.</summary>
     long? DeadlineAt);
 
+/// <summary>
+/// One synthesised clip on its way to an output, and who it belongs to.
+///
+/// <para>More than a file and a volume because the reading is now something the viewers can be shown
+/// as well as hear: the card in the overlay says whose words these are, and that has to travel with
+/// the clip rather than be looked up beside it. Looking it up would be a second answer to "what is
+/// playing right now" – and the wrong one exactly when the queue moves on, which is the moment the
+/// card changes.</para>
+///
+/// <para><paramref name="Cost"/> of zero means nothing was paid for it: the test button, and
+/// anything else the streamer starts themselves.</para>
+/// </summary>
+public sealed record TtsClip(
+    string FilePath,
+    double Volume,
+    string Viewer,
+    string Text,
+    int Cost,
+    TtsSource Source);
+
 /// <summary>What became of a request that was handed in.</summary>
 public sealed record TtsOutcome(bool Accepted, TtsState State, string Reason)
 {
@@ -123,7 +143,7 @@ public sealed class TtsService : IDisposable
     private readonly AppSettings _settings;
     private readonly SpeechSecretStore _secrets;
     private readonly ElevenLabsClient _elevenLabs;
-    private readonly Func<string, double, CancellationToken, Task> _play;
+    private readonly Func<TtsClip, CancellationToken, Task> _play;
     private readonly string _audioDirectory;
     private readonly Timer _timer;
 
@@ -147,7 +167,7 @@ public sealed class TtsService : IDisposable
         HttpClient httpClient,
         AppSettings settings,
         SpeechSecretStore secrets,
-        Func<string, double, CancellationToken, Task> play,
+        Func<TtsClip, CancellationToken, Task> play,
         string? audioDirectory = null)
     {
         _settings = settings;
@@ -393,7 +413,17 @@ public sealed class TtsService : IDisposable
             TtsSettings tts = _settings.Tts;
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _testPlayback!.Token);
             string file = await EnsureAudioAsync(cleaned, tts, linked.Token).ConfigureAwait(false);
-            await _play(file, tts.Volume, linked.Token).ConfigureAwait(false);
+            // The card in the overlay is shown for a test too, which is the only way to see where it
+            // has landed without spending a viewer's points on finding out. Named after the button
+            // rather than after nobody: an empty name would draw a card with a hole in it.
+            var clip = new TtsClip(
+                file,
+                tts.Volume,
+                "Test",
+                cleaned,
+                0,
+                tts.Trigger == TtsTrigger.PowerUp ? TtsSource.PowerUp : TtsSource.Reward);
+            await _play(clip, linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -583,7 +613,18 @@ public sealed class TtsService : IDisposable
             }
 
             reachedSpeakers = true;
-            await _play(file, tts.Volume, cancellationToken).ConfigureAwait(false);
+            // The card is drawn from the request rather than from the line that was synthesised: the
+            // spoken version may carry "Kajsa säger:" in front of the words, and reading that back to
+            // the viewers as though it were part of the message would be the app's phrasing shown as
+            // somebody else's.
+            var clip = new TtsClip(
+                file,
+                tts.Volume,
+                entry.Request.DisplayName,
+                entry.Request.Text,
+                entry.Request.Cost,
+                entry.Request.Source);
+            await _play(clip, cancellationToken).ConfigureAwait(false);
             return (TtsState.Spoken, "uppläst");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

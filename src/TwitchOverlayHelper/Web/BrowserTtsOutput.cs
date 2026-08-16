@@ -52,14 +52,14 @@ public sealed class BrowserTtsOutput(ChatHub hub, TtsAudioStore audio, Func<stri
     }
 
     /// <summary>
-    /// Sends one file to the reading pages and returns when they are done with it. Throws
+    /// Sends one clip to the reading pages and returns when they are done with it. Throws
     /// <see cref="SpeechException"/> when it could not be played, which is what turns an unheard
     /// reading into a refund rather than into a purchase quietly spent on silence.
     /// </summary>
-    public async Task PlayAsync(string filePath, double volume, CancellationToken cancellationToken)
+    public async Task PlayAsync(TtsClip clip, CancellationToken cancellationToken)
     {
         string playbackId = Guid.NewGuid().ToString("N");
-        string token = audio.Publish(filePath);
+        string token = audio.Publish(clip.FilePath);
         // The key rides along because every /api path is gated on it, this one included: a page on
         // this machine that is not ours should not be able to pull the readings down.
         string url = $"/api/tts/audio/{token}?key={Uri.EscapeDataString(keyProvider())}";
@@ -68,7 +68,7 @@ public sealed class BrowserTtsOutput(ChatHub hub, TtsAudioStore audio, Func<stri
         _waiting[playbackId] = waiter;
         try
         {
-            if (hub.PublishTtsPlay(playbackId, url, volume) == 0)
+            if (hub.PublishTtsPlay(playbackId, url, clip) == 0)
                 throw new SpeechException(
                     "Ingen ljudkälla för uppläsning är ansluten – lägg till uppläsningens adress som en Browser Source i OBS.");
 

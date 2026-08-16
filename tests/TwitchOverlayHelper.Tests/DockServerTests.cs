@@ -925,7 +925,7 @@ public sealed class DockServerTests
             await page.ConnectAsync(new Uri(SocketUrl(settings, "tts")), timeout.Token);
             await page.ReceiveAsync(new byte[64 * 1024], timeout.Token);
 
-            Task playing = output.PlayAsync("uppläsning.mp3", 1, timeout.Token);
+            Task playing = output.PlayAsync(Clip("uppläsning.mp3"), timeout.Token);
             // The clip is out and nobody has answered for it: this is the wait the timeout guards.
             Assert.False(playing.IsCompleted);
 
@@ -938,6 +938,67 @@ public sealed class DockServerTests
         }
         client.Dispose();
     }
+
+    /// <summary>
+    /// The reading page draws a card as well as playing sound, so it is now handed something when it
+    /// connects. Still only its own appearance: the chat history, who is logged in and the nicknames
+    /// are the streamer's business, and this page sits on the broadcast machine.
+    /// </summary>
+    [Fact]
+    public async Task TheReadingPageIsToldWhatTheCardShouldLookLike()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: "42");
+        await using (server)
+        {
+            hub.PublishMessage(new ChatMessage("1", "Någon", "hej", "#ffffff", [], false, false, DateTimeOffset.Now));
+
+            using JsonDocument hello = JsonDocument.Parse(await HelloAsync(settings, "tts"));
+
+            Assert.Equal("hello", hello.RootElement.GetProperty("type").GetString());
+            Assert.True(hello.RootElement.GetProperty("widget").TryGetProperty("position", out _));
+            Assert.False(hello.RootElement.TryGetProperty("history", out _));
+            Assert.False(hello.RootElement.TryGetProperty("nicknames", out _));
+            Assert.False(hello.RootElement.TryGetProperty("auth", out _));
+        }
+        client.Dispose();
+    }
+
+    /// <summary>
+    /// With no card, the page has nothing that could show a name or a message – so it is not sent
+    /// either. A stranger's words reaching a browser source on the broadcast machine for no reason at
+    /// all is the sort of thing that is only ever noticed after it has gone out.
+    /// </summary>
+    [Fact]
+    public async Task AClipCarriesTheViewersWordsOnlyWhenThereIsACardToDrawThemOn()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: null);
+        await using (server)
+        {
+            string[] silent = await FramesAfterHelloAsync(settings, 1,
+                () => hub.PublishTtsPlay("p1", "/api/tts/audio/t1", Clip("uppläsning.mp3")), "tts");
+            using JsonDocument withoutCard = JsonDocument.Parse(silent[0]);
+            Assert.Equal("ttsPlay", withoutCard.RootElement.GetProperty("type").GetString());
+            JsonElement quiet = withoutCard.RootElement.GetProperty("payload");
+            // The clip itself still travels: the sound is what the page was added to the scene for.
+            Assert.Equal("/api/tts/audio/t1", quiet.GetProperty("url").GetString());
+            Assert.False(quiet.TryGetProperty("viewer", out _));
+            Assert.False(quiet.TryGetProperty("text", out _));
+            Assert.False(quiet.TryGetProperty("cost", out _));
+
+            settings.Tts.Widget.Enabled = true;
+            string[] drawn = await FramesAfterHelloAsync(settings, 1,
+                () => hub.PublishTtsPlay("p2", "/api/tts/audio/t2", Clip("uppläsning.mp3")), "tts");
+            using JsonDocument withCard = JsonDocument.Parse(drawn[0]);
+            JsonElement card = withCard.RootElement.GetProperty("payload");
+            Assert.Equal("Kajsa", card.GetProperty("viewer").GetString());
+            Assert.Equal("hej på er allihopa", card.GetProperty("text").GetString());
+            Assert.Equal(500, card.GetProperty("cost").GetInt32());
+        }
+        client.Dispose();
+    }
+
+    private static TtsClip Clip(string file) =>
+        new(file, 1, "Kajsa", "hej på er allihopa", 500, TtsSource.Reward);
 
     private static Task SendAsync(ClientWebSocket socket, string payload, CancellationToken token) =>
         socket.SendAsync(Encoding.UTF8.GetBytes(payload), WebSocketMessageType.Text, true, token);

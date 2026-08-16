@@ -180,11 +180,23 @@ Stänger du appen eller byter kanal medan något väntar besvaras det medvetet *
 
 ### Var ljudet hamnar
 
-Appens eget ljud går ut på skrivbordet och hörs bara av tittarna om OBS fångar Desktop Audio, vilket de flesta med flit låter bli. Därför är standardvalet en **egen Browser Source** – en tom sida som bara låter. OBS tar in ljudet från en browserkälla av sig själv, med egen volym, egen ljudkanal och egen monitorering, och det blir en källa skild från både pets och overlay-chatten. Adressen kopieras från appen; lägg till den som Browser Source på 1×1 px.
+Appens eget ljud går ut på skrivbordet och hörs bara av tittarna om OBS fångar Desktop Audio, vilket de flesta med flit låter bli. Därför är standardvalet en **egen Browser Source** – en sida som normalt bara låter. OBS tar in ljudet från en browserkälla av sig själv, med egen volym, egen ljudkanal och egen monitorering, och det blir en källa skild från både pets och overlay-chatten. Adressen kopieras från appen; lägg till den som Browser Source på 1×1 px så länge den bara ska låta.
 
 Sidan kvitterar varje klipp när det är slut. Det kvittot är vad som håller nästa uppläsning tillbaka tills den här är färdig, och på channel points-spåret det enda beviset för att uppläsningen faktiskt levererades: en inlösen som aldrig hördes – ingen browserkälla i scenen, inget svar från ElevenLabs – betalas tillbaka i stället för att bokföras som klar.
 
 Rösten är egen och behöver inte vara samma som läser upp namn; ElevenLabs-nyckeln delas med [Uppläsning av namn](#uppläsning-av-namn). En teckengräns styr vad en enskild inlösen kan kosta dig – längre meddelanden klipps vid närmaste ordslut – och upprepade tecken kortas, så `hejjjjjjjjjj` blir `hejjj`.
+
+### Rutan i bild
+
+Samma browserkälla kan också rita en ruta medan uppläsningen pågår: vem som betalade, vad de skrev, vad det kostade och en liten rad staplar som rör sig så länge rösten talar. Rutan hör ihop med ljudet – den kommer upp när klippet börjar och går ner när det tystnar – och därför sitter den på samma källa: en egen source hade behövt placeras för sig och kunnat hamna ur takt med det som faktiskt hörs.
+
+Den är **avstängd från början**, av två skäl: en uppdatering ska inte lägga en ruta på någons stream, och att slå på den är också stunden då källan måste göras om från 1×1 px till lika stor som scenen. Resten av sidan är genomskinlig, så rutan placerar sig själv i något av nio lägen i bilden utan att du behöver flytta källan.
+
+Under `Ställ in rutan` finns läge och avstånd från kanterna, största bredd, typsnitt, storlek, färg, platta, rundade hörn, hur den kommer in (glider, tonar, studsar eller ingenting), hur länge den ligger kvar efter sista ordet, och vad som står i den. `Visa rutan i OBS` ritar upp en påhittad uppläsning i fem sekunder så placeringen går att bestämma utan att en tittares pengar går åt till att ta reda på var rutan hamnade – den kostar inga tecken hos ElevenLabs och rör inte kön.
+
+Med rutan avstängd får den sidan aldrig veta vad någon skrev: namnet och meddelandet följer med klippet bara när det finns en ruta att rita dem i. Sidan ligger på sändningsdatorn som en browserkälla, och det som aldrig skickas kan inte hamna i bild av misstag. Av samma skäl går rutan aldrig upp medan något väntar på ditt godkännande – först när uppläsningen faktiskt spelas.
+
+Är ljudet satt till *den här datorns högtalare* får browserkällan aldrig något klipp, och då ritas ingen ruta heller; appen säger det i klartext i stället för att låta dig leta.
 
 ## Chatbot
 
