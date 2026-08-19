@@ -58,6 +58,16 @@ public sealed class BackedUpJsonFile(
     /// <summary>Where files that parse as nothing are kept, clear of the copies.</summary>
     public string QuarantineFolder => Path.Combine(BackupFolder, "unreadable");
 
+    /// <summary>
+    /// Whether the last read found anything on disk at all, readable or not.
+    ///
+    /// <para>Its own answer rather than one inferred from the read having failed, because those are
+    /// two different questions and the difference is the whole story: no file means a first run and
+    /// nothing has been lost, while a file that would not parse means the user had something and
+    /// this app could not read it.</para>
+    /// </summary>
+    public bool FoundOnDisk { get; private set; }
+
     /// <summary>The copies on disk, newest first. The names are timestamps, so they sort by age.</summary>
     public IReadOnlyList<string> Backups()
     {
@@ -82,6 +92,8 @@ public sealed class BackedUpJsonFile(
         {
             RecoveredFromBackup = false;
             QuarantinedPath = null;
+            // Settled before the read, because the read is about to move the file it is asking about.
+            FoundOnDisk = File.Exists(FilePath) || Backups().Count > 0;
             if (TryReadFile(FilePath, options, out value)) return true;
 
             foreach (string backup in Backups())
@@ -211,7 +223,11 @@ public sealed class BackedUpJsonFile(
     {
         try
         {
-            if (!File.Exists(FilePath) || new FileInfo(FilePath).Length == 0) return;
+            // An empty file is moved aside like any other. It used to be left where it was, on the
+            // grounds that nothing is in it worth keeping – but a settings file truncated to zero
+            // bytes is what a crash leaves behind, and leaving it there meant the load reported no
+            // trouble at all and the app reset itself in silence.
+            if (!File.Exists(FilePath)) return;
             Directory.CreateDirectory(QuarantineFolder);
             string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss-fff");
             string path = Path.Combine(QuarantineFolder, $"{Stem}-{stamp}{Extension}");

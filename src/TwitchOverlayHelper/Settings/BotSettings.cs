@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace TwitchOverlayHelper.Settings;
 
 /// <summary>Who says the bot's lines in chat, if anyone.</summary>
-[JsonConverter(typeof(JsonStringEnumConverter<BotMode>))]
+[JsonConverter(typeof(BotModeJsonConverter))]
 public enum BotMode
 {
     /// <summary>Nothing is ever written to chat. The app still says everything it says today.</summary>
@@ -98,6 +98,32 @@ public enum BotFlow
 
     /// <summary>A hype train ended.</summary>
     HypeTrainEnd
+}
+
+/// <summary>
+/// Reads the bot's mode, and answers <see cref="BotMode.Off"/> for a name it does not know instead
+/// of throwing.
+///
+/// <para>The stock string converter throws, and the exception does not stop at this property: it
+/// travels out through the whole document, so a settings file naming a mode this build has never
+/// heard of is a settings file this build cannot read at all – the overlay, the channel, the pets,
+/// the bot's own wording, everything. That is what a downgrade looks like from here, and one word
+/// is not worth the rest of the file.</para>
+///
+/// <para>Off rather than a guess at what was meant: this decides who writes in the streamer's chat,
+/// and a build that cannot tell should not be picking an account to speak as.</para>
+/// </summary>
+public sealed class BotModeJsonConverter : JsonConverter<BotMode>
+{
+    public override BotMode Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        reader.TokenType == JsonTokenType.String
+        && Enum.TryParse(reader.GetString(), ignoreCase: true, out BotMode mode)
+        && Enum.IsDefined(mode)
+            ? mode
+            : BotMode.Off;
+
+    public override void Write(Utf8JsonWriter writer, BotMode value, JsonSerializerOptions options) =>
+        writer.WriteStringValue(Enum.GetName(value) ?? nameof(BotMode.Off));
 }
 
 /// <summary>

@@ -99,7 +99,14 @@ public partial class MainWindow : Window
     private readonly BrowserTtsOutput _browserTts;
     private readonly ChatHub _hub;
     private readonly PetRegistry _petRegistry = new();
-    private readonly PetCatalog _petCatalog = new();
+    /// <summary>
+    /// Built in the constructor rather than here on purpose. Reading the catalogue writes the
+    /// shipped pets into the profile, and every field initialiser runs before the constructor body
+    /// – so leaving it here meant a new version seeded its own pets into the folder before the
+    /// snapshot was taken, and the copy of "the profile as the previous version left it" quietly
+    /// contained files the previous version had never seen.
+    /// </summary>
+    private readonly PetCatalog _petCatalog;
     private readonly PetService _petService;
 
     /// <summary>
@@ -173,6 +180,9 @@ public partial class MainWindow : Window
         // Before anything is written back: a build that reads the old file, understands part of it
         // and saves is the one way to lose settings that the per-file copies cannot answer for.
         GuardProfile();
+        // Only now: reading the catalogue seeds this version's pets into the profile folder, and
+        // the snapshot above has to be of what was there before that happened.
+        _petCatalog = new PetCatalog();
         _nicknames = _nicknameStore.Load();
         _nicknames.Changed += OnNicknameChanged;
         SyncStartWithWindows();
@@ -2879,28 +2889,41 @@ public partial class MainWindow : Window
     {
         SettingsLoadReport report = _settingsStore.LastLoad ?? new SettingsLoadReport(false, null, new SettingsMigrationResult(0, 0, false), true);
 
-        ProfileVersionResult version = ProfileVersionGuard.Check(
-            _settings.LastRunVersion,
-            AppVersion.DisplayText,
-            profileExisted: !report.StartedFresh);
+        ProfileVersionResult version = ProfileVersionGuard.Check(_settings.LastRunVersion, AppVersion.DisplayText);
 
         if (version.Changed)
         {
             string from = version.PreviousVersion.Length == 0 ? "en tidigare version" : version.PreviousVersion;
-            if (version.SnapshotPath is { Length: > 0 } snapshot)
-                AppLog.Info($"Profilen kommer från {from}; kopia sparad: {snapshot}");
-            else
-                AppLog.Warn($"Profilen kommer från {from}, men ingen kopia kunde sparas i {ProfilePaths.Snapshots}.");
-
-            _settings.LastRunVersion = AppVersion.DisplayText;
-            // Written now rather than left to the next change: the stamp is what stops the next
-            // start from taking the same snapshot again, and a session can end without a save.
-            // Saved straight through the store rather than through SaveSettingsNow, which reports
-            // failures on a status line that does not exist this early in the start-up.
-            try { _settingsStore.Save(_settings); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            ProfileSnapshot snapshot = version.Snapshot;
+            switch (snapshot.Outcome)
             {
-                AppLog.Error("Versionsstämpeln kunde inte sparas.", ex);
+                case ProfileSnapshotOutcome.Written:
+                    AppLog.Info($"Profilen kommer från {from}; kopia av {snapshot.Copied} filer sparad: {snapshot.Path}");
+                    break;
+                case ProfileSnapshotOutcome.Partial:
+                    AppLog.Warn($"Profilen kommer från {from}, men {snapshot.Skipped} av {snapshot.Copied + snapshot.Skipped} "
+                        + $"filer gick inte att läsa. Ofullständig kopia: {snapshot.Path}. Nästa start försöker igen.");
+                    break;
+                case ProfileSnapshotOutcome.Failed:
+                    AppLog.Warn($"Profilen kommer från {from}, men ingen kopia kunde sparas i {ProfilePaths.Snapshots}. "
+                        + "Nästa start försöker igen.");
+                    break;
+            }
+
+            // Only when there is nothing left to try. The stamp is what stops the next start from
+            // taking this snapshot, so writing it after a copy that failed or came out short would
+            // quietly spend the one chance this upgrade had.
+            if (version.MayStamp)
+            {
+                _settings.LastRunVersion = AppVersion.DisplayText;
+                // Written now rather than left to the next change: a session can end without a save.
+                // Saved straight through the store rather than through SaveSettingsNow, which
+                // reports failures on a status line that does not exist this early in the start-up.
+                try { _settingsStore.Save(_settings); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    AppLog.Error("Versionsstämpeln kunde inte sparas.", ex);
+                }
             }
         }
 
@@ -2918,9 +2941,14 @@ public partial class MainWindow : Window
 
         if (report.QuarantinedPath is { Length: > 0 } broken)
         {
+            // Named only when one was actually taken this start. Pointing at the snapshot folder
+            // regardless would be the app's word that the profile is safe on the one occasion it
+            // has just told the user it is not.
+            string alsoCopied = version.Snapshot.Path is { Length: > 0 } zip
+                ? $"\n\nHela profilen kopierades till:\n{zip}"
+                : $"\n\nÄldre kopior av filen kan finnas i:\n{_settingsStore.BackupFolder}";
             _profileNotice = "Inställningsfilen gick inte att läsa och ingen säkerhetskopia kunde svara heller, "
-                + $"så appen startade med standardvärden.\n\nDen trasiga filen sparades som:\n{broken}\n\n"
-                + $"Hela profilen finns också kopierad i:\n{ProfilePaths.Snapshots}";
+                + $"så appen startade med standardvärden.\n\nDen trasiga filen sparades som:\n{broken}{alsoCopied}";
             _profileNoticeIsLoss = true;
             AppLog.Error("Inställningarna kunde inte läsas; filen flyttades undan till " + broken, new IOException(broken));
         }

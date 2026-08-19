@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using TwitchOverlayHelper.Models;
 
 namespace TwitchOverlayHelper.Settings;
@@ -72,4 +74,45 @@ public sealed record ChatEventVisibility
         ChatEventType.HypeTrainBegin or ChatEventType.HypeTrainEnd => "hypeTrain",
         _ => "other"
     };
+
+    /// <inheritdoc cref="AppSettings.Unknown"/>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
+
+    /// <summary>
+    /// The switches, and only the switches.
+    ///
+    /// <para>Written by hand because this is a record and the compiler would otherwise fold
+    /// <see cref="Unknown"/> into the comparison. The overlay keeps a copy of these settings and
+    /// rebuilds every card on screen when the copy stops matching the live one – a dictionary
+    /// compared by reference would make that verdict depend on which object the settings happened
+    /// to be read into, and a group somebody has never heard of has no business deciding whether
+    /// the chat gets redrawn.</para>
+    /// </summary>
+    public bool Equals(ChatEventVisibility? other) =>
+        other is not null
+        && Subs == other.Subs
+        && Raids == other.Raids
+        && Announcements == other.Announcements
+        && Bits == other.Bits
+        && Milestones == other.Milestones
+        && Rewards == other.Rewards
+        && Shoutouts == other.Shoutouts
+        && HypeTrain == other.HypeTrain
+        && Other == other.Other;
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(Subs);
+        hash.Add(Raids);
+        hash.Add(Announcements);
+        hash.Add(Bits);
+        hash.Add(Milestones);
+        hash.Add(Rewards);
+        hash.Add(Shoutouts);
+        hash.Add(HypeTrain);
+        hash.Add(Other);
+        return hash.ToHashCode();
+    }
 }

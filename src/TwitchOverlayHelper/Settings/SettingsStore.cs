@@ -58,7 +58,7 @@ public sealed class SettingsStore
 
     public AppSettings Load()
     {
-        bool found = _file.TryRead(JsonOptions, out AppSettings? settings) && settings is not null;
+        _file.TryRead(JsonOptions, out AppSettings? settings);
         settings ??= new AppSettings();
 
         // Migrate before normalising: normalisation clamps and fills in defaults, which would tidy
@@ -70,7 +70,10 @@ public sealed class SettingsStore
             _file.RecoveredFromBackup,
             _file.QuarantinedPath,
             migration,
-            StartedFresh: !found);
+            // Whether there was a file, not whether it could be read. A settings file too broken to
+            // parse is the opposite of a first run, and calling it one is how the start that most
+            // needs a snapshot of the profile ends up being the one that skips it.
+            StartedFresh: !_file.FoundOnDisk);
         return settings;
     }
 
