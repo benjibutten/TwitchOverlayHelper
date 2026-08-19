@@ -266,7 +266,7 @@ Kallar din kanal dem något annat än "pets" skriver du det under *Ord boten anv
 - **Uppläsning av tittarnas meddelanden**, köpta med bits (custom Power-up) eller channel points, med godkännande i docken och ljudet via en egen browserkälla i OBS. Se [Uppläsning av tittarnas meddelanden](#uppläsning-av-tittarnas-meddelanden).
 - **Chatbot** på ett eget Twitch-konto som säger till tittaren varför poängen kom tillbaka, att uppläsningen fortfarande väntar på svar och att overlayen ligger nere – plus egna kommandon du skriver själv. Varje meddelande går att slå av och skriva om, med kanalens egna ord för både dig och dina pets. Se [Chatbot](#chatbot).
 - Egna smeknamn på chattare, synliga i både dock och overlay, sparade med säkerhetskopia vid varje ändring.
-- Inställningar sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\settings.json`. OAuth-token sparas aldrig.
+- Inställningar sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\settings.json`, med daterade kopior och en zip av hela profilen vid varje ny version. Se [Dina data](#dina-data). OAuth-token sparas aldrig.
 - Körs som en enda instans; en ny vanlig start öppnar den redan körande appens inställningsfönster.
 - **Uppdaterar sig själv** från GitHub-släppen. Se [Uppdateringar](#uppdateringar).
 - Valbar **Starta med Windows**-inställning som startar appen minimerad i meddelandefältet utan extra bakgrundstjänst.
@@ -278,6 +278,20 @@ Appen håller sig själv uppdaterad. Åtta sekunder efter start – och som mest
 Säger du ja hämtas zip-filen, kontrolleras mot släppets SHA-256-summa och packas upp av en kopia av appen som kör från `%TEMP%`. Den kopian väntar på att appen stängs ordentligt – inställningar och chatthistorik hinner sparas – byter filerna och startar den nya versionen. Varje fil som skrivs över säkerhetskopieras först, så ett avbrott mitt i installationen lämnar den gamla versionen hel i stället för en halv av varje. Ligger appen i en mapp som kräver administratör frågar Windows om godkännande; ligger den i din egen profil frågar den ingenting.
 
 Vill du kolla själv finns **Sök efter uppdateringar** längst ned i inställningsfönstret och i meddelandefältets meny. En lokal `dotnet run`-byggnad har ingen släppt version och uppdaterar sig aldrig – annars skulle den installera ett släpp ovanpå din arbetskopia.
+
+## Dina data
+
+Allt du har ställt in ligger i `%LOCALAPPDATA%\TwitchOverlayHelper\` – inställningar, smeknamn, pets, inloggningar och cache. Knappen **Säkerhetskopior** längst ned i inställningsfönstret öppnar mappen.
+
+Inget av det är värt något om det kan försvinna, så det finns tre skyddsnät, ett för varje sätt det faktiskt går sönder på:
+
+**Halvskriven fil.** Varje sparning skrivs till en temporärfil och byts in med ett namnbyte. En läsare ser antingen hela den gamla filen eller hela den nya – aldrig hälften av en sparning som avbröts när strömmen gick.
+
+**Trasig eller feltömd fil.** Vid varje sparning läggs en daterad kopia i `backups\`; de tjugo senaste sparas. Går huvudfilen inte att läsa svarar appen från den nyaste kopian som fortfarande går att tolka och skriver tillbaka den på plats. Går inte den heller att läsa flyttas den trasiga filen undan till `backups\unreadable\` i stället för att skrivas över – appen startar med standardvärden och säger till var filen tog vägen. Inställningarna får en kopia som mest var femte minut, så att en kväll med reglagen inte fyller hela historiken med samma kväll.
+
+**Ny version.** Första gången appen startar under en version den inte har kört under förut kopieras hela profilen till en zip i `snapshots\`, *innan* något skrivs tillbaka – det är precis då ett program kan läsa en gammal fil, förstå bara hälften av den, och spara tillbaka det den förstod. De åtta senaste behålls. Cachar och loggar hoppas över; resten ligger som vanliga filer i zippen och går att lägga tillbaka med Utforskaren när appen är stängd.
+
+Inställningsfilen har dessutom ett `SchemaVersion`-fält. Byter en framtida version namn på en inställning kan den läsa den gamla formen och flytta över värdet i stället för att tyst börja om från standard. Åt andra hållet: startar du en äldre version ovanpå en nyare fil lämnas allt den inte känner igen orört i stället för att skrivas bort.
 
 ## Kör
 

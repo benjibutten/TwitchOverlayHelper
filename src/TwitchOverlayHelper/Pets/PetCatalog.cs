@@ -1,6 +1,7 @@
 using System.IO;
-using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json;
+using TwitchOverlayHelper.Storage;
 
 namespace TwitchOverlayHelper.Pets;
 
@@ -52,9 +53,7 @@ public sealed class PetCatalog
 
     public PetCatalog(string? petsFolder = null)
     {
-        PetsFolder = petsFolder ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "TwitchOverlayHelper", "pets");
+        PetsFolder = petsFolder ?? ProfilePaths.Folder("pets");
         (_pets, _byAlias, _warnings) = Load();
     }
 

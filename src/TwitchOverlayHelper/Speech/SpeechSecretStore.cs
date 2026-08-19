@@ -1,7 +1,8 @@
 using System.IO;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
+using System.Text;
+using TwitchOverlayHelper.Storage;
 
 namespace TwitchOverlayHelper.Speech;
 
@@ -26,9 +27,7 @@ public sealed class SpeechSecretStore
 
     public SpeechSecretStore(string? path = null)
     {
-        _path = path ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "TwitchOverlayHelper", "speech.bin");
+        _path = path ?? ProfilePaths.File("speech.bin");
     }
 
     /// <summary>Cached so the speaker button does not pay for a DPAPI round trip on every click.</summary>

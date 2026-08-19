@@ -1,7 +1,8 @@
 using System.IO;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
+using System.Text;
+using TwitchOverlayHelper.Storage;
 
 namespace TwitchOverlayHelper.Twitch;
 
@@ -19,9 +20,7 @@ public sealed class TokenStore
 
     public TokenStore(string? path = null)
     {
-        _path = path ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "TwitchOverlayHelper", "credentials.bin");
+        _path = path ?? ProfilePaths.File("credentials.bin");
     }
 
     public StoredCredentials? Load()

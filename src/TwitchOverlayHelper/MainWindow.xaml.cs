@@ -18,6 +18,7 @@ using TwitchOverlayHelper.Pets;
 using TwitchOverlayHelper.Services;
 using TwitchOverlayHelper.Settings;
 using TwitchOverlayHelper.Speech;
+using TwitchOverlayHelper.Storage;
 using TwitchOverlayHelper.Twitch;
 using TwitchOverlayHelper.Updates;
 using TwitchOverlayHelper.Web;
@@ -30,6 +31,13 @@ public partial class MainWindow : Window
     private const int EditHotkeyId = 9002;
 
     private readonly SettingsStore _settingsStore = new();
+    /// <summary>
+    /// What loading the profile ran into, kept until the window is up: it is worked out in the
+    /// constructor, before there is anything on screen to say it with.
+    /// </summary>
+    private string? _profileNotice;
+    /// <summary>True when the notice is serious enough to stop the user rather than pass them by.</summary>
+    private bool _profileNoticeIsLoss;
     /// <summary>
     /// Last time's chat, so restarting the app mid-stream does not wipe the column. Only ever holds
     /// what this app saw – Twitch offers no way to ask for chat that happened while we were away.
@@ -162,6 +170,9 @@ public partial class MainWindow : Window
         DarkTitleBar.Enable(this);
         VersionText.Text = AppVersion.DisplayText;
         _settings = _settingsStore.Load();
+        // Before anything is written back: a build that reads the old file, understands part of it
+        // and saves is the one way to lose settings that the per-file copies cannot answer for.
+        GuardProfile();
         _nicknames = _nicknameStore.Load();
         _nicknames.Changed += OnNicknameChanged;
         SyncStartWithWindows();
@@ -319,6 +330,9 @@ public partial class MainWindow : Window
         ApplySpeechConfiguration();
         RestoreChatHistory();
         _ = StartDockServerAsync();
+        // Held until the window is up: a warning about the settings is worth a dialog, and a dialog
+        // in the constructor has nothing to sit on top of.
+        Loaded += (_, _) => ReportProfileState();
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
     }
@@ -815,6 +829,24 @@ public partial class MainWindow : Window
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
         {
             PetListText.Text = $"Kunde inte öppna mappen: {_petCatalog.PetsFolder}";
+        }
+    }
+
+    /// <summary>
+    /// Opens the profile folder in Utforskaren. The copies are only worth keeping if getting one
+    /// back is something the streamer can do on the evening it is needed – and every one of them is
+    /// a plain file that can be copied over the broken one with the app closed.
+    /// </summary>
+    private void OpenProfileFolder_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(ProfilePaths.Root);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ProfilePaths.Root) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            SetStatus($"Kunde inte öppna mappen: {ProfilePaths.Root}", true);
         }
     }
 
@@ -2833,6 +2865,82 @@ public partial class MainWindow : Window
         _hub.PublishNickname(entry);
         // The name is baked into the cards the overlay has already drawn, so they are rebuilt.
         RunOnUi(_overlay.RefreshMessages);
+    }
+
+    /// <summary>
+    /// Everything that has to happen between reading the settings and writing anything back: a copy
+    /// of the whole profile when the build has changed, and a note of whatever the read ran into.
+    ///
+    /// <para>The order matters and is the reason this is not left until later in the start-up. The
+    /// snapshot has to be of the profile as the previous build left it, and the first save is only
+    /// a keystroke away once the window is up.</para>
+    /// </summary>
+    private void GuardProfile()
+    {
+        SettingsLoadReport report = _settingsStore.LastLoad ?? new SettingsLoadReport(false, null, new SettingsMigrationResult(0, 0, false), true);
+
+        ProfileVersionResult version = ProfileVersionGuard.Check(
+            _settings.LastRunVersion,
+            AppVersion.DisplayText,
+            profileExisted: !report.StartedFresh);
+
+        if (version.Changed)
+        {
+            string from = version.PreviousVersion.Length == 0 ? "en tidigare version" : version.PreviousVersion;
+            if (version.SnapshotPath is { Length: > 0 } snapshot)
+                AppLog.Info($"Profilen kommer från {from}; kopia sparad: {snapshot}");
+            else
+                AppLog.Warn($"Profilen kommer från {from}, men ingen kopia kunde sparas i {ProfilePaths.Snapshots}.");
+
+            _settings.LastRunVersion = AppVersion.DisplayText;
+            // Written now rather than left to the next change: the stamp is what stops the next
+            // start from taking the same snapshot again, and a session can end without a save.
+            // Saved straight through the store rather than through SaveSettingsNow, which reports
+            // failures on a status line that does not exist this early in the start-up.
+            try { _settingsStore.Save(_settings); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                AppLog.Error("Versionsstämpeln kunde inte sparas.", ex);
+            }
+        }
+
+        if (report.Migration.FromFuture)
+        {
+            // Nothing is lost by carrying on – the settings this build has no property for ride
+            // along in AppSettings.Unknown – but it is worth saying out loud.
+            _profileNotice = $"Inställningarna är skrivna av en nyare version (format {report.Migration.From}, "
+                + $"den här läser {SettingsMigrations.CurrentVersion}). Det som är nyare än den här versionen lämnas orört.";
+        }
+        else if (report.Migration.Changed)
+        {
+            AppLog.Info($"Inställningsformat {report.Migration.From} → {report.Migration.To}.");
+        }
+
+        if (report.QuarantinedPath is { Length: > 0 } broken)
+        {
+            _profileNotice = "Inställningsfilen gick inte att läsa och ingen säkerhetskopia kunde svara heller, "
+                + $"så appen startade med standardvärden.\n\nDen trasiga filen sparades som:\n{broken}\n\n"
+                + $"Hela profilen finns också kopierad i:\n{ProfilePaths.Snapshots}";
+            _profileNoticeIsLoss = true;
+            AppLog.Error("Inställningarna kunde inte läsas; filen flyttades undan till " + broken, new IOException(broken));
+        }
+        else if (report.RecoveredFromBackup)
+        {
+            _profileNotice = "Inställningsfilen var trasig och återställdes från en säkerhetskopia.";
+            AppLog.Warn("Inställningarna återställdes från en säkerhetskopia i " + _settingsStore.BackupFolder);
+        }
+    }
+
+    /// <summary>Says what <see cref="GuardProfile"/> found, now that there is a window to say it in.</summary>
+    private void ReportProfileState()
+    {
+        if (_profileNotice is not { Length: > 0 } notice) return;
+        _profileNotice = null;
+
+        if (_profileNoticeIsLoss)
+            MessageBox.Show(this, notice, "Twitch Overlay Helper – inställningar", MessageBoxButton.OK, MessageBoxImage.Warning);
+        else
+            SetStatus(notice, true);
     }
 
     private void SaveSettingsNow()

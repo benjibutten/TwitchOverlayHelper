@@ -164,6 +164,10 @@ public sealed class BotCommand
         if (Response.Length > 400) Response = Response[..400];
         CooldownSeconds = Math.Clamp(CooldownSeconds, 0, 3600);
     }
+
+    /// <inheritdoc cref="AppSettings.Unknown"/>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
 }
 
 /// <summary>
@@ -194,6 +198,10 @@ public sealed class BotMessageRule
         if (Template.Length > 400) Template = Template[..400];
         CooldownSeconds = Math.Clamp(CooldownSeconds, 0, 3600);
     }
+
+    /// <inheritdoc cref="AppSettings.Unknown"/>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
 }
 
 /// <summary>
@@ -370,4 +378,8 @@ public sealed class BotSettings
 
     private static BotMessageRule Rule(BotFlow flow, bool enabled, string template, int cooldown = 0) =>
         new() { Flow = flow, Enabled = enabled, Template = template, CooldownSeconds = cooldown };
+
+    /// <inheritdoc cref="AppSettings.Unknown"/>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
 }

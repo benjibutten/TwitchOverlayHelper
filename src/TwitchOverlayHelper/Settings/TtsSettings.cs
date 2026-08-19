@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace TwitchOverlayHelper.Settings;
 
 /// <summary>
@@ -182,4 +185,8 @@ public sealed class TtsSettings
         // flag is dropped rather than trusted: it decides whether viewers get their points back.
         if (RewardId.Length == 0) RewardManaged = false;
     }
+
+    /// <inheritdoc cref="AppSettings.Unknown"/>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
 }

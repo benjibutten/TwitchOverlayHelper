@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace TwitchOverlayHelper.Settings;
 
 /// <summary>
@@ -97,4 +100,8 @@ public sealed class StreamSettings
     }
 
     private static double FiniteOrDefault(double value, double fallback) => double.IsFinite(value) ? value : fallback;
+
+    /// <inheritdoc cref="AppSettings.Unknown"/>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
 }

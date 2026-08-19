@@ -914,6 +914,10 @@
                 <Button DockPanel.Dock="Right" Content="Sök efter uppdateringar" Click="CheckForUpdates_Click"
                         Background="#232A3B" Foreground="#C9C5D8" FontSize="13" FontWeight="Normal"
                         Padding="12,6" Margin="12,0,0,0" VerticalAlignment="Center" />
+                <Button DockPanel.Dock="Right" Content="Säkerhetskopior" Click="OpenProfileFolder_Click"
+                        Background="#232A3B" Foreground="#C9C5D8" FontSize="13" FontWeight="Normal"
+                        Padding="12,6" Margin="12,0,0,0" VerticalAlignment="Center"
+                        ToolTip="Öppnar mappen med dina inställningar, smeknamn och pets. backups innehåller daterade kopior av varje fil, snapshots en zip av hela mappen från varje version appen har kört." />
                 <TextBlock Text="Tips: lås overlayen när den ligger rätt – då blir den helt klickigenom och stjäl aldrig fokus från spelet."
                            Foreground="#A8A3B8" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
             </DockPanel>

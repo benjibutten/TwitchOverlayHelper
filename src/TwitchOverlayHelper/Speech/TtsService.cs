@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using TwitchOverlayHelper.Diagnostics;
 using TwitchOverlayHelper.Settings;
+using TwitchOverlayHelper.Storage;
 using TwitchOverlayHelper.Twitch;
 
 namespace TwitchOverlayHelper.Speech;
@@ -174,9 +175,7 @@ public sealed class TtsService : IDisposable
         _secrets = secrets;
         _play = play;
         _elevenLabs = new ElevenLabsClient(httpClient);
-        _audioDirectory = audioDirectory ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "TwitchOverlayHelper", "ttscache");
+        _audioDirectory = audioDirectory ?? ProfilePaths.Folder("ttscache");
         _timer = new Timer(_ => Sweep(), null, SweepInterval, SweepInterval);
     }
 

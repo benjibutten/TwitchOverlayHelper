@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace TwitchOverlayHelper.Settings;
 
 /// <summary>
@@ -65,6 +68,10 @@ public sealed class PetRewardRule
         // dropped rather than trusted: it decides whether viewers get their points back.
         if (RewardId.Length == 0) Managed = false;
     }
+
+    /// <inheritdoc cref="AppSettings.Unknown"/>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
 }
 
 /// <summary>
@@ -177,4 +184,8 @@ public sealed class PetSettings
     /// </summary>
     private static string RuleKey(PetRewardRule rule) =>
         rule.RewardId + (char)0x1F + rule.RewardName;
+
+    /// <inheritdoc cref="AppSettings.Unknown"/>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
 }

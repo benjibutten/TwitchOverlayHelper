@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net.Http;
 using TwitchOverlayHelper.Diagnostics;
+using TwitchOverlayHelper.Storage;
 using TwitchOverlayHelper.Twitch;
 
 namespace TwitchOverlayHelper.Bot;
@@ -47,9 +48,7 @@ public sealed class BotAccount : IAsyncDisposable
         // streamer out, which is the one thing this feature must never do.
         _session = new TwitchSession(
             httpClient,
-            new TokenStore(tokenPath ?? Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "TwitchOverlayHelper", "credentials.bot.bin")),
+            new TokenStore(tokenPath ?? ProfilePaths.File("credentials.bot.bin")),
             TwitchAuth.BotScopes);
         _session.StateChanged += () => StateChanged?.Invoke();
     }
