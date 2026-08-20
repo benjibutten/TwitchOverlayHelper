@@ -119,6 +119,23 @@ public sealed class PetSettings
     public bool ShowNames { get; set; } = true;
 
     /// <summary>
+    /// The aura every pet wears in its rarity's colour – a breathing halo, and a sheen sweeping
+    /// across the rarer ones. Something a viewer can read at a glance is worth more than a tier
+    /// written down in a settings window, but it is still light on the picture the stream is
+    /// really about, so it can be switched off.
+    /// </summary>
+    public bool RarityEffects { get; set; } = true;
+
+    /// <summary>
+    /// How long the aura burns before it fades away and leaves the creature alone. The glow is
+    /// there to say "look what just landed", and six of them lit for the whole five minutes is an
+    /// overlay competing with the game behind it – so it is loud on arrival and gone shortly after.
+    /// Zero keeps every pet lit for as long as it lives, for a channel that wants the tier readable
+    /// at any moment.
+    /// </summary>
+    public int RarityFadeSeconds { get; set; } = 10;
+
+    /// <summary>
     /// How many minutes a redemption of this reward is worth, or null when it should not spawn a
     /// pet at all. With no rules configured every redemption counts, at the default length.
     /// </summary>

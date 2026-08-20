@@ -97,7 +97,34 @@ public enum BotFlow
     HypeTrainBegin,
 
     /// <summary>A hype train ended.</summary>
-    HypeTrainEnd
+    HypeTrainEnd,
+
+    /// <summary>The lucky spin landed and somebody owns a new pet.</summary>
+    SpinWin,
+
+    /// <summary>The spin landed on something the winner already owns, so they may give it away.</summary>
+    SpinDuplicate,
+
+    /// <summary>A duplicate win found a new home.</summary>
+    SpinGifted,
+
+    /// <summary>The name given with the give command matched nobody on Twitch.</summary>
+    SpinGiftUnknown,
+
+    /// <summary>The named recipient already owns the prize – themselves included.</summary>
+    SpinGiftOwned,
+
+    /// <summary>The answer to the list command: what this viewer has won.</summary>
+    SpinList,
+
+    /// <summary>The answer to the list command when the viewer has won nothing yet.</summary>
+    SpinListEmpty,
+
+    /// <summary>Somebody asked a pet reward for a win-only pet they never won.</summary>
+    SpinNotOwned,
+
+    /// <summary>A spin redemption was paid back.</summary>
+    SpinRefund
 }
 
 /// <summary>
@@ -399,7 +426,18 @@ public sealed class BotSettings
         Rule(BotFlow.ShoutoutReceived, true, "Tack för shoutouten @{viewer}!"),
         Rule(BotFlow.Subscription, false, "Tack för stödet @{viewer}!"),
         Rule(BotFlow.HypeTrainBegin, false, "Hypetåget har lämnat stationen! 🚂"),
-        Rule(BotFlow.HypeTrainEnd, false, "Hypetåget slutade på nivå {level} – tack allihop!")
+        Rule(BotFlow.HypeTrainEnd, false, "Hypetåget slutade på nivå {level} – tack allihop!"),
+        // The spin flows are on by default, unlike the celebratory ones: every line here is an
+        // answer somebody is waiting on – what they won, what to type next, where their gift went.
+        Rule(BotFlow.SpinWin, true, "🎉 @{viewer} vann {prize} i lyckosnurren!"),
+        Rule(BotFlow.SpinDuplicate, true, "@{viewer} du vann {prize} – men den har du redan! Skriv \"{command} namn\" inom {minutes} min för att skänka den till någon, annars får du tillbaka poängen."),
+        Rule(BotFlow.SpinGifted, true, "🎁 @{viewer} skänkte {prize} till @{target}!"),
+        Rule(BotFlow.SpinGiftUnknown, true, "@{viewer} hittade ingen som heter \"{target}\" – testa igen."),
+        Rule(BotFlow.SpinGiftOwned, true, "@{viewer} @{target} har redan {prize} – välj någon annan."),
+        Rule(BotFlow.SpinList, true, "@{viewer} din samling: {list}.", cooldown: 15),
+        Rule(BotFlow.SpinListEmpty, true, "@{viewer} du har inte vunnit någon {pet} än – lyckosnurren väntar!", cooldown: 15),
+        Rule(BotFlow.SpinNotOwned, true, "@{viewer} {prize} kan bara användas av den som vunnit den i lyckosnurren."),
+        Rule(BotFlow.SpinRefund, true, "@{viewer} fick tillbaka {cost} poäng – {reason}.")
     ];
 
     private static BotMessageRule Rule(BotFlow flow, bool enabled, string template, int cooldown = 0) =>

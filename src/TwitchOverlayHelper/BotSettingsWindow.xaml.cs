@@ -207,7 +207,17 @@ internal static class BotFlowText
         BotFlow.ShoutoutReceived => "Shoutout till er",
         BotFlow.Subscription => "Prenumeration",
         BotFlow.HypeTrainBegin => "Hypetåget startar",
-        _ => "Hypetåget är slut"
+        BotFlow.HypeTrainEnd => "Hypetåget är slut",
+        BotFlow.SpinWin => "Någon vann i lyckosnurren",
+        BotFlow.SpinDuplicate => "Vinsten var en dubblett",
+        BotFlow.SpinGifted => "Dubbletten fick ett nytt hem",
+        BotFlow.SpinGiftUnknown => "Mottagaren finns inte",
+        BotFlow.SpinGiftOwned => "Mottagaren har den redan",
+        BotFlow.SpinList => "Svar på samlingskommandot",
+        BotFlow.SpinListEmpty => "Samlingen är tom",
+        BotFlow.SpinNotOwned => "Bad om en vinstpet de inte äger",
+        BotFlow.SpinRefund => "Lyckosnurren betalade tillbaka",
+        _ => "Okänt"
     };
 
     public static string Description(BotFlow flow) => flow switch
@@ -239,7 +249,20 @@ internal static class BotFlowText
         BotFlow.ShoutoutReceived => "När en annan kanal ger er en shoutout.",
         BotFlow.Subscription => "Nya prenumerationer, resubs och gåvor. Avstängt från början – Twitch säger redan det mesta av det.",
         BotFlow.HypeTrainBegin => "När ett hypetåg drar igång.",
-        _ => "När hypetåget är slut, med nivån det nådde."
+        BotFlow.HypeTrainEnd => "När hypetåget är slut, med nivån det nådde.",
+        BotFlow.SpinWin => "När snurren stannat och någon fått en ny pet till sitt konto. {prize} är den de vann.",
+        BotFlow.SpinDuplicate =>
+            "När snurren landat på något de redan äger. Raden är instruktionen för att skänka bort den – utan den vet vinnaren inte vad som ska skrivas, och poängen går tillbaka i onödan. {command} är kommandot och {minutes} tiden de har på sig.",
+        BotFlow.SpinGifted => "När en dubblett skänkts vidare. {target} är den som fick den.",
+        BotFlow.SpinGiftUnknown => "När namnet de skrev inte matchar något Twitch-konto. Gåvan ligger kvar, så de kan skriva igen.",
+        BotFlow.SpinGiftOwned => "När den de valde redan äger vinsten – dem själva inräknat. Gåvan ligger kvar.",
+        BotFlow.SpinList =>
+            "Svaret när någon skriver kommandot för att se sin samling. {list} är arterna de vunnit och {count} hur många.",
+        BotFlow.SpinListEmpty => "Samma kommando, men från någon som inte vunnit något än.",
+        BotFlow.SpinNotOwned =>
+            "När någon löser in en vanlig pet-belöning och ber om en art som bara går att vinna. Kan belöningen återbetalas får de tillbaka poängen; annars får de en vanlig pet i stället.",
+        BotFlow.SpinRefund => "När en inlösen i lyckosnurren betalats tillbaka – inget att vinna, eller ingen mottagare vald i tid.",
+        _ => string.Empty
     };
 }
 

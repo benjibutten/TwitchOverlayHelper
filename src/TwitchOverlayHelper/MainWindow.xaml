@@ -463,6 +463,13 @@
                                         <CheckBox x:Name="PetsEnabledCheck" Content="Aktivera pets" Margin="0,12,0,0" Checked="PetSetting_Changed" Unchecked="PetSetting_Changed" />
                                         <CheckBox x:Name="PetNamesCheck" Content="Visa namnskylt under varje pet" Checked="PetSetting_Changed" Unchecked="PetSetting_Changed"
                                                   ToolTip="Skylten visar namnet på tittaren som löste in peten. Stäng av för en renare overlay." />
+                                        <CheckBox x:Name="PetRarityFxCheck" Content="Visa sällsynthet med skimmer" Checked="PetSetting_Changed" Unchecked="PetSetting_Changed"
+                                                  ToolTip="Ovanliga pets får en svag lysande aura i sin färg, sällsynta och legendariska dessutom ett skimmer som sveper över dem. Vanliga pets ser ut som vanligt." />
+                                        <StackPanel Margin="24,8,0,0" IsEnabled="{Binding IsChecked, ElementName=PetRarityFxCheck}">
+                                            <TextBlock Text="Tona ut skimret efter (sekunder)" Style="{StaticResource FieldLabel}" />
+                                            <TextBox x:Name="PetRarityFadeInput" TextChanged="PetRarityFade_TextChanged" LostKeyboardFocus="PetRarityFade_LostKeyboardFocus"
+                                                     ToolTip="0–300 sekunder. Auran syns när peten kommer in och tonar sedan bort, så gräsmattan blir lugn igen. 0 låter den lysa hela tiden." />
+                                        </StackPanel>
 
                                         <DockPanel Margin="0,14,0,0"><TextBlock Text="Storlek" /><TextBlock x:Name="PetScaleValue" Text="100 %" Style="{StaticResource ValueBadge}" /></DockPanel>
                                         <Slider x:Name="PetScaleSlider" Minimum="0.4" Maximum="2.5" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="PetSetting_Changed"
@@ -505,6 +512,17 @@
                                         </Grid>
                                         <TextBlock Text="Alla pets ligger i pets-mappen, även de som följer med appen – en mapp per pet med pet.json och body.svg. Ändra färg, namn eller rita en helt egen och klicka Ladda om pets. En pet du kläckt med Codex hatch-pet kopieras hit rakt av: har mappen en spritesheet.webp (9 rader × 8 rutor à 192×208) används den i stället."
                                                    Style="{StaticResource Hint}" Margin="0,10,0,0" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="Lyckosnurren" Style="{StaticResource SubTitle}" />
+                                        <TextBlock Text="En belöning som snurrar fram en pet tittaren får behålla. Vinsten knyts till Twitch-kontot, så den överlever namnbyten – och en vunnen art kan bara lösas in av den som vunnit den."
+                                                   Style="{StaticResource Hint}" Margin="0,8,0,0" />
+                                        <Button x:Name="OpenSpinSettingsButton" Content="Öppna lyckosnurren" Background="#343B50" Margin="0,12,0,0"
+                                                Click="OpenSpinSettings_Click" ToolTip="Belöning, utseende, kommandon och vilka pets som går att vinna." />
+                                        <TextBlock x:Name="SpinSummaryText" Text="" Style="{StaticResource Hint}" Margin="0,10,0,0" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
                             </StackPanel>

@@ -18,6 +18,7 @@ using TwitchOverlayHelper.Pets;
 using TwitchOverlayHelper.Services;
 using TwitchOverlayHelper.Settings;
 using TwitchOverlayHelper.Speech;
+using TwitchOverlayHelper.Spins;
 using TwitchOverlayHelper.Storage;
 using TwitchOverlayHelper.Twitch;
 using TwitchOverlayHelper.Updates;
@@ -110,6 +111,16 @@ public partial class MainWindow : Window
     private readonly PetService _petService;
 
     /// <summary>
+    /// Every lucky spin win on disk. Built in the constructor for the same reason as the catalog:
+    /// its first read can quarantine or restore files, and the version snapshot has to be of the
+    /// profile as the previous version left it.
+    /// </summary>
+    private readonly SpinWinStore _spinWins;
+
+    /// <summary>Lyckosnurren: draws, books and stages the wins, and runs the gift conversation.</summary>
+    private readonly SpinService _spins;
+
+    /// <summary>
     /// Holds every redemption of an app-made pet reward open until the pet has been delivered, and
     /// pays it back when it has not.
     /// </summary>
@@ -163,6 +174,7 @@ public partial class MainWindow : Window
     private SpeechSettingsWindow? _speechSettingsWindow;
     private TtsWidgetWindow? _ttsWidgetWindow;
     private BotSettingsWindow? _botSettingsWindow;
+    private SpinSettingsWindow? _spinSettingsWindow;
     private string? _lastBadgeRoom;
     private string? _lastSeenRewardId;
     private string? _lastSeenRewardName;
@@ -200,6 +212,9 @@ public partial class MainWindow : Window
         _browserTts = new BrowserTtsOutput(_hub, _ttsAudio, () => _settings.DockAccessKey);
         _tts = new TtsService(_speechHttpClient, _settings, _speechSecrets, PlayReadingAsync);
         _petService = new PetService(_settings, _petCatalog, _petRegistry, _hub);
+        _spinWins = new SpinWinStore();
+        // What makes a win-only pet usable by exactly its winner, wherever pets are asked for.
+        _petService.OwnsWonPet = _spinWins.Owns;
         // The broadcaster is read at call time rather than captured: the app can be pointed at
         // another channel while it runs, and a refund aimed at the channel we have left is refused.
         _ledger = new RedemptionLedger(
@@ -207,12 +222,27 @@ public partial class MainWindow : Window
             _petRegistry,
             _hub.PublishPetRemoved);
         _botAccount = new BotAccount(_httpClient);
+        // After the bot account, because the spin has to be able to ask whether the bot can write.
+        _spins = new SpinService(_settings, _petCatalog, _spinWins, _petService, _hub,
+            login => _apiClient.GetUserByLoginAsync(login),
+            overlayCount: null,
+            // Whether a duplicate can become a gift is the question of whether its winner will ever
+            // be told to claim it, and a bot that is switched on is not the same as one that can
+            // write: the mode has to have somewhere to send, that connection has to be up, and the
+            // message itself has to be switched on. Any of those missing and the draw dodges what
+            // the viewer owns instead of promising a prompt nobody would ever see.
+            canGift: () => _settings.Bot.Speaks(BotFlow.SpinDuplicate)
+                && (_settings.Bot.Mode == BotMode.Bot ? _botAccount.CanSend : _chatClient.IsRunning));
+        _spins.Start();
         // Which account carries the line is decided at send time rather than captured: the mode can
         // be changed while the app runs, and a queued line should go out as whoever the bot is now.
         _botSender = new BotSender(SendBotLineAsync, () => _settings.Bot.MessagesPer30Seconds);
         _bot = new BotService(_settings, _botSender, new BotContext(
             _tts.Snapshot,
-            () => _settings.Bot.Mode == BotMode.Bot ? _botAccount.Login : _session.Login));
+            () => _settings.Bot.Mode == BotMode.Bot ? _botAccount.Login : _session.Login,
+            // The spin's own commands – "!mina" and "!ge" – answer from the win store, which no
+            // static command row could.
+            _spins.HandleChatMessage));
         _dockContext = new DockServerContext
         {
             Settings = _settings,
@@ -266,6 +296,9 @@ public partial class MainWindow : Window
         _eventSubClient.RedemptionUpdated += change =>
         {
             if (_tts.HandleExternalUpdate(change.RedemptionId, change.Status)) return;
+            // A gift still waiting can be refunded from the dashboard too; the pending entry then
+            // has to go, or the winner could give away a prize whose points are already back.
+            _spins.HandleExternalUpdate(change.RedemptionId, change.Status);
             _ledger.HandleExternalUpdate(change.RedemptionId, change.Status);
         };
         // The two signals that say whether a pet is being seen at all: a lawn reporting what it has
@@ -282,6 +315,10 @@ public partial class MainWindow : Window
         _petService.PetEvicted += _ledger.PetEvicted;
         _ledger.Answered += notice =>
         {
+            // Twitch has taken the verdict, which is the only moment the spin can strike a booked
+            // win off its list of debts. Anything else and the debt would either be dropped while
+            // the redemption was still open, or carried for ever after it closed.
+            if (notice.RedemptionId.Length > 0) _spins.Settled(notice.RedemptionId);
             RunOnUi(() => ShowRedemptionNotice(notice));
             // The same sentence, said to the person it is actually about. Until now a viewer whose
             // points came back was the one party never told.
@@ -290,6 +327,14 @@ public partial class MainWindow : Window
         // Nothing is connected yet, and the ledger has to start out knowing that rather than
         // assuming a lawn it has never seen.
         _ledger.OverlayCountChanged(_hub.PetOverlayCount);
+        // The spin's stagecraft and bookkeeping: the overlay's curtain call frees the queue, the
+        // verdicts ride the same retrying path as everything else, and the announcements go out as
+        // whoever the bot is.
+        _hub.SpinShown += _spins.OnSpinShown;
+        _spins.Verdict += verdict => _ = _ledger.AnswerNow(
+            verdict.RedemptionId, verdict.RewardId, verdict.ViewerName, verdict.Cost,
+            verdict.Refund ? RedemptionStatus.Canceled : RedemptionStatus.Fulfilled, verdict.Reason, "spin");
+        _spins.Announced += _bot.Announce;
         _eventSubClient.GigantifyReceived += OnGigantify;
         _eventSubClient.CustomPowerUpReceived += OnCustomPowerUp;
         // The dock's approval bar reads the queue from the service rather than keeping a copy, so
@@ -305,7 +350,9 @@ public partial class MainWindow : Window
         _hub.TtsOverlayCountChanged += _browserTts.OnOverlayCountChanged;
         // The sweep and the reading queue answer for the same reward, so the sweep has to be able to
         // tell "left over from before we were listening" from "on screen right now, being decided".
-        _ledger.ClaimedElsewhere = _tts.Holds;
+        // The spin holds redemptions too: a gift waiting for its winner is a prize already won, not
+        // a leftover to pay back.
+        _ledger.ClaimedElsewhere = id => _tts.Holds(id) || _spins.Holds(id);
         // Only the readings that can actually be paid back ever raise this; the bits route has
         // nobody to tell.
         _tts.Answered += (request, status, reason) => _ = AnswerTtsAsync(request, status, reason);
@@ -617,6 +664,7 @@ public partial class MainWindow : Window
         bool wasEnabled = _settings.Pets.Enabled;
         _settings.Pets.Enabled = PetsEnabledCheck.IsChecked == true;
         _settings.Pets.ShowNames = PetNamesCheck.IsChecked == true;
+        _settings.Pets.RarityEffects = PetRarityFxCheck.IsChecked == true;
         _settings.Pets.Scale = PetScaleSlider.Value;
         PetScaleValue.Text = $"{PetScaleSlider.Value:P0}";
         _hub.PublishPetSettings();
@@ -640,6 +688,21 @@ public partial class MainWindow : Window
     {
         if (!int.TryParse(PetLifetimeInput.Text, out int minutes) || minutes is < 1 or > 60)
             PetLifetimeInput.Text = _settings.Pets.LifetimeMinutes.ToString();
+    }
+
+    private void PetRarityFade_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_loading) return;
+        if (!int.TryParse(PetRarityFadeInput.Text, out int seconds) || seconds is < 0 or > 300) return;
+        _settings.Pets.RarityFadeSeconds = seconds;
+        _hub.PublishPetSettings();
+        SaveSettings();
+    }
+
+    private void PetRarityFade_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (!int.TryParse(PetRarityFadeInput.Text, out int seconds) || seconds is < 0 or > 300)
+            PetRarityFadeInput.Text = _settings.Pets.RarityFadeSeconds.ToString();
     }
 
     private void PetMax_TextChanged(object sender, TextChangedEventArgs e)
@@ -877,7 +940,10 @@ public partial class MainWindow : Window
             var lines = _petCatalog.Pets.Select(pet =>
             {
                 string names = string.Join(", ", new[] { pet.Id }.Concat(pet.Aliases));
-                return $"• {pet.Name}{(pet.IsDefault ? "" : " (egen)")} – tittare skriver: {names}";
+                // A win-only pet is not something a viewer can simply ask for, so listing it the
+                // same way as the rest would be an invitation nobody can accept.
+                string origin = pet.WinOnly ? " 🏆 vinst" : pet.IsDefault ? "" : " (egen)";
+                return $"• {pet.Name}{origin} – tittare skriver: {names}";
             });
             IEnumerable<string> warnings = _petCatalog.Warnings.Select(w => $"⚠ {w}");
             PetListText.Text = string.Join("\n", lines.Concat(warnings));
@@ -892,6 +958,8 @@ public partial class MainWindow : Window
             foreach (ComboBoxItem item in PetDefaultBox.Items)
                 if (string.Equals(item.Tag as string, current, StringComparison.OrdinalIgnoreCase) && current.Length > 0)
                     PetDefaultBox.SelectedItem = item;
+
+            UpdateSpinSummary();
         }
         finally { _refreshingPetCatalog = false; }
     }
@@ -1189,6 +1257,77 @@ public partial class MainWindow : Window
         finally { BotLoginButton.IsEnabled = true; }
     }
 
+    private void OpenSpinSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_spinSettingsWindow is { IsLoaded: true })
+        {
+            _spinSettingsWindow.Activate();
+            return;
+        }
+
+        _spinSettingsWindow = new SpinSettingsWindow(
+            _settings,
+            _petCatalog,
+            _spinWins,
+            () =>
+            {
+                SaveSettings();
+                // The reel draws from the catalog the overlay holds, so a pet that just became
+                // winnable has to reach it before the next spin rather than at the next reload.
+                _hub.PublishPetCatalog();
+                // Marking a pet winnable rewrites its pet.json and reloads the catalog, so the pets
+                // tab is showing the species list as it was before the change until this runs.
+                RefreshPetCatalogUi();
+            },
+            _spins.SpinTest,
+            CreateSpinRewardAsync) { Owner = this };
+        _spinSettingsWindow.Closed += (_, _) => _spinSettingsWindow = null;
+        _spinSettingsWindow.Show();
+    }
+
+    /// <summary>
+    /// Creates the spin's reward in Twitch. The same conditions as a pet reward – our own channel,
+    /// logged in, with the scope that lets a redemption be answered – because they are the same
+    /// conditions Twitch imposes, and each of them is a different thing to put right.
+    /// </summary>
+    private async Task<string> CreateSpinRewardAsync(string title, int cost)
+    {
+        if (!_session.IsLoggedIn) throw new InvalidOperationException("Logga in på Twitch först.");
+        if (!_session.HasScope(TwitchAuth.ManageRedemptionsScope))
+            throw new InvalidOperationException("Din inloggning är från innan återbetalning fanns – logga ut och in igen så du kan godkänna behörigheten.");
+        if (_hub.BroadcasterId.Length == 0 || !string.Equals(_hub.BroadcasterId, _session.UserId, StringComparison.Ordinal))
+            throw new InvalidOperationException("Anslut till din egen kanal först – belöningar kan bara skapas där.");
+
+        CustomReward created = await _apiClient.CreateCustomRewardAsync(_hub.BroadcasterId, new NewCustomReward(
+            title,
+            cost,
+            "Snurra fram en pet som blir din för gott!",
+            // Nothing the viewer could type would change the draw, and a reward that demands a
+            // message would only leave them guessing at what to write.
+            RequireInput: false,
+            CooldownSeconds: 0,
+            BackgroundColor: null));
+
+        _rewards.Remember(created);
+        _settings.Spin.RewardName = created.Title;
+        _settings.Spin.Cost = created.Cost;
+        return created.Id;
+    }
+
+    /// <summary>The one line about the spin on the pets tab, so its state is readable without opening it.</summary>
+    private void UpdateSpinSummary()
+    {
+        SpinSettings spin = _settings.Spin;
+        int winnable = _petCatalog.Winnable.Count;
+        SpinSummaryText.Text = !spin.Enabled
+            ? "Avstängd."
+            : winnable == 0
+                ? "Ingen pet är markerad som vinstbar än, så snurren har inget att dela ut."
+                : spin.RewardId.Length == 0 && spin.RewardName.Length == 0
+                    ? $"{winnable} pets går att vinna, men ingen belöning är vald än."
+                    : $"{winnable} pets går att vinna. {(spin.CanRefund ? "🔒 Belöningen kan återbetalas." : "— Belöningen kan inte återbetalas.")}";
+    }
+
     private void BotMessages_Click(object sender, RoutedEventArgs e)
     {
         if (_botSettingsWindow is { IsLoaded: true })
@@ -1383,6 +1522,12 @@ public partial class MainWindow : Window
             // A reading bought in the channel we have left has no business being read out over the
             // one we have joined – and the viewer who paid for it is not in this room.
             _tts.Reset();
+            // The reels staged for the old channel go the same way, and so do the gifts still
+            // waiting for a winner to name somebody: their redemptions belong to the channel we have
+            // left, where claiming or paying one back is refused – and would be wrong even if it
+            // were not. The wins themselves stay: they are the viewers' property, not the
+            // connection's.
+            _spins.LeaveChannel();
             _ledgerChannel = broadcasterId;
             // Another channel's pets have no business on this one's lawn, and the entries that
             // vouched for them have just gone. Letting them go is not the same as settling them:
@@ -1441,6 +1586,11 @@ public partial class MainWindow : Window
         var managed = _settings.Pets.ManagedRewardIds.ToList();
         if (_settings.Tts.CanRefund && !managed.Contains(_settings.Tts.RewardId, StringComparer.OrdinalIgnoreCase))
             managed.Add(_settings.Tts.RewardId);
+        // The spin reward is swept too. Its wins live on disk and survive anything, but a redemption
+        // nobody was listening for never got a draw at all – the points are owed back. The gifts
+        // still waiting are the exception, and ClaimedElsewhere shields those.
+        if (_settings.Spin.CanRefund && !managed.Contains(_settings.Spin.RewardId, StringComparer.OrdinalIgnoreCase))
+            managed.Add(_settings.Spin.RewardId);
 
         if (managed.Count == 0)
         {
@@ -1460,6 +1610,12 @@ public partial class MainWindow : Window
         // Only a sweep that actually read every queue may stop the next connection from trying
         // again. Marking it done up front is how a single failed call leaves a viewer's points
         // sitting in Twitch's queue for the rest of the stream.
+        // Now that redemptions can be answered again, anything the spin still owes is raised afresh.
+        // After the sweep on purpose: a debt that has run out of attempts is written off here, and
+        // the sweep that has just run is the one thing that would have paid it back on top of a pet
+        // the viewer keeps.
+        _spins.ResumeOwed();
+
         _swept = complete;
         RunOnUi(() => PetRewardStatusText.Text = complete
             ? "Kön är genomgången."
@@ -1782,6 +1938,15 @@ public partial class MainWindow : Window
             return;
         }
 
+        // The spin reward is claimed before the pets for the same reason the reading is: a channel
+        // with no pet rules spawns a pet for every redemption it meets, and one purchase must never
+        // be answered twice.
+        if (_settings.Spin.MatchesReward(redemption.RewardId, redemption.RewardTitle))
+        {
+            HandleSpinRedemption(redemption);
+            return;
+        }
+
         PetRedemptionResult result = _petService.HandleRedemption(redemption);
         AnswerRedemption(redemption, result);
         // Told the outcome rather than the verdict: a redemption that bought nothing is worth a word
@@ -1791,6 +1956,41 @@ public partial class MainWindow : Window
             redemption.DisplayName.Length > 0 ? redemption.DisplayName : redemption.UserLogin,
             redemption.RewardCost ?? 0,
             result.Outcome);
+        // Its own line rather than a case in OnPetOutcome, because it needs the pet's name – the
+        // one piece of the answer the outcome alone does not carry.
+        if (result is { Outcome: PetSpawnOutcome.NotOwned, Asked: { } asked })
+            _bot.Announce(BotFlow.SpinNotOwned, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["viewer"] = redemption.DisplayName.Length > 0 ? redemption.DisplayName : redemption.UserLogin,
+                ["prize"] = asked.Name
+            });
+    }
+
+    /// <summary>
+    /// A redemption of the spin reward. The service has already booked whatever there was to book by
+    /// the time it answers; all that is left here is paying back the redemptions that bought nothing.
+    /// The happy paths answer for themselves – the service raises its own verdicts for those.
+    /// </summary>
+    private void HandleSpinRedemption(RewardRedemption redemption)
+    {
+        SpinRedemptionResult result = _spins.HandleRedemption(redemption);
+        if (!result.Refundable) return;
+
+        string? reason = result.Outcome switch
+        {
+            SpinOutcome.Disabled => "lyckosnurren är avstängd i appen",
+            SpinOutcome.PetsOff => "pets är avstängda i appen",
+            SpinOutcome.NoOverlay => "pet-overlayen var inte igång",
+            SpinOutcome.NothingToWin => "det finns inget att vinna just nu",
+            SpinOutcome.AllOwned => "hela samlingen är redan vunnen",
+            _ => null
+        };
+        if (reason is null) return;
+        _ = _ledger.AnswerNow(
+            redemption.Id, redemption.RewardId,
+            redemption.DisplayName.Length > 0 ? redemption.DisplayName : redemption.UserLogin,
+            redemption.RewardCost ?? 0,
+            RedemptionStatus.Canceled, reason, "spin");
     }
 
     /// <summary>
@@ -1898,6 +2098,7 @@ public partial class MainWindow : Window
             PetSpawnOutcome.Disabled => "pets är avstängda i appen",
             PetSpawnOutcome.Full => "det var fullt på gräsmattan",
             PetSpawnOutcome.NoOverlay => "pet-overlayen var inte igång",
+            PetSpawnOutcome.NotOwned => "arten kan bara användas av den som vunnit den",
             _ => null
         };
         if (reason is null) return;
@@ -1916,6 +2117,14 @@ public partial class MainWindow : Window
             TtsStatusText.Text = notice.Refunded
                 ? $"↩ {notice.ViewerName} fick tillbaka {notice.Cost} poäng – {notice.Reason}."
                 : $"✓ {notice.ViewerName}s uppläsning är bokförd som klar.";
+            return;
+        }
+
+        if (notice.Subject == "spin")
+        {
+            PetRewardStatusText.Text = notice.Refunded
+                ? $"↩ {notice.ViewerName} fick tillbaka {notice.Cost} poäng – {notice.Reason}."
+                : $"✓ Lyckosnurren: {notice.ViewerName}s inlösen är bokförd – {notice.Reason}.";
             return;
         }
 
@@ -2021,6 +2230,8 @@ public partial class MainWindow : Window
         VisibilityButton.Content = _settings.OverlayVisible ? "Dölj overlay" : "Visa overlay";
         PetsEnabledCheck.IsChecked = _settings.Pets.Enabled;
         PetNamesCheck.IsChecked = _settings.Pets.ShowNames;
+        PetRarityFxCheck.IsChecked = _settings.Pets.RarityEffects;
+        PetRarityFadeInput.Text = _settings.Pets.RarityFadeSeconds.ToString();
         PetScaleSlider.Value = _settings.Pets.Scale;
         PetScaleValue.Text = $"{_settings.Pets.Scale:P0}";
         PetLifetimeInput.Text = _settings.Pets.LifetimeMinutes.ToString();
@@ -3025,6 +3236,10 @@ public partial class MainWindow : Window
         _bot.Dispose();
         _tts.Reset();
         _tts.Dispose();
+        // Between the bot and the ledger for the same reason as the readings: a gift timing out on
+        // the way down would raise a verdict into a ledger that must still be alive to hold it.
+        _spins.Reset();
+        _spins.Dispose();
         _ledger.Reset();
         _ledger.Dispose();
         SaveSettingsNow();

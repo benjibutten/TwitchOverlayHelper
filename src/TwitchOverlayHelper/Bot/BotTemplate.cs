@@ -44,7 +44,12 @@ public static class BotTemplate
         ["uppläst"] = "uppläst",
         ["avbruten av streamern"] = "avbruten av {streamer}",
         ["avbruten innan något hann läsas upp"] = "avbruten innan något hann läsas upp",
-        ["ett oväntat fel avbröt uppläsningen"] = "något gick fel under uppläsningen"
+        ["ett oväntat fel avbröt uppläsningen"] = "något gick fel under uppläsningen",
+        ["lyckosnurren är avstängd i appen"] = "lyckosnurren är avstängd just nu",
+        ["det finns inget att vinna just nu"] = "det finns inget att vinna just nu",
+        ["hela samlingen är redan vunnen"] = "hela samlingen är redan vunnen",
+        ["ingen mottagare valdes i tid"] = "ingen mottagare valdes i tid",
+        ["arten kan bara användas av den som vunnit den"] = "den {pet}-arten kan bara användas av den som vunnit den"
     };
 
     /// <summary>What a template for this flow can fill in, beyond the words every flow gets.</summary>
@@ -60,6 +65,15 @@ public static class BotTemplate
         BotFlow.Welcome or BotFlow.ShoutoutReceived or BotFlow.Subscription => ["viewer"],
         BotFlow.Raid => ["viewer", "viewers", "link"],
         BotFlow.HypeTrainEnd => ["level"],
+        BotFlow.SpinWin => ["viewer", "prize"],
+        BotFlow.SpinDuplicate => ["viewer", "prize", "command", "minutes"],
+        BotFlow.SpinGifted => ["viewer", "prize", "target"],
+        BotFlow.SpinGiftUnknown => ["viewer", "target"],
+        BotFlow.SpinGiftOwned => ["viewer", "prize", "target"],
+        BotFlow.SpinList => ["viewer", "list", "count"],
+        BotFlow.SpinListEmpty => ["viewer"],
+        BotFlow.SpinNotOwned => ["viewer", "prize"],
+        BotFlow.SpinRefund => ["viewer", "cost", "reason"],
         _ => []
     };
 
@@ -86,13 +100,19 @@ public static class BotTemplate
             ["total"] = "2000",
             ["viewers"] = "37",
             ["level"] = "3",
-            ["link"] = "twitch.tv/kajsa"
+            ["link"] = "twitch.tv/kajsa",
+            ["prize"] = "Gyllene Draken",
+            ["target"] = "Pelle",
+            ["list"] = "Gyllene Draken, Space-Cat",
+            ["command"] = "!ge",
+            ["minutes"] = "10"
         };
         values["reason"] = flow switch
         {
             BotFlow.TtsRefund => Reason("ingen hann svara", "det gick inte den här gången", settings),
             BotFlow.ModCallMissed => "du är varken moderator eller broadcaster",
             BotFlow.RefundBatch => Reason("appen var inte igång", "det gick inte den här gången", settings),
+            BotFlow.SpinRefund => Reason("ingen mottagare valdes i tid", "det gick inte den här gången", settings),
             _ => Reason("overlayen ritade aldrig peten", "det gick inte den här gången", settings)
         };
         return values;

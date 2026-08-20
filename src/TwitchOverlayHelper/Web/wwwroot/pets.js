@@ -9,7 +9,10 @@ const stage = document.getElementById("stage");
 
 const pets = new Map(); // id -> pet
 const catalog = new Map(); // species id -> definition from the server
-let settings = { enabled: true, scale: 1, lifetimeMinutes: 5, maxPets: 6, showNames: true };
+let settings = {
+  enabled: true, scale: 1, lifetimeMinutes: 5, maxPets: 6,
+  showNames: true, rarityEffects: true, rarityFadeSeconds: 10,
+};
 let duetActive = false;
 let nextDuetAt = Date.now() + 12000;
 
@@ -64,7 +67,9 @@ function handle(frame) {
     if (extended && pets.has(pet.id)) extendPet(pet);
     else spawnPet(pet);
     reportShown(pet.id);
+    return;
   }
+  if (frame.type === "spin") { runSpin(frame.payload); return; }
   // Chat frames from the shared socket are someone else's business.
 }
 
@@ -74,6 +79,10 @@ function applySettings(next) {
   stage.style.setProperty("--pet-scale", settings.scale);
   stage.classList.toggle("disabled", !settings.enabled);
   stage.classList.toggle("hide-names", settings.showNames === false);
+  stage.classList.toggle("rarity-fx", settings.rarityEffects !== false);
+  // A pet already on the lawn when the streamer changes their mind gets its full moment again,
+  // rather than sitting there faded because it happened to arrive before the change.
+  for (const pet of pets.values()) armRarityFade(pet);
 }
 
 /* A reloaded catalog means the user just edited a pet, so the drawings are re-fetched and every
@@ -201,6 +210,42 @@ function flavorEmoji(pet) {
   return emoji && emoji.length ? pick(emoji) : "💬";
 }
 
+/* Which halo a species wears. The tiers are the app's own words, written by hand into pet.json, so
+   anything unrecognised – and every common pet – is left plain rather than guessed at. */
+const RARITY_CLASSES = {
+  "ovanlig": "rarity-uncommon",
+  "sällsynt": "rarity-rare",
+  "legendarisk": "rarity-legendary",
+};
+
+/* Only the two rarest sweep a sheen across themselves, and only sprite pets can: the light is
+   masked with the sheet's current cell, and an inline SVG has no image to mask with. */
+function applyRarity(pet) {
+  const tier = RARITY_CLASSES[(catalog.get(pet.species)?.rarity || "").toLowerCase()] || "";
+  pet.el.classList.remove("rarity-uncommon", "rarity-rare", "rarity-legendary");
+  if (tier) pet.el.classList.add(tier);
+  pet.shimmer = tier === "rarity-rare" || tier === "rarity-legendary";
+  armRarityFade(pet);
+}
+
+/* The aura is for the moment a pet arrives; six of them glowing for five minutes each is a lawn
+   competing with the game behind it. So it is given a short while and then fades out, and what is
+   left is the creature. Zero seconds means it stays lit, for a channel that wants it that way.
+
+   Timed from now rather than from the redemption: a pet is re-drawn on a browser source reload and
+   after a pets folder edit, and both are the creature arriving again as far as anyone watching is
+   concerned. */
+function armRarityFade(pet) {
+  clearTimeout(pet.fadeTimer);
+  pet.fadeTimer = 0;
+  pet.el.classList.remove("rarity-faded");
+  const seconds = settings.rarityFadeSeconds || 0;
+  if (seconds <= 0) return;
+  pet.fadeTimer = setTimeout(() => {
+    if (!pet.removed) pet.el.classList.add("rarity-faded");
+  }, seconds * 1000);
+}
+
 function accentFor(pet) {
   if (pet.color && /^#[0-9a-f]{6}$/i.test(pet.color)) return pet.color;
   let hash = 0;
@@ -219,6 +264,7 @@ function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function applyBody(pet) {
   const wrap = pet.el.querySelector(".body-wrap");
   const def = catalog.get(pet.species);
+  applyRarity(pet);
   pet.spriteEl = null;
   pet.spriteRow = -1;
   pet.spriteFrame = -1;
@@ -233,6 +279,10 @@ function applyBody(pet) {
     pet.spriteFps = def.fps || 10;
     pet.spriteRows = def.spriteVersion === 2 ? 11 : 9;
     pet.spriteEl.style.backgroundSize = `800% ${pet.spriteRows * 100}%`;
+    // The sheen's mask is the sheet itself; pets.html only ever reads these, so setting them for
+    // every sprite pet costs nothing and keeps the rarity a matter of one class.
+    pet.spriteEl.style.setProperty("--sprite-mask", `url('${url}')`);
+    pet.spriteEl.style.setProperty("--sprite-size", `800% ${pet.spriteRows * 100}%`);
     pet.el.classList.add("is-sprite");
     loadSpriteMeta(pet.species, url, pet.spriteRows);
     return;
@@ -257,7 +307,9 @@ function spawnPet(data) {
   const el = document.createElement("div");
   el.className = "pet spawn";
   el.style.setProperty("--accent", accentFor(data));
-  el.innerHTML = `<div class="bubble"></div><div class="shadow"></div><div class="body-wrap"></div><div class="name"></div>`;
+  el.innerHTML =
+    `<div class="bubble"></div><div class="aura"></div><div class="shadow"></div>` +
+    `<div class="body-wrap"></div><span class="spark"></span><span class="spark"></span><div class="name"></div>`;
   el.querySelector(".name").textContent = data.name;
   stage.appendChild(el);
 
@@ -273,6 +325,8 @@ function spawnPet(data) {
     spriteRow: -1,
     spriteFrame: -1,
     lookAngle: null,
+    shimmer: false,
+    fadeTimer: 0,
     x: clampX(rand(EDGE, innerWidth - petWidth() - EDGE)),
     targetX: null,
     walkResolve: null,
@@ -319,6 +373,7 @@ function removePet(id, withGoodbye) {
   if (!pet) return;
   pet.removed = true;
   pets.delete(id);
+  clearTimeout(pet.fadeTimer);
   if (pet.walkResolve) pet.walkResolve();
 
   if (!withGoodbye) { pet.el.remove(); return; }
@@ -598,6 +653,7 @@ function updateSprite(pet, nowMs) {
   if (meta && meta.rows !== pet.spriteRows) {
     pet.spriteRows = meta.rows;
     pet.spriteEl.style.backgroundSize = `800% ${meta.rows * 100}%`;
+    pet.spriteEl.style.setProperty("--sprite-size", `800% ${meta.rows * 100}%`);
   }
   const rows = pet.spriteRows;
   let row = spriteRowFor(pet);
@@ -614,8 +670,174 @@ function updateSprite(pet, nowMs) {
   if (row === pet.spriteRow && frame === pet.spriteFrame) return;
   pet.spriteRow = row;
   pet.spriteFrame = frame;
-  pet.spriteEl.style.backgroundPosition = `${(frame * 100) / 7}% ${(row * 100) / (rows - 1)}%`;
+  const position = `${(frame * 100) / 7}% ${(row * 100) / (rows - 1)}%`;
+  pet.spriteEl.style.backgroundPosition = position;
+  // The sheen is masked with the cell on screen, so the mask has to follow the animation frame by
+  // frame – otherwise the light lands on the pose the pet was in when it spawned.
+  if (pet.shimmer) pet.spriteEl.style.setProperty("--sprite-pos", position);
 }
+
+/* ------------------------------------------------------------------ lyckosnurren
+
+   A reel of portraits that slides in from one edge, loops through everything winnable, slows down
+   and lands on the winner. Pure theatre: the app drew the winner and wrote it to disk before this
+   frame was ever sent, so nothing here can change who won – and nothing here failing can cost
+   anybody their prize.
+
+   The portrait is the first cell of a hatch-pet sheet (row 0, column 0), which is the standing
+   still frame every sheet carries. SVG pets draw their whole body instead. */
+
+let spinBusy = false;
+
+/* Spins waiting for the stage. The app sends one at a time and waits for the curtain call, so this
+   normally holds nothing – but several overlays share one broadcast, and a slower one can still be
+   finishing when the faster one's acknowledgement has already released the next spin. Queued rather
+   than dropped: a dropped spin is one nobody ever sees and nobody ever answers for, which leaves the
+   app waiting out its timeout for a reel that was thrown away. */
+const spinQueue = [];
+
+/* How many times the reel passes the full list before the winner comes up. Enough that the
+   individual pets stop being readable in the middle of the spin, which is what makes it feel fast. */
+const SPIN_LOOPS = 6;
+
+function reportSpinDone(id) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  try { socket.send(JSON.stringify({ type: "spinDone", id })); } catch { /* the app's own timeout answers for it */ }
+}
+
+/* One portrait cell. Sprite pets are the sheet's first frame, held still; anything else falls back
+   to its drawing, so a channel mixing SVG pets and spritesheets still gets a full reel. */
+function portrait(species) {
+  const cell = document.createElement("div");
+  const def = catalog.get(species);
+  cell.className = `spin-cell ${RARITY_CLASSES[(def?.rarity || "").toLowerCase()] || ""}`.trim();
+
+  if (def && def.kind === "sprite" && def.spriteUrl) {
+    const rows = def.spriteVersion === 2 ? 11 : 9;
+    const art = document.createElement("div");
+    art.className = "spin-art sprite-portrait";
+    art.style.backgroundImage = `url('${def.spriteUrl}?g=${generation}')`;
+    art.style.backgroundSize = `800% ${rows * 100}%`;
+    art.style.backgroundPosition = "0% 0%";
+    cell.appendChild(art);
+    return cell;
+  }
+
+  const art = document.createElement("div");
+  art.className = "spin-art";
+  cell.appendChild(art);
+  loadBody(species).then((svg) => { art.innerHTML = svg; });
+  return cell;
+}
+
+/* The sheets are fetched before the reel starts rather than during it: a portrait arriving mid-spin
+   is a blank cell going past at speed, which reads as a broken overlay. Given up on after a moment
+   so a slow or missing file delays the show instead of cancelling it. */
+function preload(speciesList) {
+  const jobs = speciesList.map((species) => {
+    const def = catalog.get(species);
+    if (!(def && def.kind === "sprite" && def.spriteUrl)) return loadBody(species);
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = img.onerror = () => resolve();
+      img.src = `${def.spriteUrl}?g=${generation}`;
+    });
+  });
+  return Promise.race([Promise.all(jobs), sleep(2500)]);
+}
+
+function runSpin(spin) {
+  spinQueue.push(spin);
+  drainSpins();
+}
+
+function drainSpins() {
+  if (spinBusy || spinQueue.length === 0) return;
+  spinBusy = true;
+  playSpin(spinQueue.shift());
+}
+
+async function playSpin(spin) {
+  const panel = document.createElement("div");
+  panel.className = `spin from-${spin.side || "right"}`;
+  panel.innerHTML =
+    `<div class="spin-title"></div>` +
+    `<div class="spin-window"><div class="spin-reel"></div><div class="spin-glare"></div><div class="spin-marker"></div></div>` +
+    `<div class="spin-winner"></div>`;
+  panel.querySelector(".spin-title").textContent = spin.title || "Lyckosnurren";
+  stage.appendChild(panel);
+
+  try {
+    const reel = panel.querySelector(".spin-reel");
+    const list = spin.petIds && spin.petIds.length ? spin.petIds : [spin.winnerPetId];
+
+    await preload(list);
+
+    // The strip is the whole list a few times over, with the winner as the final cell – so landing
+    // is simply a matter of stopping on the last one, and the reel can never disagree with the app.
+    const cells = [];
+    for (let loop = 0; loop < SPIN_LOOPS; loop++) for (const id of list) cells.push(id);
+    cells.push(spin.winnerPetId);
+    for (const id of cells) reel.appendChild(portrait(id));
+
+    // Sliding in and spinning are two different moments; without the gap the reel appears to be
+    // already running as it arrives.
+    await nextFrame();
+    panel.classList.add("in");
+    await sleep(700);
+
+    const cellHeight = reel.firstElementChild ? reel.firstElementChild.offsetHeight : 0;
+    const distance = cellHeight * (cells.length - 1);
+    const seconds = Math.max(2, spin.seconds || 8);
+    reel.style.transition = `transform ${seconds}s cubic-bezier(.12,.62,.16,1)`;
+    reel.style.transform = `translateY(-${distance}px)`;
+    panel.classList.add("spinning");
+    await sleep(seconds * 1000);
+
+    panel.classList.remove("spinning");
+    panel.classList.add("landed", spin.duplicate ? "is-duplicate" : "is-win");
+    // The window lights up in the winner's own tier, so a legendary landing looks like more than
+    // an ordinary one did.
+    const tier = RARITY_CLASSES[(catalog.get(spin.winnerPetId)?.rarity || "").toLowerCase()];
+    if (tier) panel.classList.add(tier);
+    const winner = panel.querySelector(".spin-winner");
+    winner.textContent = spin.winnerName || "";
+    // Confetti for a fresh win; a duplicate is good news of a quieter kind, and its story carries
+    // on in chat rather than here.
+    if (!spin.duplicate) celebrate(panel);
+    await sleep(2600);
+
+    panel.classList.remove("in");
+    await sleep(700);
+  } catch {
+    // Whatever went wrong on stage, the prize is already the viewer's. Falling through to the
+    // curtain call is what keeps one bad spin from stopping every spin after it.
+  } finally {
+    panel.remove();
+    spinBusy = false;
+    reportSpinDone(spin.id);
+    drainSpins();
+  }
+}
+
+/* Confetti over the panel itself rather than the whole screen: this is one viewer's moment in a
+   corner of the overlay, not a takeover of the stream. */
+function celebrate(panel) {
+  const colors = ["#FFD166", "#EF476F", "#06D6A0", "#7EF0FF", "#C77DFF"];
+  for (let i = 0; i < 26; i++) {
+    const bit = document.createElement("span");
+    bit.className = "spin-confetti";
+    bit.style.left = `${rand(4, 96)}%`;
+    bit.style.background = pick(colors);
+    bit.style.animationDelay = `${rand(0, 500)}ms`;
+    bit.style.setProperty("--drift", `${rand(-40, 40)}px`);
+    bit.style.setProperty("--spin", `${rand(-540, 540)}deg`);
+    bit.addEventListener("animationend", () => bit.remove());
+    panel.appendChild(bit);
+  }
+}
+
+function nextFrame() { return new Promise((resolve) => requestAnimationFrame(() => resolve())); }
 
 /* ------------------------------------------------------------------ main loop */
 

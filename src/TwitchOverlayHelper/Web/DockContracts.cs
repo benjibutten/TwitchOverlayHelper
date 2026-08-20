@@ -152,12 +152,21 @@ internal sealed record DockSamples(string Type, IReadOnlyList<DockHistoryItem> I
 
 internal sealed record DockPet(string Id, string Name, string? Color, string Species, long SpawnedAt, long ExpiresAt);
 
-internal sealed record DockPetSettings(bool Enabled, double Scale, int LifetimeMinutes, int MaxPets, bool ShowNames);
+internal sealed record DockPetSettings(
+    bool Enabled,
+    double Scale,
+    int LifetimeMinutes,
+    int MaxPets,
+    bool ShowNames,
+    bool RarityEffects,
+    int RarityFadeSeconds);
 
 /// <summary>
 /// One species the overlay can render: an SVG body fetched from the pets folder, or a spritesheet
 /// for pets in the hatch-pet format. SpriteVersion 2 is the extended sheet whose two extra rows
-/// hold the sixteen look directions; null for SVG pets.
+/// hold the sixteen look directions; null for SVG pets. Rarity is a
+/// <see cref="TwitchOverlayHelper.Pets.PetRarity"/> tier, and the only thing the overlay does with
+/// it is decide how bright an aura the creature walks around in.
 /// </summary>
 internal sealed record DockPetDefinition(
     string Id,
@@ -168,6 +177,7 @@ internal sealed record DockPetDefinition(
     string? SpriteUrl,
     double Fps,
     IReadOnlyList<string> Emoji,
+    string Rarity,
     int? SpriteVersion = null);
 
 /// <summary>
@@ -187,6 +197,23 @@ internal sealed record DockPetSpawn(DockPet Pet, string? RemovedId, bool Extende
 
 /// <summary>One pet sent home early, because the redemption that bought it was paid back.</summary>
 internal sealed record DockPetRemoved(string Id);
+
+/// <summary>
+/// One lucky spin for the pet overlay to act out. The winner is already drawn and already booked –
+/// the reel is theatre, which is why the frame carries the answer: the overlay slows down onto
+/// <paramref name="WinnerPetId"/> and reports <c>spinDone</c> with <paramref name="Id"/> when the
+/// curtain falls. <paramref name="PetIds"/> are the candidates to loop through, in the order sent;
+/// their portraits come from the catalog the overlay already holds.
+/// </summary>
+internal sealed record DockSpin(
+    string Id,
+    IReadOnlyList<string> PetIds,
+    string WinnerPetId,
+    string WinnerName,
+    string Side,
+    int Seconds,
+    string Title,
+    bool Duplicate);
 
 /// <summary>Whether the speaker button next to every name has anything to call.</summary>
 internal sealed record DockSpeech(bool Enabled);

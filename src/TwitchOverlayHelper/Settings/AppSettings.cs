@@ -100,6 +100,9 @@ public sealed class AppSettings
     /// <summary>Channel point pets in the OBS pet overlay.</summary>
     public PetSettings Pets { get; set; } = new();
 
+    /// <summary>Lyckosnurren – the spin that wins a viewer a pet of their own for good.</summary>
+    public SpinSettings Spin { get; set; } = new();
+
     /// <summary>The edge glow that catches the streamer's eye – mod call and new chatters.</summary>
     public EdgeAlertSettings EdgeAlerts { get; set; } = new();
 
@@ -124,6 +127,8 @@ public sealed class AppSettings
         Tts.Normalize();
         Pets ??= new PetSettings();
         Pets.Normalize();
+        Spin ??= new SpinSettings();
+        Spin.Normalize();
         EdgeAlerts ??= new EdgeAlertSettings();
         EdgeAlerts.Normalize();
         Bot ??= new BotSettings();

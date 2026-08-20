@@ -98,6 +98,24 @@ Allt som lösts in **medan appen inte lyssnade** betalas tillbaka när den koppl
 
 Belöningar du redan har fungerar precis som förut: peten spawnar, poängen är spenderade, ingenting nytt händer, och chattvägen bär dem även utan EventSub. Bara rader med 🔒 kan besvaras – och deras ID är låst, eftersom det är det enda som binder raden till belöningen Twitch låter oss svara på. Peka om en rad genom att ta bort den och skapa en ny.
 
+## Lyckosnurren
+
+En egen belöning som snurrar fram en pet tittaren får **behålla**. Snurren glider in i pet-overlayen från den kant du väljer, loopar igenom allt som går att vinna och stannar på vinsten – som sedan hoppar ut på gräsmattan. Ingen ny källa i OBS behövs.
+
+Vinsten knyts till **Twitch-ID:t**, inte namnet. Byter någon namn följer samlingen med, och `!mina` svarar likadant efteråt. Allt sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\spinwins.json`, som skrivs atomiskt vid varje ändring med en daterad kopia bredvid – går huvudfilen sönder läses den nyaste kopia som fortfarande går att tolka.
+
+**Vad som går att vinna** väljer du under **Pets → Lyckosnurren**. Varje pet har en kryssruta och en sällsynthet: `vanlig`, `ovanlig`, `sällsynt` eller `legendarisk`, där en vanlig är ungefär trettio gånger så trolig som en legendarisk. Valen skrivs i petens egen `pet.json` (`winOnly` och `rarity`), så de följer med mappen till en annan dator – och fält appen inte känner till, som Codex egna, lämnas orörda.
+
+**Sällsyntheten syns på gräsmattan.** En ovanlig pet går omkring i en svag grön skimrande aura, en sällsynt i lila med ett ljus som sveper över kroppen då och då, och en legendarisk i guld med gnistor och en varmare fläck mark under sig. Vanliga pets ser ut precis som förut – en effekt alla bär är ingen effekt. Samma färger lyser upp snurrens fönster när den stannar. Auran är till för ögonblicket peten kommer in, så den **tonar bort efter tio sekunder** och lämnar kvar bara varelsen – annars står sex pets och lyser i fem minuter var ovanpå spelet. Tiden ändrar du under **Pets → Inställningar**, och `0` låter dem lysa hela tiden. Vill du ha overlayen helt ren stänger du av alltihop med **Visa sällsynthet med skimmer**.
+
+En pet markerad som vinstbar försvinner ur den vanliga pet-belöningen för alla utom den som vunnit den. Ber någon annan om den med namn betalas inlösen tillbaka och boten säger varför; kan belöningen inte återbetalas får de en vanlig pet i stället. Du och dina moderatorer kommer fortfarande åt alla arter med `!pet namn`.
+
+**Dubbletter blir gåvor.** Landar snurren på något vinnaren redan äger får de skänka bort den: boten ber om ett namn, och `!ge kajsa` knyter vinsten till det kontot. Inlösen står kvar öppen medan de väljer, så poängen kommer tillbaka om ingen hinner väljas inom tiden du satt. Kan boten inte skriva just då finns ingen som kan hålla samtalet – avstängd, utloggad, chatten nere, eller raden avslagen under **Vad boten säger** – och då hoppar dragningen i stället över det de redan har, så att bara den som samlat allt får sina poäng tillbaka. Snurrar någon igen medan deras förra gåva fortfarande letar mottagare ersätts den av den nya, och poängen för den gamla kommer tillbaka.
+
+**Vinnaren är dragen och sparad innan animationen ens börjar.** Går overlayen ner mitt i snurren, eller kvitterar den aldrig, gäller vinsten ändå – det enda som går förlorat är showen. Inlösen betalas tillbaka när lyckosnurren är avstängd, när pets är avstängda, när ingen pet-overlay är igång, när ingenting är markerat som vinstbart, eller när en gåva aldrig fick en mottagare. Och en vinst som hann bokföras men inte kvitteras hos Twitch innan appen stängdes ligger kvar som en skuld på disk: den kvitteras när appen är uppkopplad igen, i stället för att städas bort som obetald och ge tittaren både peten och poängen.
+
+Kommandona (`!mina` och `!ge` som standard) och all text boten säger går att byta – under **Vad boten säger** finns elva nya rader för snurren, och `{pets}`-orden du valt fungerar i dem precis som i resten.
+
 ## Chatten ligger kvar
 
 Chatten sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\chat-history.json` och läggs tillbaka när appen startar, så en omstart mitt i strömmen inte lämnar en tom spalt. Det som sparas är bara det appen själv har sett: Twitch skickar ingen historik när man ansluter, och det finns ingen Helix-endpoint för chatt.
@@ -265,6 +283,7 @@ Kallar din kanal dem något annat än "pets" skriver du det under *Ord boten anv
 - Uppläsning av chattares namn via DeepSeek och ElevenLabs, för namn som är svåra att läsa högt.
 - **Uppläsning av tittarnas meddelanden**, köpta med bits (custom Power-up) eller channel points, med godkännande i docken och ljudet via en egen browserkälla i OBS. Se [Uppläsning av tittarnas meddelanden](#uppläsning-av-tittarnas-meddelanden).
 - **Chatbot** på ett eget Twitch-konto som säger till tittaren varför poängen kom tillbaka, att uppläsningen fortfarande väntar på svar och att overlayen ligger nere – plus egna kommandon du skriver själv. Varje meddelande går att slå av och skriva om, med kanalens egna ord för både dig och dina pets. Se [Chatbot](#chatbot).
+- **Lyckosnurren**: en belöning som snurrar fram en pet tittaren får behålla, knuten till Twitch-kontot så den överlever namnbyten. Sällsynthet per pet, dubbletter som går att skänka bort, och kommandon för att se sin samling. Se [Lyckosnurren](#lyckosnurren).
 - Egna smeknamn på chattare, synliga i både dock och overlay, sparade med säkerhetskopia vid varje ändring.
 - Inställningar sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\settings.json`, med daterade kopior och en zip av hela profilen vid varje ny version. Se [Dina data](#dina-data). OAuth-token sparas aldrig.
 - Körs som en enda instans; en ny vanlig start öppnar den redan körande appens inställningsfönster.
@@ -281,7 +300,7 @@ Vill du kolla själv finns **Sök efter uppdateringar** längst ned i inställni
 
 ## Dina data
 
-Allt du har ställt in ligger i `%LOCALAPPDATA%\TwitchOverlayHelper\` – inställningar, smeknamn, pets, inloggningar och cache. Knappen **Säkerhetskopior** längst ned i inställningsfönstret öppnar mappen.
+Allt du har ställt in ligger i `%LOCALAPPDATA%\TwitchOverlayHelper\` – inställningar, smeknamn, pets, vinster från lyckosnurren, inloggningar och cache. Knappen **Säkerhetskopior** längst ned i inställningsfönstret öppnar mappen.
 
 Inget av det är värt något om det kan försvinna, så det finns tre skyddsnät, ett för varje sätt det faktiskt går sönder på:
 

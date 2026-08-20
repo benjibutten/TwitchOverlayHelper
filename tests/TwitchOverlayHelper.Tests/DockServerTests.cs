@@ -737,6 +737,33 @@ public sealed class DockServerTests
         client.Dispose();
     }
 
+    /// <summary>
+    /// The overlay draws the rarity aura from the greeting alone – it never asks a second time – so
+    /// a species without a tier in the catalogue, or a toggle and a fade time that never reach the
+    /// lawn, is a legendary pet walking around looking like every other one.
+    /// </summary>
+    [Fact]
+    public async Task TheGreetingCarriesEverySpeciesRarityAndWhetherTheLawnShouldShowIt()
+    {
+        (DockServer server, AppSettings settings, HttpClient client, ChatHub hub) = await StartWithHubAsync(loggedInUserId: "42");
+        await using (server)
+        {
+            settings.Pets.RarityEffects = false;
+            settings.Pets.RarityFadeSeconds = 4;
+
+            using JsonDocument hello = JsonDocument.Parse(await HelloAsync(settings, "pets"));
+
+            JsonElement petSettings = hello.RootElement.GetProperty("petSettings");
+            Assert.False(petSettings.GetProperty("rarityEffects").GetBoolean());
+            Assert.Equal(4, petSettings.GetProperty("rarityFadeSeconds").GetInt32());
+            JsonElement catalog = hello.RootElement.GetProperty("petCatalog");
+            Assert.NotEqual(0, catalog.GetArrayLength());
+            foreach (JsonElement pet in catalog.EnumerateArray())
+                Assert.False(string.IsNullOrWhiteSpace(pet.GetProperty("rarity").GetString()));
+        }
+        client.Dispose();
+    }
+
     [Fact]
     public async Task OnlyThePetViewCountsAsALawnThatCanBeSeen()
     {
