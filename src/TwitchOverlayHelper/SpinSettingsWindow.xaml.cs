@@ -128,6 +128,7 @@ public partial class SpinSettingsWindow : Window
     private readonly Action _save;
     private readonly Action _testSpin;
     private readonly Func<string, int, Task<string>> _createReward;
+    private readonly Func<string, string?> _inspectUrl;
     private readonly ObservableCollection<SpinPetRow> _pets = [];
     private bool _loading = true;
 
@@ -136,13 +137,18 @@ public partial class SpinSettingsWindow : Window
     /// in rather than reached for, because the API client and the broadcaster live in the main
     /// window and this window has no business holding either.
     /// </param>
+    /// <param name="inspectUrl">
+    /// The address of one pet's inspection view, or null while the local server is not running.
+    /// Handed in for the same reason: the server is the main window's, not this one's.
+    /// </param>
     public SpinSettingsWindow(
         AppSettings settings,
         PetCatalog catalog,
         SpinWinStore wins,
         Action save,
         Action testSpin,
-        Func<string, int, Task<string>> createReward)
+        Func<string, int, Task<string>> createReward,
+        Func<string, string?> inspectUrl)
     {
         _settings = settings;
         _catalog = catalog;
@@ -150,6 +156,7 @@ public partial class SpinSettingsWindow : Window
         _save = save;
         _testSpin = testSpin;
         _createReward = createReward;
+        _inspectUrl = inspectUrl;
 
         InitializeComponent();
         DarkTitleBar.Enable(this);
@@ -497,6 +504,34 @@ public partial class SpinSettingsWindow : Window
             : Spin.RewardId.Length > 0 || Spin.RewardName.Length > 0
                 ? "— Belöningen är inte skapad av appen, så poängen kan aldrig lämnas tillbaka härifrån."
                 : "Ingen belöning vald än. Skriv ett namn och klicka ⚡ så skapar appen den åt dig.";
+    }
+
+    /// <summary>
+    /// Opens one pet alone in the browser, where a WebP spritesheet can actually be watched: WPF
+    /// draws its first cell and nothing more, so a row that is empty or a frame that jumps is
+    /// invisible from in here. A page for setting a pet up – the app neither needs it nor knows it
+    /// is open, and closing the tab is the whole of putting it away.
+    /// </summary>
+    private void PetInspect_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not SpinPetRow row) return;
+
+        string? url = _inspectUrl(row.Id);
+        if (url is null)
+        {
+            PetStatusText.Text = "Testvyn ritas av appens lokala server – slå på den under Chattdock först.";
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            PetStatusText.Text = string.Empty;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            PetStatusText.Text = $"Kunde inte öppna webbläsaren. Adressen är {url}";
+        }
     }
 
     private void TestSpin_Click(object sender, RoutedEventArgs e) => _testSpin();

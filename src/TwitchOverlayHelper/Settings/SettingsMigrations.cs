@@ -33,9 +33,11 @@ public static class SettingsMigrations
     /// <list type="bullet">
     /// <item><description>0 – everything up to and including the first builds with a bot: no stamp on the file.</description></item>
     /// <item><description>1 – the stamp itself, so later changes have something to migrate from.</description></item>
+    /// <item><description>2 – the lucky spin stopped paying back duplicates, so the two bot lines that
+    /// promised the points back are worded afresh where the streamer had left them as they were.</description></item>
     /// </list>
     /// </summary>
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     public static SettingsMigrationResult Apply(AppSettings settings)
     {
@@ -61,6 +63,28 @@ public static class SettingsMigrations
                 // the same name. The step exists so that version 1 means "seen and checked" rather
                 // than "never looked at".
                 break;
+
+            case 1:
+                // A duplicate win used to end in a refund when nobody was named in time, and two of
+                // the bot's lines said so out loud. It does not any more – the spin buys one chance
+                // to place the pet and nothing else – so a line the streamer never touched is put
+                // right rather than left promising points that will not come.
+                Reword(settings.Bot, BotFlow.SpinDuplicate,
+                    "@{viewer} du vann {prize} – men den har du redan! Skriv \"{command} namn\" inom {minutes} min för att skänka den till någon, annars får du tillbaka poängen.");
+                Reword(settings.Bot, BotFlow.SpinGiftOwned, "@{viewer} @{target} har redan {prize} – välj någon annan.");
+                break;
         }
+    }
+
+    /// <summary>
+    /// Puts one flow back on the wording this build ships with – but only where it still reads word
+    /// for word as the old default did. A template the streamer has made their own is theirs, and a
+    /// migration that overwrote it would be taking their words away to fix the app's.
+    /// </summary>
+    private static void Reword(BotSettings? bot, BotFlow flow, string wasDefault)
+    {
+        BotMessageRule? rule = bot?.Messages?.FirstOrDefault(saved => saved is not null && saved.Flow == flow);
+        if (rule is null || !string.Equals(rule.Template?.Trim(), wasDefault, StringComparison.Ordinal)) return;
+        rule.Template = BotSettings.Defaults.First(fallback => fallback.Flow == flow).Template;
     }
 }

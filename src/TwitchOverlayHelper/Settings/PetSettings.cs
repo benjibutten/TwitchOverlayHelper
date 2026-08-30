@@ -100,6 +100,18 @@ public sealed class PetSettings
     /// <summary>Render scale in the overlay; 1.0 is roughly 90 px tall.</summary>
     public double Scale { get; set; } = 1.0;
 
+    /// <summary>
+    /// How fast the creatures are animated, as a multiple of their natural pace. Each behaviour
+    /// already has a pace of its own – a wave is a gesture and runs slower than a run cycle – so
+    /// this scales the whole set rather than any one animation, and 1.0 is the balance the overlay
+    /// was drawn for.
+    ///
+    /// <para>It exists because the right speed depends on the sheet: a creature drawn with six
+    /// frames of idle breathes at a different rate than one drawn with three, and no default fits
+    /// every pet somebody downloads.</para>
+    /// </summary>
+    public double AnimationSpeed { get; set; } = 1.0;
+
     /// <summary>When full, the oldest pet is sent home to make room for the newest redemption.</summary>
     public int MaxPets { get; set; } = 6;
 
@@ -173,6 +185,9 @@ public sealed class PetSettings
         DefaultPet = DefaultPet?.Trim() ?? string.Empty;
         LifetimeMinutes = Math.Clamp(LifetimeMinutes, 1, 60);
         Scale = Math.Clamp(double.IsFinite(Scale) ? Scale : 1.0, 0.4, 2.5);
+        // Outside this range the animations stop reading as movement: too slow is a slideshow, too
+        // fast a blur, and neither is a setting worth letting a hand-edited file ask for.
+        AnimationSpeed = Math.Clamp(double.IsFinite(AnimationSpeed) ? AnimationSpeed : 1.0, 0.5, 1.5);
         MaxPets = Math.Clamp(MaxPets, 1, 20);
 
         // A hand-edited settings.json can hold "rewards": [null]; a missing rule is worth ignoring,

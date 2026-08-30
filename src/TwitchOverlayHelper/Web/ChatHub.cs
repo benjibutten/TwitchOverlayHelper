@@ -553,11 +553,18 @@ public sealed class ChatHub(
     public void PublishPetCatalog() =>
         SendEverywhere(DockJson.Serialize(new DockEnvelope<IReadOnlyList<DockPetDefinition>>("petCatalog", BuildPetCatalog())));
 
-    private DockPetSettings BuildPetSettings() => new(
+    /// <summary>
+    /// What the overlay looks like. Also what the pet inspector reads over HTTP: the animation speed
+    /// is a setting, not a property of the sheet, and an inspector that ignored it would show a pace
+    /// the lawn does not play at.
+    /// </summary>
+    internal DockPetSettings BuildPetSettings() => new(
         settings.Pets.Enabled, settings.Pets.Scale, settings.Pets.LifetimeMinutes, settings.Pets.MaxPets,
-        settings.Pets.ShowNames, settings.Pets.RarityEffects, settings.Pets.RarityFadeSeconds);
+        settings.Pets.ShowNames, settings.Pets.RarityEffects, settings.Pets.RarityFadeSeconds,
+        settings.Pets.AnimationSpeed);
 
-    private IReadOnlyList<DockPetDefinition> BuildPetCatalog() => petCatalog.Pets
+    /// <summary>The species list as the overlay gets it. Also what the pet inspector reads over HTTP.</summary>
+    internal IReadOnlyList<DockPetDefinition> BuildPetCatalog() => petCatalog.Pets
         .Select(pet => pet.SpriteFile is { Length: > 0 }
             ? new DockPetDefinition(pet.Id, pet.Name, pet.Description, "sprite", null, $"/pets/sprite/{pet.Id}", pet.Fps, pet.Emoji, pet.Rarity, pet.SpriteVersion)
             : new DockPetDefinition(pet.Id, pet.Name, pet.Description, "svg", $"/pets/body/{pet.Id}", null, pet.Fps, pet.Emoji, pet.Rarity))

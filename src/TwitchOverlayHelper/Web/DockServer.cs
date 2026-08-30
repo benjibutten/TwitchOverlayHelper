@@ -59,6 +59,15 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
     /// </summary>
     public string TtsUrl => $"http://127.0.0.1:{Port}/tts.html?key={context.Settings.DockAccessKey}";
 
+    /// <summary>
+    /// One pet alone in a browser tab, with the controls to try every animation it has. A page for
+    /// setting a pet up rather than for streaming with: nothing in the app opens it by itself, and
+    /// nothing it does reaches the overlay – WebP spritesheets are simply easier to judge where
+    /// there is a browser to draw them.
+    /// </summary>
+    public string InspectUrl(string petId) =>
+        $"http://127.0.0.1:{Port}/pet-inspect.html?key={context.Settings.DockAccessKey}&pet={Uri.EscapeDataString(petId)}";
+
     public async Task<bool> StartAsync()
     {
         if (_app is not null) return true;
@@ -326,6 +335,16 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
 
         app.MapPost("/api/raid/cancel", async () =>
             await RunAsync(() => context.Api.CancelRaidAsync(RequireOwnChannel())).ConfigureAwait(false));
+
+        // The species list for the pet inspector, which has no socket: it is one page looking at one
+        // pet, and a browser source's worth of chat frames is not its business. Behind the key like
+        // everything under /api.
+        app.MapGet("/api/pets/catalog", () => Results.Json(context.Hub.BuildPetCatalog(), DockJson.Options));
+
+        // The overlay's own settings, for the same page: how fast the creatures are animated is the
+        // streamer's choice rather than the sheet's, so the inspector has to be told it to show what
+        // the lawn will actually do.
+        app.MapGet("/api/pets/settings", () => Results.Json(context.Hub.BuildPetSettings(), DockJson.Options));
 
         // Pet drawings live in the user's pets folder, so an edited pet reaches the overlay after a
         // reload without the app shipping a new build.

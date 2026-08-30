@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pet-inspektör</title>
+<!-- The creature is drawn by the overlay's own stylesheet, so what shows here is what OBS will
+     show. Everything below is the room around it: panels, controls and the sheet map. -->
+<link rel="stylesheet" href="pets.css" />
+<style>
+  :root {
+    --page: #14161F;
+    --card: #1E2233;
+    --card-2: #191D2B;
+    --line: #2C3247;
+    --text: #EDEBF2;
+    --muted: #8F8B9E;
+    --accent: #7EF0FF;
+    --warn: #F0A85C;
+    --bad: #EF476F;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--page);
+    color: var(--text);
+    font: 13px/1.5 "Segoe UI", Verdana, sans-serif;
+    padding: 18px;
+  }
+
+  h1 { font-size: 20px; font-weight: 600; margin: 0; }
+  h2 { font-size: 14px; font-weight: 600; margin: 0 0 10px; }
+  .eyebrow { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: 0.6px; }
+  .hint { color: var(--muted); font-size: 12px; line-height: 18px; }
+
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 14px; }
+  header .grow { flex: 1 1 320px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px;
+  }
+
+  .split { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+  .split > .stage-col { flex: 1 1 520px; min-width: 340px; display: flex; flex-direction: column; gap: 14px; }
+  .split > .side-col { flex: 0 1 330px; min-width: 280px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* ---------------------------------------------------------------- the stage
+
+     The pet stands in here on whatever ground is being tried out. The checker is drawn on the
+     element itself so a chosen colour simply covers it. */
+  .stage-frame {
+    position: relative;
+    height: 420px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background-color: #101320;
+  }
+  .stage-frame.checker {
+    background-image:
+      linear-gradient(45deg, #2A2E3D 25%, transparent 25%, transparent 75%, #2A2E3D 75%),
+      linear-gradient(45deg, #2A2E3D 25%, transparent 25%, transparent 75%, #2A2E3D 75%);
+    background-size: 24px 24px;
+    background-position: 0 0, 12px 12px;
+    background-color: #1B1F2C;
+  }
+
+  #stage { position: absolute; inset: 0; }
+
+  /* Helper lines: the cell the sheet actually hands over, its centre, and the ground the pet is
+     placed against. Every one of them is off until asked for – they are for finding a drawing that
+     sits crooked in its cell, not for looking at the pet. */
+  .guide {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: calc(90px * var(--pet-scale));
+    height: calc(90px * var(--pet-scale));
+    display: none;
+    pointer-events: none;
+    outline: 1px dashed rgba(126, 240, 255, 0.65);
+  }
+  .pet.is-sprite .guide { height: calc(97.5px * var(--pet-scale)); }
+  #stage.guides-on .guide { display: block; }
+  #stage.guides-on .guide::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    border-left: 1px dashed rgba(126, 240, 255, 0.45);
+  }
+  .floor {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 4px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.35);
+    display: none;
+    pointer-events: none;
+  }
+  #stage.guides-on .floor { display: block; }
+
+  .stage-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-top: 12px;
+  }
+  .stage-bar input[type="range"] { flex: 1 1 160px; min-width: 120px; }
+
+  .frame-read {
+    font-family: Consolas, monospace;
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  /* ---------------------------------------------------------------- controls */
+  .field { margin-bottom: 12px; }
+  .field:last-child { margin-bottom: 0; }
+  label.cap { display: block; color: var(--muted); font-size: 11.5px; margin-bottom: 4px; }
+
+  select, input[type="text"], input[type="number"] {
+    width: 100%;
+    background: var(--card-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 7px 9px;
+    font: inherit;
+  }
+  input[type="color"] {
+    width: 100%;
+    height: 32px;
+    padding: 2px;
+    background: var(--card-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  input[type="range"] { accent-color: var(--accent); width: 100%; }
+  input[type="checkbox"] { accent-color: var(--accent); }
+
+  button {
+    background: #343B50;
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 7px 12px;
+    font: inherit;
+    cursor: pointer;
+  }
+  button:hover { background: #3E4664; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.primary { background: #2C4F63; border-color: #3A6C86; }
+
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .checks label { display: block; margin-bottom: 6px; cursor: pointer; }
+  .checks label:last-child { margin-bottom: 0; }
+
+  .swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+  .swatch {
+    width: 30px;
+    height: 26px;
+    padding: 0;
+    border-radius: 7px;
+  }
+  .swatch.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* ---------------------------------------------------------------- the sheet map
+
+     The whole spritesheet with its grid drawn on top: the fastest way to see that a row is empty,
+     that a frame is missing at the end of an animation, or that the drawing sits half a cell off. */
+  .sheet-wrap { position: relative; width: 100%; border-radius: 8px; overflow: hidden; background: #101320; }
+  .sheet-img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+  .sheet-grid { position: absolute; inset: 0; display: grid; }
+  .sheet-cell {
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    position: relative;
+  }
+  .sheet-cell.empty { background: repeating-linear-gradient(45deg, rgba(239,71,111,0.10) 0 5px, transparent 5px 10px); }
+  .sheet-cell.on { outline: 2px solid var(--accent); outline-offset: -2px; background: rgba(126, 240, 255, 0.12); }
+  .sheet-rows { display: grid; gap: 0; font-size: 10.5px; color: var(--muted); }
+  .sheet-rows div { display: flex; align-items: center; padding-right: 6px; justify-content: flex-end; text-align: right; line-height: 1.15; }
+  .sheet-layout { display: grid; grid-template-columns: 116px 1fr; gap: 0; }
+
+  /* ---------------------------------------------------------------- the report */
+  table.report { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.report td { padding: 3px 0; vertical-align: top; }
+  table.report td:first-child { color: var(--muted); width: 42%; padding-right: 10px; }
+  .notes { margin: 10px 0 0; padding: 0; list-style: none; font-size: 12px; }
+  .notes li { padding: 5px 0 5px 20px; position: relative; line-height: 17px; }
+  .notes li::before { position: absolute; left: 0; }
+  .notes li.ok::before { content: "✓"; color: #7CE7A6; }
+  .notes li.warn::before { content: "⚠"; color: var(--warn); }
+  .notes li.bad::before { content: "✕"; color: var(--bad); }
+
+  .status { color: var(--warn); font-size: 12px; min-height: 17px; }
+  code { font-family: Consolas, monospace; background: var(--card-2); padding: 1px 5px; border-radius: 5px; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="grow">
+      <div class="eyebrow">PET-INSPEKTÖR</div>
+      <h1 id="petTitle">Pet-inspektör</h1>
+      <p class="hint" style="margin:6px 0 0">
+        En fristående testvy för en enda pet. Ingenting här rör overlayen, chatten eller vad tittarna ser –
+        den ritas med overlayens egen stil, så det som ser fel ut här ser fel ut i OBS också.
+      </p>
+    </div>
+    <div style="flex:0 1 260px">
+      <label class="cap" for="petPick">Pet</label>
+      <select id="petPick"></select>
+    </div>
+    <div class="row">
+      <button id="reloadBtn" title="Hämtar bilden och ritningen på nytt, förbi vad webbläsaren sparat. Har du ändrat pet.json klickar du “Ladda om pets” i appen först.">↻ Ladda om</button>
+    </div>
+  </header>
+  <div class="status" id="status"></div>
+
+  <div class="split" style="margin-top:10px">
+    <div class="stage-col">
+      <div class="card">
+      <div class="stage-frame checker" id="stageFrame">
+        <div id="stage" class="rarity-fx">
+          <div class="floor"></div>
+        </div>
+      </div>
+
+      <div class="stage-bar">
+        <button id="playBtn" class="primary">⏸ Pausa</button>
+        <button id="prevBtn" title="Föregående ruta">‹</button>
+        <button id="nextBtn" title="Nästa ruta">›</button>
+        <span class="frame-read" id="frameRead">–</span>
+        <input type="range" id="frameSlider" min="0" max="7" step="1" value="0" />
+        <button id="replayBtn" title="Spelar animationen från början igen">↺ Spela om</button>
+      </div>
+
+      <div class="stage-bar">
+        <span class="frame-read">Bakgrund</span>
+        <span class="swatches" id="swatches"></span>
+        <input type="color" id="bgColor" value="#1B1F2C" style="width:44px" title="Egen bakgrundsfärg" />
+      </div>
+      </div>
+
+      <div class="card" id="sheetCard">
+        <h2>Spritesheeten</h2>
+        <p class="hint" style="margin:0 0 10px">
+          Hela arket med sitt rutnät. Klicka på en ruta för att frysa peten där. Rutor som är helt
+          genomskinliga är streckade – tomma rutor mitt i en rad är oftast felet du letar efter.
+        </p>
+        <div class="sheet-layout">
+          <div class="sheet-rows" id="sheetRows"></div>
+          <div class="sheet-wrap" id="sheetWrap">
+            <img class="sheet-img" id="sheetImg" alt="" />
+            <div class="sheet-grid" id="sheetGrid"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col">
+      <div class="card">
+        <h2>Animation</h2>
+        <div class="field">
+          <label class="cap" for="animPick">Beteende (som overlayen spelar det)</label>
+          <select id="animPick"></select>
+        </div>
+        <div class="field" id="rowField">
+          <label class="cap" for="rowPick">Rad i spritesheeten</label>
+          <select id="rowPick"></select>
+        </div>
+        <div class="field" id="lookField">
+          <label class="cap" for="lookSlider">Blickriktning <span id="lookRead" class="frame-read"></span></label>
+          <input type="range" id="lookSlider" min="-1" max="15" step="1" value="-1" />
+        </div>
+        <div class="field">
+          <label class="cap" for="fpsInput">Bildrutor per sekund – arkets grundtakt</label>
+          <input type="number" id="fpsInput" min="1" max="30" step="1" value="10" />
+        </div>
+        <div class="checks">
+          <label><input type="checkbox" id="faceLeft" /> Spegelvänd (går åt vänster)</label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Utseende</h2>
+        <div class="field">
+          <label class="cap" for="scaleSlider">Storlek <span id="scaleRead" class="frame-read">300 %</span></label>
+          <input type="range" id="scaleSlider" min="0.5" max="8" step="0.1" value="3" />
+        </div>
+        <div class="field">
+          <label class="cap" for="rarityPick">Sällsynthet att prova</label>
+          <select id="rarityPick">
+            <option value="">Som i pet.json</option>
+            <option value="vanlig">vanlig</option>
+            <option value="ovanlig">ovanlig</option>
+            <option value="sällsynt">sällsynt</option>
+            <option value="legendarisk">legendarisk</option>
+          </select>
+        </div>
+        <div class="checks">
+          <label><input type="checkbox" id="rarityFx" checked /> Skimmer och aura</label>
+          <label><input type="checkbox" id="rarityFaded" /> Visa auran bortdöad</label>
+          <label><input type="checkbox" id="showName" checked /> Namnskylt</label>
+          <label><input type="checkbox" id="showShadow" checked /> Markskugga</label>
+          <label><input type="checkbox" id="guides" /> Hjälplinjer: cellram, mitt och golv</label>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button id="bubbleBtn">💬 Pratbubbla</button>
+          <button id="sparkleBtn">✨ Gnistor</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Vad appen ser</h2>
+        <table class="report"><tbody id="reportBody"></tbody></table>
+        <ul class="notes" id="notes"></ul>
+      </div>
+    </div>
+  </div>
+
+  <script src="pet-shared.js"></script>
+  <script src="pet-inspect.js"></script>
+</body>
+</html>

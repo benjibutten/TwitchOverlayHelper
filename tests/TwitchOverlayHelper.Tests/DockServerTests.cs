@@ -106,6 +106,75 @@ public sealed class DockServerTests
         client.Dispose();
     }
 
+    /// <summary>
+    /// The pet inspector is its own page, but it draws the creature with the overlay's stylesheet
+    /// and the overlay's sprite arithmetic – that shared pair is the only reason to trust what it
+    /// shows. If either file stopped being served, the inspector would quietly become a second
+    /// opinion instead of the same one.
+    /// </summary>
+    [Fact]
+    public async Task ServesTheInspectorAndTheFilesItSharesWithTheOverlay()
+    {
+        (DockServer server, _, HttpClient client) = await StartAsync();
+        await using (server)
+        {
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/pet-inspect.html")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/pet-inspect.js")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/pets.css")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/pet-shared.js")).StatusCode);
+
+            string overlay = await client.GetStringAsync("/pets.html");
+            Assert.Contains("pets.css", overlay);
+            Assert.Contains("pet-shared.js", overlay);
+        }
+        client.Dispose();
+    }
+
+    /// <summary>
+    /// The inspector has no socket, so the species list has to be readable over plain HTTP – and
+    /// behind the key like everything else under /api.
+    /// </summary>
+    [Fact]
+    public async Task ServesThePetCatalogToTheInspector()
+    {
+        (DockServer server, AppSettings settings, HttpClient client) = await StartAsync();
+        await using (server)
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/pets/catalog")).StatusCode);
+
+            using JsonDocument catalog = JsonDocument.Parse(
+                await client.GetStringAsync($"/api/pets/catalog?key={settings.DockAccessKey}"));
+            JsonElement[] pets = [.. catalog.RootElement.EnumerateArray()];
+            Assert.NotEmpty(pets);
+            Assert.Contains(pets, pet => pet.GetProperty("id").GetString() == "robo");
+            // Everything the page needs to draw a pet and to say what it read out of it.
+            JsonElement robo = pets.First(pet => pet.GetProperty("id").GetString() == "robo");
+            Assert.Equal("svg", robo.GetProperty("kind").GetString());
+            Assert.Equal("/pets/body/robo", robo.GetProperty("bodyUrl").GetString());
+        }
+        client.Dispose();
+    }
+
+    /// <summary>
+    /// The inspector plays a pet at the speed the streamer set, which is a slider in the app and
+    /// nothing the spritesheet carries. Behind the key like the catalog beside it.
+    /// </summary>
+    [Fact]
+    public async Task ServesThePetSettingsToTheInspector()
+    {
+        (DockServer server, AppSettings settings, HttpClient client) = await StartAsync();
+        await using (server)
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/pets/settings")).StatusCode);
+
+            settings.Pets.AnimationSpeed = 0.75;
+            using JsonDocument petSettings = JsonDocument.Parse(
+                await client.GetStringAsync($"/api/pets/settings?key={settings.DockAccessKey}"));
+            Assert.Equal(0.75, petSettings.RootElement.GetProperty("animationSpeed").GetDouble());
+        }
+        client.Dispose();
+    }
+
     [Fact]
     public async Task PetSpriteEndpointOnlyServesIdsTheCatalogKnows()
     {

@@ -667,6 +667,8 @@ public partial class MainWindow : Window
         _settings.Pets.RarityEffects = PetRarityFxCheck.IsChecked == true;
         _settings.Pets.Scale = PetScaleSlider.Value;
         PetScaleValue.Text = $"{PetScaleSlider.Value:P0}";
+        _settings.Pets.AnimationSpeed = PetAnimSpeedSlider.Value;
+        PetAnimSpeedValue.Text = $"{PetAnimSpeedSlider.Value:P0}";
         _hub.PublishPetSettings();
         // Switching pets off hides the whole lawn, and the creatures on it go on living out their
         // time behind it. Anyone who paid for one of them is now paying for something nobody can
@@ -1280,7 +1282,10 @@ public partial class MainWindow : Window
                 RefreshPetCatalogUi();
             },
             _spins.SpinTest,
-            CreateSpinRewardAsync) { Owner = this };
+            CreateSpinRewardAsync,
+            // Null while the server is down: the inspection view is a page it serves, and an address
+            // to a port nobody is listening on is worse than being told why the button did nothing.
+            petId => _dockServer.IsRunning ? _dockServer.InspectUrl(petId) : null) { Owner = this };
         _spinSettingsWindow.Closed += (_, _) => _spinSettingsWindow = null;
         _spinSettingsWindow.Show();
     }
@@ -2234,6 +2239,8 @@ public partial class MainWindow : Window
         PetRarityFadeInput.Text = _settings.Pets.RarityFadeSeconds.ToString();
         PetScaleSlider.Value = _settings.Pets.Scale;
         PetScaleValue.Text = $"{_settings.Pets.Scale:P0}";
+        PetAnimSpeedSlider.Value = _settings.Pets.AnimationSpeed;
+        PetAnimSpeedValue.Text = $"{_settings.Pets.AnimationSpeed:P0}";
         PetLifetimeInput.Text = _settings.Pets.LifetimeMinutes.ToString();
         PetMaxInput.Text = _settings.Pets.MaxPets.ToString();
         foreach (PetRewardRule rule in _settings.Pets.Rewards) _petRewards.Add(rule);

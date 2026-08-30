@@ -475,6 +475,10 @@
                                         <Slider x:Name="PetScaleSlider" Minimum="0.4" Maximum="2.5" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="PetSetting_Changed"
                                                 ToolTip="Hur stora robotarna är i overlayen – ändringen syns direkt" />
 
+                                        <DockPanel Margin="0,14,0,0"><TextBlock Text="Animationsfart" /><TextBlock x:Name="PetAnimSpeedValue" Text="100 %" Style="{StaticResource ValueBadge}" /></DockPanel>
+                                        <Slider x:Name="PetAnimSpeedSlider" Minimum="0.5" Maximum="1.5" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="PetSetting_Changed"
+                                                ToolTip="Hur snabbt pets rör sig – ändringen syns direkt. Varje animation har redan sin egen takt: en vinkning är en gest och går långsammare än en språngmarsch, och reglaget skalar hela uppsättningen. Lägre om rörelserna känns stressiga, högre om de känns sega." />
+
                                         <Grid Margin="0,14,0,0">
                                             <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
                                             <StackPanel>
@@ -723,9 +727,9 @@
                                         <DockPanel Margin="0,14,0,0"><TextBlock Text="Volym" /><TextBlock x:Name="TtsVolumeValue" Text="90 %" Style="{StaticResource ValueBadge}" /></DockPanel>
                                         <Slider x:Name="TtsVolumeSlider" Minimum="0" Maximum="1" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="TtsSetting_Changed" />
 
-                                        <DockPanel Margin="0,10,0,0"><TextBlock Text="Max antal tecken" /><TextBlock x:Name="TtsMaxCharsValue" Text="240" Style="{StaticResource ValueBadge}" /></DockPanel>
+                                        <DockPanel Margin="0,10,0,0"><TextBlock Text="Max antal tecken" /><TextBlock x:Name="TtsMaxCharsValue" Text="500" Style="{StaticResource ValueBadge}" /></DockPanel>
                                         <Slider x:Name="TtsMaxCharsSlider" Minimum="20" Maximum="1000" TickFrequency="10" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="TtsSetting_Changed"
-                                                ToolTip="Längre meddelanden klipps vid närmaste ordslut. ElevenLabs tar betalt per tecken, så det här avgör vad en inlösen kan kosta dig." />
+                                                ToolTip="Längre meddelanden klipps vid närmaste ordslut. 500 är så långt ett chattmeddelande får vara på Twitch, så där klipps inget alls. ElevenLabs tar betalt per tecken, så det här avgör vad en inlösen kan kosta dig." />
 
                                         <CheckBox x:Name="TtsAnnounceNameCheck" Content="Läs “Namn säger:” före meddelandet" Margin="0,14,0,0" Checked="TtsSetting_Changed" Unchecked="TtsSetting_Changed" />
                                     </StackPanel>

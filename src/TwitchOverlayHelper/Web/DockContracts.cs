@@ -159,7 +159,8 @@ internal sealed record DockPetSettings(
     int MaxPets,
     bool ShowNames,
     bool RarityEffects,
-    int RarityFadeSeconds);
+    int RarityFadeSeconds,
+    double AnimationSpeed);
 
 /// <summary>
 /// One species the overlay can render: an SVG body fetched from the pets folder, or a spritesheet

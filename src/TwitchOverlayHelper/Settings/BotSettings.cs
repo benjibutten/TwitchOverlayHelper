@@ -102,7 +102,10 @@ public enum BotFlow
     /// <summary>The lucky spin landed and somebody owns a new pet.</summary>
     SpinWin,
 
-    /// <summary>The spin landed on something the winner already owns, so they may give it away.</summary>
+    /// <summary>
+    /// The spin landed on something the winner already owns. The points are spent either way; what
+    /// is left is one chance to give the pet to somebody else.
+    /// </summary>
     SpinDuplicate,
 
     /// <summary>A duplicate win found a new home.</summary>
@@ -111,8 +114,14 @@ public enum BotFlow
     /// <summary>The name given with the give command matched nobody on Twitch.</summary>
     SpinGiftUnknown,
 
-    /// <summary>The named recipient already owns the prize – themselves included.</summary>
+    /// <summary>
+    /// The named recipient already owns the prize – themselves included – so nobody receives it and
+    /// the chance is spent.
+    /// </summary>
     SpinGiftOwned,
+
+    /// <summary>A duplicate was never given away in time, so its chance ran out.</summary>
+    SpinGiftExpired,
 
     /// <summary>The answer to the list command: what this viewer has won.</summary>
     SpinList,
@@ -430,10 +439,11 @@ public sealed class BotSettings
         // The spin flows are on by default, unlike the celebratory ones: every line here is an
         // answer somebody is waiting on – what they won, what to type next, where their gift went.
         Rule(BotFlow.SpinWin, true, "🎉 @{viewer} vann {prize} i lyckosnurren!"),
-        Rule(BotFlow.SpinDuplicate, true, "@{viewer} du vann {prize} – men den har du redan! Skriv \"{command} namn\" inom {minutes} min för att skänka den till någon, annars får du tillbaka poängen."),
+        Rule(BotFlow.SpinDuplicate, true, "@{viewer} du vann {prize} – men den har du redan! Skriv \"{command} namn\" inom {minutes} min för att skänka den till någon, annars är chansen borta."),
         Rule(BotFlow.SpinGifted, true, "🎁 @{viewer} skänkte {prize} till @{target}!"),
         Rule(BotFlow.SpinGiftUnknown, true, "@{viewer} hittade ingen som heter \"{target}\" – testa igen."),
-        Rule(BotFlow.SpinGiftOwned, true, "@{viewer} @{target} har redan {prize} – välj någon annan."),
+        Rule(BotFlow.SpinGiftOwned, true, "@{viewer} @{target} hade redan {prize} – chansen är borta."),
+        Rule(BotFlow.SpinGiftExpired, true, "@{viewer} hann inte skänka {prize} – den är borta nu."),
         Rule(BotFlow.SpinList, true, "@{viewer} din samling: {list}.", cooldown: 15),
         Rule(BotFlow.SpinListEmpty, true, "@{viewer} du har inte vunnit någon {pet} än – lyckosnurren väntar!", cooldown: 15),
         Rule(BotFlow.SpinNotOwned, true, "@{viewer} {prize} kan bara användas av den som vunnit den i lyckosnurren."),

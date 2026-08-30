@@ -50,8 +50,10 @@ public sealed record SpinVerdict(string RedemptionId, string RewardId, string Vi
 ///
 /// <para><b>Duplicates become gifts.</b> The draw runs over every winnable pet, rarity-weighted, so
 /// a full-pocketed viewer can absolutely win something they already own – and then the bot asks them
-/// to name someone to give it to. The redemption stays unfulfilled while they choose: answered as
-/// delivered when the gift lands, paid back when nobody is named in time. With no bot to run that
+/// to name someone to give it to. A duplicate is a win like any other, points and all: the
+/// redemption is answered as delivered the moment it is drawn, and what it bought is one chance to
+/// place the pet. Nobody named before the timeout, or a name that turns out to own it too, and that
+/// chance is spent – there is no path back to the points from here. With no bot to run the
 /// conversation the draw simply skips what they own instead, and only somebody who owns everything
 /// is paid back outright.</para>
 /// </summary>
@@ -188,18 +190,26 @@ public sealed class SpinService(
         // and the announcement, never the prize or the points.
         if (duplicate)
         {
-            SpinPendingGift? displaced = store.AddPending(new SpinPendingGift(
-                redemption.Id, redemption.RewardId, id, redemption.UserLogin, name, prize.Id,
-                redemption.RewardCost ?? 0, refundable,
-                DateTimeOffset.UtcNow + TimeSpan.FromMinutes(spin.GiftTimeoutMinutes)));
-            // The winner spun again while their last duplicate was still looking for a home. That
-            // gift is gone now, and its redemption is still open on Twitch – left alone it would sit
-            // there until a sweep paid it back as if the app had never seen it, or fall out of the
-            // queue entirely. It bought a prize nobody can claim any more, so the points go back.
-            if (displaced is { Refundable: true, RedemptionId.Length: > 0 })
-                Verdict?.Invoke(new SpinVerdict(
-                    displaced.RedemptionId, displaced.RewardId, displaced.WinnerName, displaced.Cost,
-                    Refund: true, "en ny snurr ersatte den öppna gåvan"));
+            // Answered as delivered right here, exactly as a new win is. Nothing that can happen to
+            // the gift afterwards hands the points back, so leaving the redemption open while its
+            // winner chooses would only be a promise this flow no longer makes.
+            SpinOwedFulfilment? debt = Debt(
+                refundable, redemption.Id, redemption.RewardId, name, redemption.RewardCost ?? 0, "dubbletten är bokförd");
+            SpinPendingGift? displaced = store.AddPending(
+                new SpinPendingGift(redemption.Id, id, name, prize.Id,
+                    DateTimeOffset.UtcNow + TimeSpan.FromMinutes(spin.GiftTimeoutMinutes)),
+                debt);
+            Raise(debt);
+            // The winner spun again while their last duplicate was still looking for a home. Its
+            // redemption was answered when it was drawn, so nothing is owed on it – but the chance
+            // it bought is over, and the winner is owed the word: they are about to be handed a
+            // fresh prompt, and two prompts with one gift between them is the confusing version.
+            if (displaced is not null)
+            {
+                AppLog.Info($"Lyckosnurren: {name}s öppna gåva av {PrizeName(displaced.PetId)} ersattes av en ny snurr.");
+                Announced?.Invoke(BotFlow.SpinGiftExpired, Values(
+                    ("viewer", displaced.WinnerName), ("prize", PrizeName(displaced.PetId))), true);
+            }
         }
         else
         {
@@ -307,11 +317,9 @@ public sealed class SpinService(
 
         if (!status.Equals("FULFILLED", StringComparison.OrdinalIgnoreCase)) return;
 
-        // The streamer did our job for us. Left unheard, the gift would keep an open redemption's
-        // worth of promises: a "!ge" answering a redemption Twitch has closed, and a timeout paying
-        // back points that are already spent. The prize stays claimable – only the refund is gone.
-        if (store.MarkUnrefundable(redemptionId))
-            AppLog.Info("Lyckosnurren: en väntande gåva markerades som klar i Twitchs egen kö – prisen står kvar, men poängen kan inte betalas tillbaka.");
+        // Our own verdict coming back, or the streamer closing the redemption by hand; either way
+        // Twitch has its answer and nothing more is owed. A gift still open is left exactly as it is:
+        // it was never holding the points, only the chance to place the pet.
         store.Settled(redemptionId);
     }
 
@@ -399,12 +407,14 @@ public sealed class SpinService(
             }
             StartNext();
 
+            // Nothing to answer and nothing to hand back – the redemption was settled when the
+            // duplicate was drawn. All that is left is telling the winner their chance has run out,
+            // which is the whole of what the timeout does now.
             foreach (SpinPendingGift gift in store.TakeExpired(now))
             {
-                if (gift.Refundable && gift.RedemptionId.Length > 0)
-                    Verdict?.Invoke(new SpinVerdict(gift.RedemptionId, gift.RewardId, gift.WinnerName, gift.Cost, Refund: true, "ingen mottagare valdes i tid"));
-                else
-                    AppLog.Info($"Lyckosnurren: {gift.WinnerName}s gåva förföll och kunde inte betalas tillbaka.");
+                string expired = PrizeName(gift.PetId);
+                AppLog.Info($"Lyckosnurren: {gift.WinnerName}s gåva av {expired} förföll.");
+                Announced?.Invoke(BotFlow.SpinGiftExpired, Values(("viewer", gift.WinnerName), ("prize", expired)), true);
             }
         }
         catch (Exception ex)
@@ -484,28 +494,26 @@ public sealed class SpinService(
             // Whether the recipient can take it, closing the gift and booking the prize are one step
             // in the store. Two winners can come back from this await in the same moment holding the
             // same pet and the same friend's name, and only one of them can be the one who gave it –
-            // asked apart, the other would still answer its redemption and announce a gift the
-            // recipient never received.
-            SpinOwedFulfilment? debt = Debt(
-                pending.Refundable, pending.RedemptionId, pending.RewardId, pending.WinnerName, pending.Cost, "vinsten skänktes vidare");
+            // asked apart, the other would announce a gift the recipient never received.
             SpinGiftResult given = store.TryGive(
                 pending.RedemptionId,
                 new SpinWin(target.Id, target.Login, target.DisplayName, pending.PetId, DateTimeOffset.UtcNow,
-                    GiftedFrom: pending.WinnerUserId, RedemptionId: Kept(pending.RedemptionId)),
-                debt);
+                    GiftedFrom: pending.WinnerUserId, RedemptionId: Kept(pending.RedemptionId)));
 
-            // The winner themselves is caught here too: a duplicate means they own it already.
+            // The winner themselves is caught here too: a duplicate means they own it already. The
+            // gift closes on this answer just as it does on a successful one – naming somebody who
+            // cannot take the pet is how the chance is spent, not a first attempt at spending it.
             if (given == SpinGiftResult.AlreadyOwned)
             {
+                AppLog.Info($"Lyckosnurren: {giverName}s gåva av {prize} gick förlorad – {target.DisplayName} hade den redan.");
                 Announced?.Invoke(BotFlow.SpinGiftOwned, Values(("viewer", giverName), ("target", target.DisplayName), ("prize", prize)), true);
                 return;
             }
 
             // Gone in the meantime – the timeout fired, or a second "!ge" beat this one. Whoever
-            // took it also answered for it, so there is nothing left to say here.
+            // took it was also announced for it, so there is nothing left to say here.
             if (given == SpinGiftResult.Gone) return;
 
-            Raise(debt);
             AppLog.Info($"Lyckosnurren: {giverName} skänkte {prize} till {target.DisplayName}.");
             Announced?.Invoke(BotFlow.SpinGifted, Values(("viewer", giverName), ("target", target.DisplayName), ("prize", prize)), true);
         }

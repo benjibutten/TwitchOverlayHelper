@@ -127,8 +127,13 @@ public sealed class TtsSettings
     /// Where a message is cut. ElevenLabs bills by the character, so this is the one setting that
     /// decides what a single redemption can cost – and a viewer who pastes a novel should not be
     /// able to hold the stream for four minutes either.
+    ///
+    /// <para>Defaults to Twitch's own limit on a chat message rather than to something smaller: a
+    /// cut below it lands on messages the viewer was allowed to send and paid full price for, and
+    /// the only sign of it is a sentence that stops mid-thought. Nobody counts characters before
+    /// redeeming, so a cheaper default just moves the cost onto the viewer who guessed wrong.</para>
     /// </summary>
-    public int MaxCharacters { get; set; } = 240;
+    public int MaxCharacters { get; set; } = 500;
 
     /// <summary>Reads "Kajsa säger:" before the message, so the viewers know whose words they are.</summary>
     public bool AnnounceName { get; set; } = true;

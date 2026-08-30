@@ -48,7 +48,6 @@ public static class BotTemplate
         ["lyckosnurren är avstängd i appen"] = "lyckosnurren är avstängd just nu",
         ["det finns inget att vinna just nu"] = "det finns inget att vinna just nu",
         ["hela samlingen är redan vunnen"] = "hela samlingen är redan vunnen",
-        ["ingen mottagare valdes i tid"] = "ingen mottagare valdes i tid",
         ["arten kan bara användas av den som vunnit den"] = "den {pet}-arten kan bara användas av den som vunnit den"
     };
 
@@ -70,6 +69,7 @@ public static class BotTemplate
         BotFlow.SpinGifted => ["viewer", "prize", "target"],
         BotFlow.SpinGiftUnknown => ["viewer", "target"],
         BotFlow.SpinGiftOwned => ["viewer", "prize", "target"],
+        BotFlow.SpinGiftExpired => ["viewer", "prize"],
         BotFlow.SpinList => ["viewer", "list", "count"],
         BotFlow.SpinListEmpty => ["viewer"],
         BotFlow.SpinNotOwned => ["viewer", "prize"],
@@ -112,7 +112,7 @@ public static class BotTemplate
             BotFlow.TtsRefund => Reason("ingen hann svara", "det gick inte den här gången", settings),
             BotFlow.ModCallMissed => "du är varken moderator eller broadcaster",
             BotFlow.RefundBatch => Reason("appen var inte igång", "det gick inte den här gången", settings),
-            BotFlow.SpinRefund => Reason("ingen mottagare valdes i tid", "det gick inte den här gången", settings),
+            BotFlow.SpinRefund => Reason("hela samlingen är redan vunnen", "det gick inte den här gången", settings),
             _ => Reason("overlayen ritade aldrig peten", "det gick inte den här gången", settings)
         };
         return values;

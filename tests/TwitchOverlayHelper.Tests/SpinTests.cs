@@ -168,7 +168,7 @@ public sealed class SpinWinStoreTests : IDisposable
         store.Add(Win("7", "drake"));
         store.Add(Win("8", "drake"));
         store.Add(Win("8", "katt"));
-        store.AddPending(new SpinPendingGift("r1", "snurr", "9", "pelle", "Pelle", "drake", 500, true, DateTimeOffset.UtcNow.AddMinutes(10)));
+        store.AddPending(new SpinPendingGift("r1", "9", "Pelle", "drake", DateTimeOffset.UtcNow.AddMinutes(10)));
 
         Assert.Equal(2, store.RenamePet("drake", "gyllene-draken"));
 
@@ -199,8 +199,8 @@ public sealed class SpinWinStoreTests : IDisposable
     public void PendingGiftsAreHeldExpiredAndTakenExactlyOnce()
     {
         var store = new SpinWinStore(StorePath);
-        var fresh = new SpinPendingGift("r1", "snurr", "7", "kajsa", "Kajsa", "drake", 500, true, DateTimeOffset.UtcNow.AddMinutes(10));
-        var stale = new SpinPendingGift("r2", "snurr", "8", "pelle", "Pelle", "katt", 500, true, DateTimeOffset.UtcNow.AddMinutes(-1));
+        var fresh = new SpinPendingGift("r1", "7", "Kajsa", "drake", DateTimeOffset.UtcNow.AddMinutes(10));
+        var stale = new SpinPendingGift("r2", "8", "Pelle", "katt", DateTimeOffset.UtcNow.AddMinutes(-1));
         store.AddPending(fresh);
         store.AddPending(stale);
 
@@ -218,32 +218,80 @@ public sealed class SpinWinStoreTests : IDisposable
     public void ASecondDuplicateReplacesTheWinnersOpenGiftAndHandsTheOldOneBack()
     {
         var store = new SpinWinStore(StorePath);
-        var first = new SpinPendingGift("r1", "snurr", "7", "kajsa", "Kajsa", "drake", 500, true, DateTimeOffset.UtcNow.AddMinutes(10));
+        var first = new SpinPendingGift("r1", "7", "Kajsa", "drake", DateTimeOffset.UtcNow.AddMinutes(10));
         Assert.Null(store.AddPending(first));
 
         SpinPendingGift? displaced = store.AddPending(
-            new SpinPendingGift("r2", "snurr", "7", "kajsa", "Kajsa", "katt", 500, true, DateTimeOffset.UtcNow.AddMinutes(10)));
+            new SpinPendingGift("r2", "7", "Kajsa", "katt", DateTimeOffset.UtcNow.AddMinutes(10)));
 
-        // The one that was pushed out has to come back out, or its redemption is left open with
-        // nobody to answer for it.
+        // The one that was pushed out has to come back out, or its winner is left waiting for a
+        // prompt that no longer means anything.
         Assert.Equal("r1", displaced!.RedemptionId);
         Assert.Equal("katt", store.PendingFor("7")!.PetId);
         Assert.False(store.HoldsPending("r1"));
     }
 
-    // Twitch cannot pay back a redemption that is already closed, so a gift the streamer completed
-    // by hand keeps its prize and loses only its refund.
+    // The same crash window a win has: a gift on disk with no debt beside it is a spin the startup
+    // sweep would pay back, on top of a chance its winner has already been given.
     [Fact]
-    public void AGiftClosedByHandKeepsItsPrizeButNotItsRefund()
+    public void AnOpenGiftAndTheDebtItLeavesAreTheSameWrite()
     {
         var store = new SpinWinStore(StorePath);
-        store.AddPending(new SpinPendingGift("r1", "snurr", "7", "kajsa", "Kajsa", "drake", 500, true, DateTimeOffset.UtcNow.AddMinutes(-1)));
+        store.AddPending(
+            new SpinPendingGift("r1", "7", "Kajsa", "drake", DateTimeOffset.UtcNow.AddMinutes(10)),
+            new SpinOwedFulfilment("r1", "snurr", "kanal", "Kajsa", 500, "dubbletten är bokförd"));
 
-        Assert.True(store.MarkUnrefundable("r1"));
-        Assert.False(store.MarkUnrefundable("r1"));
-        Assert.False(store.MarkUnrefundable("finns-inte"));
+        var reloaded = new SpinWinStore(StorePath);
+        Assert.True(reloaded.HoldsPending("r1"));
+        Assert.True(reloaded.Owes("r1"));
+    }
 
-        Assert.False(Assert.Single(store.TakeExpired(DateTimeOffset.UtcNow)).Refundable);
+    // Gifts written before a duplicate's points were answered at the draw. Their redemption is
+    // still open on Twitch, and nothing on today's record can say so – so the load has to finish
+    // them: the one still open is answered as delivered, and the one that ran out while the app was
+    // closed is let go, back to the sweep whose job paying it back is.
+    [Fact]
+    public void GiftsFromBeforeTheDuplicateWasPaidForAreSettledOnTheWayIn()
+    {
+        Directory.CreateDirectory(_folder);
+        File.WriteAllText(StorePath, """
+            {
+              "Wins": [],
+              "Pending": [
+                { "RedemptionId": "r1", "RewardId": "snurr", "WinnerUserId": "7", "WinnerLogin": "kajsa",
+                  "WinnerName": "Kajsa", "PetId": "drake", "Cost": 500, "Refundable": true,
+                  "ExpiresAt": "2999-01-01T00:00:00+00:00" },
+                { "RedemptionId": "r2", "RewardId": "snurr", "WinnerUserId": "8", "WinnerLogin": "pelle",
+                  "WinnerName": "Pelle", "PetId": "katt", "Cost": 500, "Refundable": true,
+                  "ExpiresAt": "2020-01-01T00:00:00+00:00" }
+              ],
+              "Owed": []
+            }
+            """);
+
+        var store = new SpinWinStore(StorePath);
+
+        // Still open, so the chance stands – and the purchase behind it is owed a verdict the app
+        // can actually give. No channel was ever written down, so it is raised wherever we land.
+        Assert.True(store.HoldsPending("r1"));
+        Assert.Equal("Kajsa", store.PendingFor("7")?.WinnerName);
+        SpinOwedFulfilment debt = Assert.Single(store.ResumeOwed("kanal", 5));
+        Assert.Equal("r1", debt.RedemptionId);
+        Assert.Equal("snurr", debt.RewardId);
+        Assert.Equal(500, debt.Cost);
+        Assert.Equal("Kajsa", debt.ViewerName);
+
+        // Timed out unseen: gone, and holding nothing – which is what lets the sweep find its
+        // redemption and hand the points back.
+        Assert.False(store.HoldsPending("r2"));
+        Assert.False(store.Owes("r2"));
+        Assert.Null(store.PendingFor("8"));
+
+        // And the file is in today's shape, so the same two rows are not settled all over again.
+        Assert.DoesNotContain("Refundable", File.ReadAllText(StorePath));
+        var reloaded = new SpinWinStore(StorePath);
+        Assert.True(reloaded.HoldsPending("r1"));
+        Assert.Single(reloaded.ResumeOwed("kanal", 5));
     }
 
     [Fact]
@@ -251,7 +299,7 @@ public sealed class SpinWinStoreTests : IDisposable
     {
         var store = new SpinWinStore(StorePath);
         store.Add(Win("7", "drake"));
-        store.AddPending(new SpinPendingGift("r1", "snurr", "7", "kajsa", "Kajsa", "katt", 500, true, DateTimeOffset.UtcNow.AddMinutes(10)));
+        store.AddPending(new SpinPendingGift("r1", "7", "Kajsa", "katt", DateTimeOffset.UtcNow.AddMinutes(10)));
 
         store.ClearPending();
 
@@ -299,21 +347,20 @@ public sealed class SpinWinStoreTests : IDisposable
     public void OnlyOneOfTwoGiftsOfTheSamePetToTheSamePersonLands()
     {
         var store = new SpinWinStore(StorePath);
-        store.AddPending(new SpinPendingGift("r1", "snurr", "7", "kajsa", "Kajsa", "drake", 500, true, DateTimeOffset.UtcNow.AddMinutes(10)));
-        store.AddPending(new SpinPendingGift("r2", "snurr", "8", "pelle", "Pelle", "drake", 500, true, DateTimeOffset.UtcNow.AddMinutes(10)));
+        store.AddPending(new SpinPendingGift("r1", "7", "Kajsa", "drake", DateTimeOffset.UtcNow.AddMinutes(10)));
+        store.AddPending(new SpinPendingGift("r2", "8", "Pelle", "drake", DateTimeOffset.UtcNow.AddMinutes(10)));
 
         SpinWin gift = new("99", "olle", "Olle", "drake", DateTimeOffset.UtcNow);
-        Assert.Equal(SpinGiftResult.Given, store.TryGive("r1", gift, new SpinOwedFulfilment("r1", "snurr", "kanal", "Kajsa", 500, "skänkt")));
-        Assert.Equal(SpinGiftResult.AlreadyOwned, store.TryGive("r2", gift, new SpinOwedFulfilment("r2", "snurr", "kanal", "Pelle", 500, "skänkt")));
+        Assert.Equal(SpinGiftResult.Given, store.TryGive("r1", gift));
+        Assert.Equal(SpinGiftResult.AlreadyOwned, store.TryGive("r2", gift));
 
-        // The second gift is left open for another name, and nothing was owed on it.
+        // Olle keeps the one copy, and the second gift is spent rather than left open: naming
+        // somebody who cannot take the pet is how the chance goes.
         Assert.Single(store.WinsFor("99"));
-        Assert.True(store.HoldsPending("r2"));
-        Assert.False(store.Owes("r2"));
-        Assert.True(store.Owes("r1"));
+        Assert.False(store.HoldsPending("r2"));
 
         // And a gift that timed out or was already given hands back nothing at all.
-        Assert.Equal(SpinGiftResult.Gone, store.TryGive("r1", new SpinWin("55", "moa", "Moa", "drake", DateTimeOffset.UtcNow), null));
+        Assert.Equal(SpinGiftResult.Gone, store.TryGive("r1", new SpinWin("55", "moa", "Moa", "drake", DateTimeOffset.UtcNow)));
         Assert.Empty(store.WinsFor("55"));
     }
 
@@ -693,7 +740,7 @@ public sealed class SpinServiceTests : IDisposable
     }
 
     [Fact]
-    public void ADuplicateBecomesAGiftPromptInsteadOfAVerdict()
+    public void ADuplicateIsAnsweredLikeAWinAndBecomesAGiftPrompt()
     {
         WriteWinnablePet("drake", "Gyllene Draken");
         Harness harness = Build();
@@ -701,8 +748,10 @@ public sealed class SpinServiceTests : IDisposable
 
         harness.Spins.HandleRedemption(Redemption());
 
-        // Nothing answered yet: the redemption stays open until the gift lands or times out.
-        Assert.Empty(harness.Verdicts);
+        // The points are spent the moment the duplicate is drawn: nothing that happens to the gift
+        // from here can hand them back, so the redemption is answered as delivered straight away.
+        SpinVerdict booked = Assert.Single(harness.Verdicts);
+        Assert.False(booked.Refund);
         Assert.True(harness.Store.HoldsPending("r1"));
         Assert.True(harness.Spins.Holds("r1"));
 
@@ -748,20 +797,27 @@ public sealed class SpinServiceTests : IDisposable
         Assert.Contains(harness.Announced, entry => entry.Flow == BotFlow.SpinGifted && entry.Values["target"] == "Pelle");
     }
 
+    // The chance was to name somebody who could take it. Naming somebody who cannot is how that
+    // chance is spent – there is no second attempt and nothing comes back.
     [Fact]
-    public void AGiftToSomebodyWhoOwnsItAlreadyIsRefusedAndStaysOpen()
+    public void AGiftToSomebodyWhoOwnsItAlreadyIsSpent()
     {
         WriteWinnablePet("drake", "Gyllene Draken");
         Harness harness = Build(resolve: _ => Task.FromResult<TwitchUser?>(new TwitchUser("99", "pelle", "Pelle")));
         harness.Store.Add(new SpinWin("7", "kajsa", "Kajsa", "drake", DateTimeOffset.UtcNow));
         harness.Store.Add(new SpinWin("99", "pelle", "Pelle", "drake", DateTimeOffset.UtcNow));
         harness.Spins.HandleRedemption(Redemption());
+        harness.Verdicts.Clear();
 
         harness.Spins.HandleChatMessage(Message("!ge pelle"));
 
-        Assert.True(harness.Store.HoldsPending("r1"));
+        Assert.False(harness.Store.HoldsPending("r1"));
+        Assert.Null(harness.Store.PendingFor("7"));
         Assert.Empty(harness.Verdicts);
         Assert.Contains(harness.Announced, entry => entry.Flow == BotFlow.SpinGiftOwned);
+
+        // And the winner cannot simply try again with a better name.
+        Assert.False(harness.Spins.HandleChatMessage(Message("!ge olle")));
     }
 
     [Fact]
@@ -836,18 +892,22 @@ public sealed class SpinServiceTests : IDisposable
     }
 
     [Fact]
-    public void AGiftNobodyClaimedIsPaidBackOnce()
+    public void AGiftNobodyClaimedRunsOutAndIsSaidOnce()
     {
         WriteWinnablePet("drake", "Gyllene Draken");
         Harness harness = Build();
-        harness.Store.AddPending(new SpinPendingGift("r9", "snurr", "7", "kajsa", "Kajsa", "drake", 500, true, DateTimeOffset.UtcNow.AddMinutes(-1)));
+        harness.Store.AddPending(new SpinPendingGift("r9", "7", "Kajsa", "drake", DateTimeOffset.UtcNow.AddMinutes(-1)));
 
         harness.Spins.Tick();
         harness.Spins.Tick();
 
-        SpinVerdict verdict = Assert.Single(harness.Verdicts);
-        Assert.True(verdict.Refund);
-        Assert.Equal("r9", verdict.RedemptionId);
+        // Nothing to answer – the redemption was settled when the duplicate was drawn – and nothing
+        // to hand back. All the timeout owes the winner is the word that their chance is over.
+        (BotFlow flow, IReadOnlyDictionary<string, string> values) = Assert.Single(harness.Announced);
+        Assert.Equal(BotFlow.SpinGiftExpired, flow);
+        Assert.Equal("Gyllene Draken", values["prize"]);
+        Assert.Equal("Kajsa", values["viewer"]);
+        Assert.Empty(harness.Verdicts);
         Assert.False(harness.Store.HoldsPending("r9"));
     }
 
@@ -899,7 +959,7 @@ public sealed class SpinServiceTests : IDisposable
     }
 
     [Fact]
-    public void SpinningAgainPaysBackTheGiftTheNewOnePushedOut()
+    public void SpinningAgainEndsTheGiftTheNewOnePushedOut()
     {
         WriteWinnablePet("drake", "Gyllene Draken");
         Harness harness = Build();
@@ -908,12 +968,13 @@ public sealed class SpinServiceTests : IDisposable
         harness.Spins.HandleRedemption(Redemption(id: "r1"));
         harness.Spins.HandleRedemption(Redemption(id: "r2"));
 
-        // The second gift is the live one; the first bought a prize nobody can claim any more.
+        // The second gift is the live one. The first is over, and said so – but its points were
+        // answered when it was drawn, so neither spin is paid back.
         Assert.Equal("r2", harness.Store.PendingFor("7")!.RedemptionId);
-        SpinVerdict verdict = Assert.Single(harness.Verdicts);
-        Assert.Equal("r1", verdict.RedemptionId);
-        Assert.True(verdict.Refund);
-        Assert.False(harness.Spins.Holds("r1"));
+        Assert.Equal(2, harness.Verdicts.Count);
+        Assert.DoesNotContain(harness.Verdicts, verdict => verdict.Refund);
+        Assert.Contains(harness.Announced, entry => entry.Flow == BotFlow.SpinGiftExpired);
+        Assert.False(harness.Store.HoldsPending("r1"));
     }
 
     // The one the sweep must never touch: the pet is on disk, so paying the redemption back would
@@ -950,12 +1011,17 @@ public sealed class SpinServiceTests : IDisposable
         Harness harness = Build();
         harness.Store.Add(new SpinWin("7", "kajsa", "Kajsa", "drake", DateTimeOffset.UtcNow));
         harness.Spins.HandleRedemption(Redemption());
+        // The duplicate answered its own redemption as it was drawn; what is left is the chance.
+        harness.Verdicts.Clear();
 
         harness.Spins.LeaveChannel();
 
         // Unanswered on purpose: the redemption belongs to the channel we have left.
         Assert.Empty(harness.Verdicts);
-        Assert.False(harness.Spins.Holds("r1"));
+        // The gift goes, but the fulfilment the spin already owes Twitch does not: that debt belongs
+        // to the channel it was run up in and waits there for the app to come back.
+        Assert.False(harness.Store.HoldsPending("r1"));
+        Assert.True(harness.Store.Owes("r1"));
         Assert.Equal(0, harness.Spins.QueueLength);
         Assert.False(harness.Spins.HandleChatMessage(Message("!ge pelle")));
         // The win itself is the viewers' property and stays where it is.
@@ -983,18 +1049,21 @@ public sealed class SpinServiceTests : IDisposable
     }
 
     [Fact]
-    public void AGiftCompletedInTwitchsOwnQueueKeepsItsPrizeAndStopsBeingRefundable()
+    public void AGiftWhoseRedemptionIsClosedInTwitchsOwnQueueIsStillClaimable()
     {
         WriteWinnablePet("drake", "Gyllene Draken");
         Harness harness = Build();
         harness.Store.Add(new SpinWin("7", "kajsa", "Kajsa", "drake", DateTimeOffset.UtcNow));
         harness.Spins.HandleRedemption(Redemption());
+        harness.Verdicts.Clear();
 
+        // Our own verdict coming back, or the streamer closing it by hand. Either way the chance is
+        // untouched: it never held the points, and the winner has done nothing wrong.
         harness.Spins.HandleExternalUpdate("r1", "FULFILLED");
 
-        // Still claimable – the winner has done nothing wrong – but its points are already spent,
-        // so the timeout says so in the log instead of asking Twitch for a refund it would refuse.
         Assert.True(harness.Store.HoldsPending("r1"));
+        // Nothing is owed on it any more, but the open gift still keeps the sweep off it.
+        Assert.True(harness.Spins.Holds("r1"));
         harness.Store.AddPending(harness.Store.PendingFor("7")! with { ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1) });
         harness.Spins.Tick();
         Assert.Empty(harness.Verdicts);

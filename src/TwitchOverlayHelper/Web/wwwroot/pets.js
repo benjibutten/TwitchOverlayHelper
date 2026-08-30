@@ -11,7 +11,7 @@ const pets = new Map(); // id -> pet
 const catalog = new Map(); // species id -> definition from the server
 let settings = {
   enabled: true, scale: 1, lifetimeMinutes: 5, maxPets: 6,
-  showNames: true, rarityEffects: true, rarityFadeSeconds: 10,
+  showNames: true, rarityEffects: true, rarityFadeSeconds: 10, animationSpeed: 1,
 };
 let duetActive = false;
 let nextDuetAt = Date.now() + 12000;
@@ -73,10 +73,21 @@ function handle(frame) {
   // Chat frames from the shared socket are someone else's business.
 }
 
+/* The streamer's animation speed, as a multiplier. Read at the moment it is needed rather than
+   cached on each pet: the slider is meant to be dragged while watching the lawn, and a pet already
+   walking should change pace with it rather than keep the speed it spawned under. */
+function animationSpeed() {
+  const speed = settings.animationSpeed;
+  return speed > 0 ? speed : 1;
+}
+
 function applySettings(next) {
   if (!next) return;
   settings = next;
   stage.style.setProperty("--pet-scale", settings.scale);
+  // SVG pets have no frames to step; pets.css animates them, and this is how the same slider
+  // reaches those durations. A spritesheet pet ignores it – its pace is spriteFrameAt's business.
+  stage.style.setProperty("--pet-anim-speed", animationSpeed());
   stage.classList.toggle("disabled", !settings.enabled);
   stage.classList.toggle("hide-names", settings.showNames === false);
   stage.classList.toggle("rarity-fx", settings.rarityEffects !== false);
@@ -127,58 +138,6 @@ const bodies = new Map(); // species id -> svg markup
 const pending = new Map(); // species id -> in-flight fetch
 let generation = 0; // bumped on reload, so a fetch started before an edit cannot land after it
 
-/* Shown when a pet's drawing cannot be fetched at all – an empty patch of ground would look like
-   the overlay was broken. */
-const FALLBACK_BODY = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <circle cx="50" cy="60" r="30" fill="var(--accent)" opacity="0.9" />
-  <circle class="eye" cx="41" cy="55" r="4" fill="#141B26" />
-  <circle class="eye" cx="59" cy="55" r="4" fill="#141B26" />
-  <path d="M43 70 Q50 75 57 70" stroke="#141B26" stroke-width="2.5" fill="none" stroke-linecap="round" />
-</svg>`;
-
-/* A drawing is a file in the streamer's own pets folder, but a pet downloaded from someone else is
-   a stranger's markup – and this page carries the dock's access key. Every body is therefore parsed
-   into an inert document and stripped of scripts, event handlers and outbound references before it
-   is allowed near the DOM. Ordinary drawing markup, animations included, passes through untouched. */
-const UNSAFE_TAGS = new Set(["script", "foreignobject", "iframe", "object", "embed"]);
-const URL_ATTRS = new Set(["href", "xlink:href", "src"]);
-
-function sanitizeBody(markup) {
-  // Parsed as HTML rather than XML: nothing runs and nothing is fetched either way, but the HTML
-  // parser forgives the hand-edited files a streamer is invited to write.
-  const svg = new DOMParser().parseFromString(markup, "text/html").body.querySelector("svg");
-  if (!svg) return "";
-  scrub(svg);
-  return svg.outerHTML;
-}
-
-function scrub(el) {
-  for (const attr of [...el.attributes]) {
-    const name = attr.name.toLowerCase();
-    const value = attr.value.trim();
-    if (name.startsWith("on") ||
-        // <set attributeName="onclick" …> would otherwise smuggle a handler back in.
-        (name === "attributename" && value.toLowerCase().startsWith("on")) ||
-        // Only local fragments survive, so no javascript: link and no call home for a tracking pixel.
-        (URL_ATTRS.has(name) && !value.startsWith("#"))) {
-      el.removeAttribute(attr.name);
-    }
-  }
-  for (const child of [...el.children]) {
-    if (UNSAFE_TAGS.has(child.tagName.toLowerCase())) child.remove();
-    else scrub(child);
-  }
-}
-
-/* Ids inside a body are local to that pet: two pets copied from the same file would otherwise
-   fight over the same gradient, and the first one in the DOM would win for both. */
-function scopeIds(svg, species) {
-  return svg
-    .replace(/id="([^"]*)"/g, `id="${species}--$1"`)
-    .replace(/url\(#([^)]*)\)/g, `url(#${species}--$1)`)
-    .replace(/href="#([^"]*)"/g, `href="#${species}--$1"`);
-}
-
 function loadBody(species) {
   const cached = bodies.get(species);
   if (cached !== undefined) return Promise.resolve(cached);
@@ -209,14 +168,6 @@ function flavorEmoji(pet) {
   const emoji = catalog.get(pet.species)?.emoji;
   return emoji && emoji.length ? pick(emoji) : "💬";
 }
-
-/* Which halo a species wears. The tiers are the app's own words, written by hand into pet.json, so
-   anything unrecognised – and every common pet – is left plain rather than guessed at. */
-const RARITY_CLASSES = {
-  "ovanlig": "rarity-uncommon",
-  "sällsynt": "rarity-rare",
-  "legendarisk": "rarity-legendary",
-};
 
 /* Only the two rarest sweep a sheen across themselves, and only sprite pets can: the light is
    masked with the sheet's current cell, and an inline SVG has no image to mask with. */
@@ -268,6 +219,8 @@ function applyBody(pet) {
   pet.spriteEl = null;
   pet.spriteRow = -1;
   pet.spriteFrame = -1;
+  pet.spriteBehavior = null;
+  pet.spriteStart = 0;
   pet.lookAngle = null;
 
   if (def && def.kind === "sprite" && def.spriteUrl) {
@@ -324,6 +277,8 @@ function spawnPet(data) {
     spriteRows: 9,
     spriteRow: -1,
     spriteFrame: -1,
+    spriteBehavior: null, // the entry from SPRITE_BEHAVIORS this pet is playing
+    spriteStart: 0, // when it started, for the one-shots that are timed from their own beginning
     lookAngle: null,
     shimmer: false,
     fadeTimer: 0,
@@ -393,9 +348,30 @@ function showBubble(pet, text) {
   pet.bubble.classList.add("show");
 }
 
+/* A behavior worn for as long as it takes, then taken off. The written duration is what an SVG pet
+   gets, since its stylesheet keeps its own time; a sprite pet is measured instead, so the class
+   comes off on the frame the animation ends rather than a fixed number of milliseconds later that
+   cut a wave off in the middle of its fourth pass. */
 function playClass(pet, name, ms) {
   pet.el.classList.add(name);
-  setTimeout(() => pet.el.classList.remove(name), ms);
+  setTimeout(() => pet.el.classList.remove(name), playMs(pet, name, ms));
+}
+
+/* One pass of the row this pet's own sheet carries. A pet with no sheet, a behavior that loops, or
+   a row this sheet left empty all fall back to the written duration – the last because an empty row
+   is drawn as idle, which has no ending to wait for.
+
+   The fallback is scaled too. For an SVG pet it is the length of the matching animation in pets.css,
+   and that stylesheet now divides its durations by the same setting: a wave whose class came off on
+   the written 1600 ms while the arm was still swinging through a slowed-down animation would be cut
+   off mid-gesture. */
+function playMs(pet, name, fallbackMs) {
+  const behavior = SPRITE_BEHAVIOR_BY_CLASS.get(name);
+  const meta = pet.spriteEl ? spriteMeta.get(pet.species) : null;
+  if (!behavior || behavior.loop || !meta || !meta.frames[behavior.row]) {
+    return Math.round(fallbackMs / animationSpeed());
+  }
+  return spriteRunMs(behavior, meta.frames[behavior.row], pet.spriteFps, animationSpeed());
 }
 
 function walkTo(pet, x, speed) {
@@ -581,7 +557,11 @@ function sparkle(x, y, emojis) {
    idle, running-right, running-left, waving, jumping, failed, waiting, running, review – and
    version 2 two more, holding sixteen look directions: one still frame per 22.5°, 0° being
    straight up and the angle growing clockwise. A short animation leaves the rest of its row
-   empty, so the true frame count per row is measured from the pixels, once per species. */
+   empty, so the true frame count per row is measured from the pixels, once per species.
+
+   How fast a row plays and whether it plays once are the behavior's rather than the sheet's, and
+   live in SPRITE_BEHAVIORS next to the row numbers – the inspector plays them by the same
+   arithmetic, which is the only reason it can be trusted to show what the lawn will do. */
 
 const spriteMeta = new Map(); // species id -> { rows, frames per row, lookUsed per direction, hasLook }
 
@@ -596,54 +576,9 @@ function loadSpriteMeta(species, url, fallbackRows) {
   img.src = url;
 }
 
-function measureSprite(img, fallbackRows) {
-  // Cells are 192×208, so the row count falls out of the sheet's own proportions; the version in
-  // pet.json only settles a sheet whose measurements say something else entirely.
-  const measured = Math.round((img.height * 8 * 192) / (img.width * 208));
-  const rows = measured === 9 || measured === 11 ? measured : fallbackRows;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = img.width;
-  canvas.height = img.height;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(img, 0, 0);
-  const cellW = img.width / 8;
-  const cellH = img.height / rows;
-
-  const used = (row, col) => {
-    const data = ctx.getImageData(Math.round(col * cellW), Math.round(row * cellH), Math.floor(cellW), Math.floor(cellH)).data;
-    for (let i = 3; i < data.length; i += 4) if (data[i] > 0) return true;
-    return false;
-  };
-
-  const frames = [];
-  for (let row = 0; row < Math.min(rows, 9); row++) {
-    let count = 0;
-    for (let col = 0; col < 8; col++) if (used(row, col)) count = col + 1;
-    frames.push(count);
-  }
-
-  const lookUsed = [];
-  if (rows >= 11) for (let dir = 0; dir < 16; dir++) lookUsed.push(used(9 + (dir >> 3), dir & 7));
-  return { rows, frames, lookUsed, hasLook: lookUsed.some(Boolean) };
-}
-
 function canLook(pet) {
   const meta = spriteMeta.get(pet.species);
   return !!(meta && meta.hasLook);
-}
-
-function spriteRowFor(pet) {
-  const cls = pet.el.classList;
-  if (cls.contains("sleep")) return 6;
-  if (cls.contains("sad")) return 5;
-  if (cls.contains("walk")) return pet.facingLeft ? 2 : 1;
-  if (cls.contains("wave")) return 3;
-  if (cls.contains("jump")) return 4;
-  if (cls.contains("dance")) return 7;
-  if (cls.contains("fight")) return 7;
-  if (cls.contains("cook")) return 8;
-  return 0;
 }
 
 function updateSprite(pet, nowMs) {
@@ -656,8 +591,18 @@ function updateSprite(pet, nowMs) {
     pet.spriteEl.style.setProperty("--sprite-size", `800% ${meta.rows * 100}%`);
   }
   const rows = pet.spriteRows;
-  let row = spriteRowFor(pet);
-  if (meta && !meta.frames[row]) row = 0; // an animation this sheet does not carry falls back to idle
+  let behavior = spriteBehaviorFor(pet.el.classList);
+  // A behavior the pet was not playing a moment ago starts now. Watching the classes rather than
+  // being told is what keeps every corner that sets one – a walk, a duet, a nap – from having to
+  // remember to say so, and it tells a dance from a fight, which share a row but not an ending.
+  if (behavior !== pet.spriteBehavior) {
+    pet.spriteBehavior = behavior;
+    pet.spriteStart = nowMs;
+  }
+  let row = spriteRowFor(pet.el.classList, pet.facingLeft);
+  // An animation this sheet does not carry falls back to idle – and to idle's endless pace with it,
+  // since there is no single pass of a row that was never drawn.
+  if (meta && !meta.frames[row]) { row = 0; behavior = IDLE_BEHAVIOR; }
   let frame = null;
 
   // The look rows are indexed by direction rather than played over time.
@@ -665,7 +610,9 @@ function updateSprite(pet, nowMs) {
     const dir = Math.round((((pet.lookAngle % 360) + 360) % 360) / 22.5) % 16;
     if (meta.lookUsed[dir]) { row = 9 + (dir >> 3); frame = dir & 7; }
   }
-  if (frame === null) frame = Math.floor((nowMs / 1000) * pet.spriteFps) % ((meta && meta.frames[row]) || 8);
+  if (frame === null) {
+    frame = spriteFrameAt(behavior, (meta && meta.frames[row]) || 8, pet.spriteFps, nowMs, pet.spriteStart, animationSpeed());
+  }
 
   if (row === pet.spriteRow && frame === pet.spriteFrame) return;
   pet.spriteRow = row;
@@ -862,7 +809,17 @@ function tick(now) {
     if (pet.targetX !== null) {
       const dir = Math.sign(pet.targetX - pet.x);
       setFacing(pet, dir < 0);
-      pet.x += dir * pet.speed * (settings.scale || 1) * dt;
+      // Ground speed follows both sliders for the same reason: a walk cycle that steps at one rate
+      // while the creature slides across the lawn at another has its feet skating. Size already
+      // scales it – a pet drawn twice as big covers twice the ground per step – and the animation
+      // speed does now too, so the walk stays locked to the row that draws it.
+      //
+      // The step is stopped at the target rather than taken past it. A big pet, a fast setting and
+      // a dropped frame together are enough to cover the last few pixels and overshoot, and an
+      // overshoot flips the direction: the creature would tick back and forth across its target
+      // forever, never near enough to finish, and the walk that is waiting on it would never end.
+      const step = pet.speed * (settings.scale || 1) * animationSpeed() * dt;
+      pet.x = dir < 0 ? Math.max(pet.targetX, pet.x - step) : Math.min(pet.targetX, pet.x + step);
       pet.el.style.left = `${pet.x}px`;
       if (Math.abs(pet.targetX - pet.x) < 3) {
         pet.x = pet.targetX;

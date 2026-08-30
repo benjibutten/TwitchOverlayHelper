@@ -89,14 +89,14 @@
                     <StackPanel>
                         <TextBlock Text="Kommandon och dubbletter" FontSize="17" FontWeight="SemiBold" />
                         <TextBlock TextWrapping="Wrap" Foreground="#A8A3B8" FontSize="12.5" LineHeight="18" Margin="0,5,0,12"
-                                   Text="Landar snurren på något vinnaren redan äger får de skänka bort den i stället. Inlösen står kvar öppen medan de väljer, så poängen kommer tillbaka om ingen mottagare hinner väljas. Kräver att boten är igång – utan den hoppar dragningen i stället över det de redan har. Vad boten svarar ändrar du under “Vad boten säger”." />
+                                   Text="Landar snurren på något vinnaren redan äger får de skänka bort den i stället. Poängen är spenderade som vid vilken vinst som helst – det de får är en chans att placera peten, och den chansen tar slut när tiden går ut eller när de råkar välja någon som också redan har den. Kräver att boten är igång – utan den hoppar dragningen i stället över det de redan har. Vad boten svarar ändrar du under “Vad boten säger”." />
 
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                             <TextBlock Text="Se sin samling" Foreground="#8F8B9E" FontSize="11.5" Margin="0,0,0,4" />
                             <TextBlock Grid.Column="2" Text="Skänka bort" Foreground="#8F8B9E" FontSize="11.5" Margin="0,0,0,4" />
-                            <TextBlock Grid.Column="4" Text="Väntetid på val, minuter" Foreground="#8F8B9E" FontSize="11.5" Margin="0,0,0,4" />
+                            <TextBlock Grid.Column="4" Text="Tid att välja, minuter" Foreground="#8F8B9E" FontSize="11.5" Margin="0,0,0,4" />
 
                             <TextBox x:Name="ListCommandBox" Grid.Row="1" TextChanged="Setting_Changed" FontFamily="Consolas" FontSize="13" Padding="9,10"
                                      LostKeyboardFocus="Text_LostKeyboardFocus" ToolTip="Ett ord. Saknas ! läggs det till." />
@@ -113,14 +113,14 @@
                     <StackPanel>
                         <TextBlock Text="Vad som går att vinna" FontSize="17" FontWeight="SemiBold" />
                         <TextBlock TextWrapping="Wrap" Foreground="#A8A3B8" FontSize="12.5" LineHeight="18" Margin="0,5,0,12"
-                                   Text="Kryssa i de pets som bara ska gå att få genom snurren. En ikryssad pet försvinner ur den vanliga pet-belöningen för alla utom dem som vunnit den. Sällsyntheten avgör hur ofta den kommer upp: vanlig är ungefär trettio gånger så trolig som legendarisk. Dubbelklicka på ett namn för att döpa om peten eller ge den ett nytt id – redan vunna pets följer med bytet. Valen sparas i petens egen pet.json, så de följer med mappen." />
+                                   Text="Kryssa i de pets som bara ska gå att få genom snurren. 🔍 öppnar peten ensam i webbläsaren, där du kan prova varje animation mot vilken bakgrund du vill – en testvy som inte rör overlayen. En ikryssad pet försvinner ur den vanliga pet-belöningen för alla utom dem som vunnit den. Sällsyntheten avgör hur ofta den kommer upp: vanlig är ungefär trettio gånger så trolig som legendarisk. Dubbelklicka på ett namn för att döpa om peten eller ge den ett nytt id – redan vunna pets följer med bytet. Valen sparas i petens egen pet.json, så de följer med mappen." />
 
                         <ItemsControl x:Name="PetList">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Border Background="#1E2233" BorderBrush="#2C3247" BorderThickness="1" CornerRadius="10" Padding="10" Margin="0,0,0,8">
                                         <Grid>
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="56" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="130" /><ColumnDefinition Width="12" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="56" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="130" /><ColumnDefinition Width="12" /><ColumnDefinition Width="150" /><ColumnDefinition Width="10" /><ColumnDefinition Width="40" /></Grid.ColumnDefinitions>
 
                                             <Border Width="52" Height="52" Background="#141826" CornerRadius="8">
                                                 <Grid>
@@ -173,6 +173,13 @@
                                                       SelectedItem="{Binding Rarity, UpdateSourceTrigger=PropertyChanged}"
                                                       IsEnabled="{Binding IsWinnable}"
                                                       SelectionChanged="Pet_Changed" />
+
+                                            <!-- Testvyn. Öppnas i webbläsaren för att det är där en
+                                                 WebP-spritesheet går att bedöma; appen ritar bara
+                                                 dess första ruta. -->
+                                            <Button Grid.Column="8" Content="🔍" Background="#343B50" Padding="0,8" VerticalAlignment="Center"
+                                                    Click="PetInspect_Click"
+                                                    ToolTip="Öppna peten ensam i webbläsaren: prova varje animation, byt bakgrund och se vad appen läser ur spritesheeten." />
                                         </Grid>
                                     </Border>
                                 </DataTemplate>

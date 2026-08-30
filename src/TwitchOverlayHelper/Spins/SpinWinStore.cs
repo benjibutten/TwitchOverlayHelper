@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using TwitchOverlayHelper.Storage;
 
 namespace TwitchOverlayHelper.Spins;
@@ -31,24 +32,30 @@ public enum SpinGiftResult
     Given,
     /// <summary>The gift was no longer open – it timed out, or another "!ge" got there first.</summary>
     Gone,
-    /// <summary>The recipient already has this pet. The gift is left open for another name.</summary>
+    /// <summary>
+    /// The recipient already has this pet, so nobody receives it – and the gift closes anyway. The
+    /// spin bought one chance to place the duplicate, and naming somebody who cannot take it is how
+    /// that chance is spent.
+    /// </summary>
     AlreadyOwned
 }
 
 /// <summary>
 /// A duplicate win waiting for its winner to name someone to give it to. Persisted next to the wins
-/// rather than held in memory: the redemption behind it is still open on Twitch, and a crash while
-/// somebody was choosing a friend must not eat both the prize and the points.
+/// rather than held in memory: the chance to place it is the whole of what the redemption bought,
+/// and a crash while somebody was choosing a friend must not eat it.
 /// </summary>
+/// <param name="RedemptionId">
+/// The redemption that bought the spin, and the gift's identity: what "!ge" closes, what a refund
+/// made by hand in the dashboard finds, and what keeps the startup sweep off a purchase whose prize
+/// is still being placed. The points themselves are already answered as delivered – a duplicate is a
+/// win like any other, only one that has to find a home.
+/// </param>
 public sealed record SpinPendingGift(
     string RedemptionId,
-    string RewardId,
     string WinnerUserId,
-    string WinnerLogin,
     string WinnerName,
     string PetId,
-    int Cost,
-    bool Refundable,
     DateTimeOffset ExpiresAt);
 
 /// <summary>
@@ -103,14 +110,9 @@ public sealed class SpinWinStore
                 .Where(win => win is { UserId.Length: > 0, PetId.Length: > 0 })
                 .Select(win => win with { Login = win.Login ?? string.Empty, DisplayName = win.DisplayName ?? string.Empty })
                 .ToList();
-            _pending = (saved.Pending ?? [])
+            List<PendingRow> rows = (saved.Pending ?? [])
                 .Where(gift => gift is { WinnerUserId.Length: > 0, RedemptionId.Length: > 0, PetId.Length: > 0 })
-                .Select(gift => gift with
-                {
-                    RewardId = gift.RewardId ?? string.Empty,
-                    WinnerLogin = gift.WinnerLogin ?? string.Empty,
-                    WinnerName = gift.WinnerName ?? string.Empty
-                })
+                .Select(gift => gift with { WinnerName = gift.WinnerName ?? string.Empty })
                 .ToList();
             _owed = (saved.Owed ?? [])
                 .Where(debt => debt is { RedemptionId.Length: > 0, RewardId.Length: > 0 })
@@ -121,6 +123,8 @@ public sealed class SpinWinStore
                     Reason = debt.Reason ?? string.Empty
                 })
                 .ToList();
+            // Last, because it reads the debts it has just been handed and writes to both lists.
+            if (Migrate(rows)) Save();
         }
         RecoveredFromBackup = _file.RecoveredFromBackup;
     }
@@ -234,30 +238,38 @@ public sealed class SpinWinStore
     }
 
     /// <summary>
-    /// A gift landing, in one step: the recipient is checked, the open gift is closed, the win is
-    /// booked in their name and the fulfilment owed for it is written down – all under one lock and
+    /// A gift landing, in one step: the recipient is checked, the open gift is closed either way,
+    /// and where the pet can be received the win is booked in their name – all under one lock and
     /// one save.
     ///
     /// <para>One step because the gift flow is the one part of the spin that genuinely runs twice at
     /// once: "!ge" waits on Twitch for the name, so two winners can come back from that wait in the
     /// same moment. Done as separate calls both could pass the ownership check and close their own
-    /// gifts, and the second win would be swallowed as a duplicate while its redemption was still
-    /// answered as delivered and its gift announced – a prize the recipient never got.</para>
+    /// gifts, and the second win would be swallowed as a duplicate while its gift was still
+    /// announced as landed – a prize the recipient never got.</para>
+    ///
+    /// <para>Nothing is owed to Twitch from here. The redemption was answered as delivered the
+    /// moment the duplicate was drawn, so where the gift ends up decides who owns a pet and nothing
+    /// else.</para>
     /// </summary>
-    public SpinGiftResult TryGive(string redemptionId, SpinWin win, SpinOwedFulfilment? debt)
+    public SpinGiftResult TryGive(string redemptionId, SpinWin win)
     {
         lock (_lock)
         {
-            // Asked before the gift is touched, so a name that cannot receive the pet leaves the
-            // winner their gift and another chance to pick somebody.
-            if (_wins.Any(existing => Same(existing.UserId, win.UserId) && Same(existing.PetId, win.PetId)))
-                return SpinGiftResult.AlreadyOwned;
+            // Read before the gift is closed but acted on after, so a gift that timed out or was
+            // already given away answers Gone: burning a chance its winner no longer holds would be
+            // the harshest possible reading of a message that simply arrived too late.
+            bool owned = _wins.Any(existing => Same(existing.UserId, win.UserId) && Same(existing.PetId, win.PetId));
             if (_pending.RemoveAll(gift => Same(gift.RedemptionId, redemptionId)) == 0)
                 return SpinGiftResult.Gone;
+            if (owned)
+            {
+                Save();
+                return SpinGiftResult.AlreadyOwned;
+            }
 
             _wins.Add(win);
             TouchLocked(win.UserId, win.Login, win.DisplayName);
-            OweLocked(debt);
             Save();
             return SpinGiftResult.Given;
         }
@@ -296,13 +308,19 @@ public sealed class SpinWinStore
     }
 
     /// <summary>
-    /// Books an open gift, and hands back the one it pushed out, if there was one – a redemption
-    /// still open on Twitch that now belongs to nobody, and whose points its caller owes back.
+    /// Books an open gift, and in the same write the fulfilment its redemption leaves owed to Twitch
+    /// – one write for the same reason <see cref="Add"/> takes both: a crash between them would leave
+    /// a chance on disk with no debt beside it, and the next startup sweep would pay back a spin the
+    /// viewer has already had.
+    ///
+    /// <para>Hands back the gift it pushed out, if there was one. That one is simply over: its own
+    /// redemption was answered when it was drawn, and its winner spun the chance away themselves.</para>
     /// </summary>
-    public SpinPendingGift? AddPending(SpinPendingGift gift)
+    public SpinPendingGift? AddPending(SpinPendingGift gift, SpinOwedFulfilment? debt = null)
     {
         lock (_lock)
         {
+            OweLocked(debt);
             // One open gift per winner: the bot's prompt names one prize, and a second would leave
             // "!ge" ambiguous about which pet is being given away.
             SpinPendingGift? displaced = _pending.FirstOrDefault(existing =>
@@ -311,24 +329,6 @@ public sealed class SpinWinStore
             _pending.Add(gift);
             Save();
             return displaced;
-        }
-    }
-
-    /// <summary>
-    /// The streamer closed this gift's redemption by hand, so its points can no longer come back.
-    /// The prize is left where it is: the winner still has a friend to name, and taking the pet away
-    /// as well would punish them for something the dashboard did.
-    /// </summary>
-    public bool MarkUnrefundable(string redemptionId)
-    {
-        if (redemptionId.Length == 0) return false;
-        lock (_lock)
-        {
-            int at = _pending.FindIndex(gift => Same(gift.RedemptionId, redemptionId));
-            if (at < 0 || !_pending[at].Refundable) return false;
-            _pending[at] = _pending[at] with { Refundable = false };
-            Save();
-            return true;
         }
     }
 
@@ -441,6 +441,57 @@ public sealed class SpinWinStore
         }
     }
 
+    /// <summary>
+    /// Takes in the gifts as they were read, finishing off any written before a duplicate's points
+    /// were answered at the draw. Answers whether the file has to be written back.
+    ///
+    /// <para>Those older gifts left their redemption open on Twitch, and carried what it would take
+    /// to pay it back: the reward, the price, and whether a refund was possible at all. None of that
+    /// is on the record any more, so a gift carried across that change would be shielded from the
+    /// startup sweep by <see cref="HoldsPending"/> until it timed out, then dropped in silence – its
+    /// purchase left standing unanswered in Twitch's queue for good.</para>
+    ///
+    /// <para>So each one is finished the way its own moment deserves. A gift still open keeps its
+    /// chance, and the fulfilment that chance now leaves owed is written down beside it – the very
+    /// thing a duplicate drawn today books at the draw. One that ran out while the app was closed
+    /// never got the chance it was promised: it is let go here rather than announced as expired
+    /// hours after the fact, and letting go is also what hands its redemption back to the sweep,
+    /// which pays the points back.</para>
+    /// </summary>
+    private bool Migrate(IReadOnlyList<PendingRow> rows)
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        bool rewrite = false;
+        foreach (PendingRow row in rows)
+        {
+            if (!row.Legacy)
+            {
+                _pending.Add(row.Gift);
+                continue;
+            }
+
+            // Written back whichever way it goes: the row on disk is in a shape this app no longer
+            // speaks, and leaving it there would put the same gift through this again next time.
+            rewrite = true;
+            if (now >= row.ExpiresAt) continue;
+            _pending.Add(row.Gift);
+
+            // Nothing is owed where the points could never come back anyway, nor where the row
+            // cannot say which reward the purchase belonged to – a verdict needs both. A debt
+            // already on disk is left as it is: it is the same purchase, already counted, and
+            // replacing it would hand it its attempts back.
+            if (row.Refundable != true || row.RewardId is not { Length: > 0 } reward) continue;
+            if (_owed.Any(debt => Same(debt.RedemptionId, row.RedemptionId))) continue;
+            // No channel, because the old row never wrote one down. A debt that names none is
+            // replayed in whichever channel the app comes back to, which is the closest thing to
+            // the truth there is here – and gifts only ever outlived the app in the channel it was
+            // pointed at, since leaving one takes them with it.
+            _owed.Add(new SpinOwedFulfilment(
+                row.RedemptionId, reward, string.Empty, row.WinnerName, row.Cost ?? 0, "dubbletten är bokförd"));
+        }
+        return rewrite;
+    }
+
     /// <summary>The debt half of a write, so booking one alongside a win stays a single save.</summary>
     private bool OweLocked(SpinOwedFulfilment? debt)
     {
@@ -467,10 +518,36 @@ public sealed class SpinWinStore
         return changed;
     }
 
-    private void Save() => _file.Write(new SpinWinFile(_wins, _pending, _owed), JsonOptions);
+    private void Save() => _file.Write(
+        new SpinWinFile(_wins, _pending.Select(PendingRow.Of).ToList(), _owed), JsonOptions);
 
     private static bool Same(string left, string right) => string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The document on disk. Lists rather than the live fields, so a hand-edit with nulls stays harmless.</summary>
-    private sealed record SpinWinFile(List<SpinWin>? Wins, List<SpinPendingGift>? Pending, List<SpinOwedFulfilment>? Owed);
+    private sealed record SpinWinFile(List<SpinWin>? Wins, List<PendingRow>? Pending, List<SpinOwedFulfilment>? Owed);
+
+    /// <summary>
+    /// A gift the way it sits in the file. The last three are gone from <see cref="SpinPendingGift"/>
+    /// itself – they belonged to the flow that left a duplicate's redemption open while its winner
+    /// chose – and are read here purely so <see cref="Migrate"/> can settle a gift that flow wrote.
+    /// Null on everything written since, and left out of the file rather than saved back as nulls.
+    /// </summary>
+    private sealed record PendingRow(
+        string RedemptionId,
+        string WinnerUserId,
+        string WinnerName,
+        string PetId,
+        DateTimeOffset ExpiresAt,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RewardId = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Cost = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Refundable = null)
+    {
+        /// <summary>Whether the older flow wrote this row, which is exactly what carrying any of its own fields means.</summary>
+        internal bool Legacy => RewardId is not null || Cost is not null || Refundable is not null;
+
+        internal SpinPendingGift Gift => new(RedemptionId, WinnerUserId, WinnerName, PetId, ExpiresAt);
+
+        internal static PendingRow Of(SpinPendingGift gift) =>
+            new(gift.RedemptionId, gift.WinnerUserId, gift.WinnerName, gift.PetId, gift.ExpiresAt);
+    }
 }
