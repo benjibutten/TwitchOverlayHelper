@@ -3,6 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
+using TwitchOverlayHelper.Storage;
 
 namespace TwitchOverlayHelper.Updates;
 
@@ -33,10 +34,7 @@ internal sealed class GitHubUpdateService
         _httpClient = httpClient ?? new HttpClient();
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("TwitchOverlayHelper-Updater/1.0");
         _httpClient.Timeout = TimeSpan.FromSeconds(30);
-        _statePath = statePath ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "TwitchOverlayHelper",
-            "update-check.txt");
+        _statePath = statePath ?? ProfilePaths.File("update-check.txt");
     }
 
     public async Task<UpdateInfo?> CheckAsync(Version currentVersion, bool force, CancellationToken cancellationToken = default)

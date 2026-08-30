@@ -15,13 +15,24 @@ namespace TwitchOverlayHelper.Storage;
 /// The copy is of the state that was just written, not of the one it replaced: that way the folder
 /// always holds at least one readable version, including after the very first save.
 /// </summary>
-public sealed class BackedUpJsonFile(string filePath, int keepBackups = BackedUpJsonFile.DefaultKeep)
+/// <param name="minimumBackupInterval">
+/// How close together two copies may be taken. Zero – the default – copies on every save, which is
+/// what a file written once per deliberate edit wants. A file written on a timer while a slider is
+/// being dragged wants a gap instead: without one, a minute of tuning fills the folder with twenty
+/// copies of the same minute and pushes out every copy from before it, which is the only stretch of
+/// history anyone ever wants back.
+/// </param>
+public sealed class BackedUpJsonFile(
+    string filePath,
+    int keepBackups = BackedUpJsonFile.DefaultKeep,
+    TimeSpan minimumBackupInterval = default)
 {
     /// <summary>Enough copies to reach back past a mistake that took a few saves to notice.</summary>
     public const int DefaultKeep = 20;
 
     private readonly Lock _lock = new();
     private readonly int _keep = Math.Max(1, keepBackups);
+    private readonly TimeSpan _minimumInterval = minimumBackupInterval;
 
     public string FilePath { get; } = filePath;
 
@@ -37,6 +48,25 @@ public sealed class BackedUpJsonFile(string filePath, int keepBackups = BackedUp
 
     /// <summary>True when the last read had to fall back to a copy, so the caller can say so.</summary>
     public bool RecoveredFromBackup { get; private set; }
+
+    /// <summary>
+    /// Where an unreadable file was put out of the way, if the last read could make nothing of one.
+    /// Null the rest of the time.
+    /// </summary>
+    public string? QuarantinedPath { get; private set; }
+
+    /// <summary>Where files that parse as nothing are kept, clear of the copies.</summary>
+    public string QuarantineFolder => Path.Combine(BackupFolder, "unreadable");
+
+    /// <summary>
+    /// Whether the last read found anything on disk at all, readable or not.
+    ///
+    /// <para>Its own answer rather than one inferred from the read having failed, because those are
+    /// two different questions and the difference is the whole story: no file means a first run and
+    /// nothing has been lost, while a file that would not parse means the user had something and
+    /// this app could not read it.</para>
+    /// </summary>
+    public bool FoundOnDisk { get; private set; }
 
     /// <summary>The copies on disk, newest first. The names are timestamps, so they sort by age.</summary>
     public IReadOnlyList<string> Backups()
@@ -61,6 +91,9 @@ public sealed class BackedUpJsonFile(string filePath, int keepBackups = BackedUp
         lock (_lock)
         {
             RecoveredFromBackup = false;
+            QuarantinedPath = null;
+            // Settled before the read, because the read is about to move the file it is asking about.
+            FoundOnDisk = File.Exists(FilePath) || Backups().Count > 0;
             if (TryReadFile(FilePath, options, out value)) return true;
 
             foreach (string backup in Backups())
@@ -70,6 +103,12 @@ public sealed class BackedUpJsonFile(string filePath, int keepBackups = BackedUp
                 TryRestore(backup);
                 return true;
             }
+
+            // Nothing on disk parsed, so the caller is about to carry on with defaults – and the
+            // first save after that writes straight over the file we could not read. Whatever is
+            // in it is the last trace of what the user had, so it is moved aside rather than left
+            // in the one place that is certain to be overwritten.
+            TryQuarantine();
             value = default;
             return false;
         }
@@ -104,8 +143,26 @@ public sealed class BackedUpJsonFile(string filePath, int keepBackups = BackedUp
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
     }
 
+    /// <summary>
+    /// Whether a copy would be too close on the heels of the last one. Judged by the newest copy's
+    /// own timestamp rather than by a clock kept in memory, so the gap survives a restart – a run
+    /// that saves once on the way up would otherwise copy on every start.
+    /// </summary>
+    private bool TooSoonForBackup()
+    {
+        if (_minimumInterval <= TimeSpan.Zero) return false;
+        try
+        {
+            IReadOnlyList<string> backups = Backups();
+            if (backups.Count == 0) return false;
+            return DateTime.Now - File.GetLastWriteTime(backups[0]) < _minimumInterval;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+    }
+
     private void WriteBackup(string json)
     {
+        if (TooSoonForBackup()) return;
         try
         {
             Directory.CreateDirectory(BackupFolder);
@@ -160,6 +217,24 @@ public sealed class BackedUpJsonFile(string filePath, int keepBackups = BackedUp
         {
             return false;
         }
+    }
+
+    private void TryQuarantine()
+    {
+        try
+        {
+            // An empty file is moved aside like any other. It used to be left where it was, on the
+            // grounds that nothing is in it worth keeping – but a settings file truncated to zero
+            // bytes is what a crash leaves behind, and leaving it there meant the load reported no
+            // trouble at all and the app reset itself in silence.
+            if (!File.Exists(FilePath)) return;
+            Directory.CreateDirectory(QuarantineFolder);
+            string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss-fff");
+            string path = Path.Combine(QuarantineFolder, $"{Stem}-{stamp}{Extension}");
+            File.Move(FilePath, path, true);
+            QuarantinedPath = path;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     private void TryRestore(string backup)

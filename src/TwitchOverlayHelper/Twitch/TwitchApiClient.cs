@@ -25,6 +25,12 @@ public sealed class TwitchNotPermittedException(string message) : TwitchApiExcep
 public sealed record CustomReward(string Id, string Title, int Cost);
 
 /// <summary>
+/// One Twitch account, as the users endpoint answers for it. What the spin's gift flow runs on: the
+/// recipient is typed as a name, and the name has to become an id before a win can be tied to it.
+/// </summary>
+public sealed record TwitchUser(string Id, string Login, string DisplayName);
+
+/// <summary>
 /// One of the channel's own bits Power-ups. <paramref name="RequiresInput"/> matters more here than
 /// it does for a reward: a Power-up that asks for nothing sends no text, and there is nothing to
 /// read out loud.
@@ -171,6 +177,34 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
     {
         using var request = new HttpRequestMessage(HttpMethod.Delete, $"https://api.twitch.tv/helix/raids?broadcaster_id={Uri.EscapeDataString(broadcasterId)}");
         await SendAsync(request, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Who a login belongs to, or null when it belongs to nobody. Null rather than a throw for the
+    /// not-found case, because the name arrives straight from chat and a typo is an expected answer
+    /// – but Twitch being unreachable still throws, so the caller can tell "no such user" from
+    /// "could not ask".
+    /// </summary>
+    public async Task<TwitchUser?> GetUserByLoginAsync(string login, CancellationToken cancellationToken = default)
+    {
+        string trimmed = (login ?? string.Empty).Trim().TrimStart('@');
+        // A login Twitch could never have issued is answered here rather than sent: Helix meets it
+        // with a 400, which reads like an outage when all that happened is somebody typed "påelle".
+        if (trimmed.Length is 0 or > 25 || !trimmed.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '_'))
+            return null;
+
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            $"https://api.twitch.tv/helix/users?login={Uri.EscapeDataString(trimmed.ToLowerInvariant())}");
+        JsonElement json = await SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        if (!json.TryGetProperty("data", out JsonElement data) || data.ValueKind != JsonValueKind.Array || data.GetArrayLength() == 0)
+            return null;
+        JsonElement user = data[0];
+        string id = ReadString(user, "id");
+        if (id.Length == 0) return null;
+        string userLogin = ReadString(user, "login");
+        string displayName = ReadString(user, "display_name");
+        return new TwitchUser(id, userLogin, displayName.Length > 0 ? displayName : userLogin);
     }
 
     /// <summary>Live channels the logged-in user follows – the shortlist the raid picker offers.</summary>

@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace TwitchOverlayHelper.Settings;
 
 /// <summary>
@@ -65,6 +68,10 @@ public sealed class PetRewardRule
         // dropped rather than trusted: it decides whether viewers get their points back.
         if (RewardId.Length == 0) Managed = false;
     }
+
+    /// <inheritdoc cref="AppSettings.Unknown"/>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
 }
 
 /// <summary>
@@ -93,6 +100,18 @@ public sealed class PetSettings
     /// <summary>Render scale in the overlay; 1.0 is roughly 90 px tall.</summary>
     public double Scale { get; set; } = 1.0;
 
+    /// <summary>
+    /// How fast the creatures are animated, as a multiple of their natural pace. Each behaviour
+    /// already has a pace of its own – a wave is a gesture and runs slower than a run cycle – so
+    /// this scales the whole set rather than any one animation, and 1.0 is the balance the overlay
+    /// was drawn for.
+    ///
+    /// <para>It exists because the right speed depends on the sheet: a creature drawn with six
+    /// frames of idle breathes at a different rate than one drawn with three, and no default fits
+    /// every pet somebody downloads.</para>
+    /// </summary>
+    public double AnimationSpeed { get; set; } = 1.0;
+
     /// <summary>When full, the oldest pet is sent home to make room for the newest redemption.</summary>
     public int MaxPets { get; set; } = 6;
 
@@ -110,6 +129,23 @@ public sealed class PetSettings
     /// leaves only the creatures, for a cleaner overlay.
     /// </summary>
     public bool ShowNames { get; set; } = true;
+
+    /// <summary>
+    /// The aura every pet wears in its rarity's colour – a breathing halo, and a sheen sweeping
+    /// across the rarer ones. Something a viewer can read at a glance is worth more than a tier
+    /// written down in a settings window, but it is still light on the picture the stream is
+    /// really about, so it can be switched off.
+    /// </summary>
+    public bool RarityEffects { get; set; } = true;
+
+    /// <summary>
+    /// How long the aura burns before it fades away and leaves the creature alone. The glow is
+    /// there to say "look what just landed", and six of them lit for the whole five minutes is an
+    /// overlay competing with the game behind it – so it is loud on arrival and gone shortly after.
+    /// Zero keeps every pet lit for as long as it lives, for a channel that wants the tier readable
+    /// at any moment.
+    /// </summary>
+    public int RarityFadeSeconds { get; set; } = 10;
 
     /// <summary>
     /// How many minutes a redemption of this reward is worth, or null when it should not spawn a
@@ -149,6 +185,9 @@ public sealed class PetSettings
         DefaultPet = DefaultPet?.Trim() ?? string.Empty;
         LifetimeMinutes = Math.Clamp(LifetimeMinutes, 1, 60);
         Scale = Math.Clamp(double.IsFinite(Scale) ? Scale : 1.0, 0.4, 2.5);
+        // Outside this range the animations stop reading as movement: too slow is a slideshow, too
+        // fast a blur, and neither is a setting worth letting a hand-edited file ask for.
+        AnimationSpeed = Math.Clamp(double.IsFinite(AnimationSpeed) ? AnimationSpeed : 1.0, 0.5, 1.5);
         MaxPets = Math.Clamp(MaxPets, 1, 20);
 
         // A hand-edited settings.json can hold "rewards": [null]; a missing rule is worth ignoring,
@@ -177,4 +216,8 @@ public sealed class PetSettings
     /// </summary>
     private static string RuleKey(PetRewardRule rule) =>
         rule.RewardId + (char)0x1F + rule.RewardName;
+
+    /// <inheritdoc cref="AppSettings.Unknown"/>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
 }

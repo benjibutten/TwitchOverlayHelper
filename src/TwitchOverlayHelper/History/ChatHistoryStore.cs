@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using TwitchOverlayHelper.Models;
+using TwitchOverlayHelper.Storage;
 
 namespace TwitchOverlayHelper.History;
 
@@ -38,9 +39,7 @@ public sealed class ChatHistoryStore
 
     public ChatHistoryStore(string? path = null)
     {
-        _path = path ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "TwitchOverlayHelper", "chat-history.json");
+        _path = path ?? ProfilePaths.File("chat-history.json");
     }
 
     /// <summary>

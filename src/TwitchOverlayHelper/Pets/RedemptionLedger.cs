@@ -21,8 +21,11 @@ public interface IRedemptionGateway
 /// Something the ledger did, worded for the streamer rather than for the log.
 /// <paramref name="Subject"/> is what the redemption bought – "pet" or "tts" – so the app can put
 /// the sentence next to the feature it belongs to instead of reporting a reading under the pets.
+/// <paramref name="RedemptionId"/> is carried for the features that keep their own books: it is the
+/// only signal that Twitch actually took the verdict, and the spin clears its owed fulfilments on it.
 /// </summary>
-public sealed record RedemptionNotice(bool Refunded, string ViewerName, int Cost, string Reason, string Subject = "pet");
+public sealed record RedemptionNotice(
+    bool Refunded, string ViewerName, int Cost, string Reason, string Subject = "pet", string RedemptionId = "");
 
 /// <summary>
 /// How long the ledger waits before it calls something undelivered.
@@ -291,7 +294,7 @@ public sealed class RedemptionLedger : IDisposable
         {
             SendHome(entry);
             AppLog.Info($"Pets: {entry.ViewerName} fick tillbaka {entry.Cost} poäng via Twitchs egen kö.");
-            Answered?.Invoke(new RedemptionNotice(true, entry.ViewerName, entry.Cost, "återbetalad i Twitch"));
+            Answered?.Invoke(new RedemptionNotice(true, entry.ViewerName, entry.Cost, "återbetalad i Twitch", entry.Subject, entry.RedemptionId));
         }
     }
 
@@ -478,7 +481,7 @@ public sealed class RedemptionLedger : IDisposable
         AppLog.Info(refund
             ? $"Inlösen: {entry.ViewerName} fick tillbaka {entry.Cost} poäng – {reason}."
             : $"Inlösen: {entry.ViewerName}s köp markerat som klart – {reason}.");
-        Answered?.Invoke(new RedemptionNotice(refund, entry.ViewerName, entry.Cost, reason, entry.Subject));
+        Answered?.Invoke(new RedemptionNotice(refund, entry.ViewerName, entry.Cost, reason, entry.Subject, entry.RedemptionId));
     }
 
     /// <summary>Takes the refunded pet off the lawn, so nothing paid back is left walking about.</summary>

@@ -103,6 +103,13 @@ public sealed class ChatHub(
     public event Action<int>? PetOverlayCountChanged;
 
     /// <summary>
+    /// A pet overlay reporting that a lucky spin has played out, by spin id. Pure stagecraft – the
+    /// win is booked before the frame ever goes out – so this only tells the queue the stage is
+    /// free for the next one.
+    /// </summary>
+    public event Action<string>? SpinShown;
+
+    /// <summary>
     /// The reading page reporting that it has finished – or failed to start – one clip, by the id it
     /// was sent. The only signal that a reading actually reached the mix: everything before it
     /// proves the server sent a frame.
@@ -517,6 +524,10 @@ public sealed class ChatHub(
         SendEverywhere(DockJson.Serialize(new DockEnvelope<DockPetSpawn>("petSpawn",
             new DockPetSpawn(ToDock(result.Pet), result.RemovedId, result.Extended))));
 
+    /// <summary>Acts out one lucky spin on the pet overlay. The winner is already decided and booked.</summary>
+    internal void PublishSpin(DockSpin spin) =>
+        SendEverywhere(DockJson.Serialize(new DockEnvelope<DockSpin>("spin", spin)));
+
     /// <summary>
     /// Sends one pet home ahead of time, because the redemption behind it was paid back. Its own
     /// frame rather than a spawn carrying <c>removedId</c>: nothing is arriving to make room here,
@@ -542,13 +553,21 @@ public sealed class ChatHub(
     public void PublishPetCatalog() =>
         SendEverywhere(DockJson.Serialize(new DockEnvelope<IReadOnlyList<DockPetDefinition>>("petCatalog", BuildPetCatalog())));
 
-    private DockPetSettings BuildPetSettings() => new(
-        settings.Pets.Enabled, settings.Pets.Scale, settings.Pets.LifetimeMinutes, settings.Pets.MaxPets, settings.Pets.ShowNames);
+    /// <summary>
+    /// What the overlay looks like. Also what the pet inspector reads over HTTP: the animation speed
+    /// is a setting, not a property of the sheet, and an inspector that ignored it would show a pace
+    /// the lawn does not play at.
+    /// </summary>
+    internal DockPetSettings BuildPetSettings() => new(
+        settings.Pets.Enabled, settings.Pets.Scale, settings.Pets.LifetimeMinutes, settings.Pets.MaxPets,
+        settings.Pets.ShowNames, settings.Pets.RarityEffects, settings.Pets.RarityFadeSeconds,
+        settings.Pets.AnimationSpeed);
 
-    private IReadOnlyList<DockPetDefinition> BuildPetCatalog() => petCatalog.Pets
+    /// <summary>The species list as the overlay gets it. Also what the pet inspector reads over HTTP.</summary>
+    internal IReadOnlyList<DockPetDefinition> BuildPetCatalog() => petCatalog.Pets
         .Select(pet => pet.SpriteFile is { Length: > 0 }
-            ? new DockPetDefinition(pet.Id, pet.Name, pet.Description, "sprite", null, $"/pets/sprite/{pet.Id}", pet.Fps, pet.Emoji, pet.SpriteVersion)
-            : new DockPetDefinition(pet.Id, pet.Name, pet.Description, "svg", $"/pets/body/{pet.Id}", null, pet.Fps, pet.Emoji))
+            ? new DockPetDefinition(pet.Id, pet.Name, pet.Description, "sprite", null, $"/pets/sprite/{pet.Id}", pet.Fps, pet.Emoji, pet.Rarity, pet.SpriteVersion)
+            : new DockPetDefinition(pet.Id, pet.Name, pet.Description, "svg", $"/pets/body/{pet.Id}", null, pet.Fps, pet.Emoji, pet.Rarity))
         .ToArray();
 
     private static DockPet ToDock(PetState pet) => new(pet.Id, pet.Name, pet.Color, pet.Species, pet.SpawnedAt, pet.ExpiresAt);
@@ -860,6 +879,9 @@ public sealed class ChatHub(
             {
                 case "petShown" when view == DockView.Pets:
                     PetShown?.Invoke(id);
+                    return;
+                case "spinDone" when view == DockView.Pets:
+                    SpinShown?.Invoke(id);
                     return;
                 case "ttsPlayed" when view == DockView.Tts:
                     TtsPlaybackFinished?.Invoke(id, true);

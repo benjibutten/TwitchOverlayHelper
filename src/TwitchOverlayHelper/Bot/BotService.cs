@@ -7,9 +7,16 @@ using TwitchOverlayHelper.Speech;
 namespace TwitchOverlayHelper.Bot;
 
 /// <summary>What the bot has to be able to look up that it does not own itself.</summary>
+/// <param name="DynamicCommand">
+/// First claim on a chat line that looks like a command, for the commands whose answers change with
+/// the data – the spin's "!mina" above all, whose reply nobody could write as a fixed template. True
+/// means the line is handled and the static commands and the welcome stay out of it; the answer
+/// itself comes back through <see cref="BotService.Announce"/>.
+/// </param>
 public sealed record BotContext(
     Func<IReadOnlyList<TtsEntry>> ReadingQueue,
-    Func<string> BotLogin);
+    Func<string> BotLogin,
+    Func<ChatMessage, bool>? DynamicCommand = null);
 
 /// <summary>
 /// Decides what the bot says and when. Everything that reaches chat goes through here and then
@@ -94,6 +101,9 @@ public sealed class BotService : IDisposable
 
         if (!notice.Refunded)
         {
+            // A fulfilled spin was already celebrated by SpinWin the moment the reel stopped;
+            // booking the redemption is paperwork nobody in chat is waiting on.
+            if (notice.Subject == "spin") return;
             BotFlow flow = notice.Subject == "tts" ? BotFlow.TtsSpoken : BotFlow.PetFulfilled;
             Say(flow, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -232,6 +242,10 @@ public sealed class BotService : IDisposable
     {
         if (!Bot.IsActive || IsOwnMessage(message)) return;
 
+        // The data-driven commands go first: a streamer's own "!mina" row would otherwise shadow
+        // the spin's answer with a fixed text that cannot know what anybody won.
+        if (_context.DynamicCommand?.Invoke(message) == true) return;
+
         // A command answers and nothing else follows. Someone whose first ever line is a command is
         // asking a question, not saying hello, and answering both would be two lines at a stranger.
         if (AnswerCommand(message)) return;
@@ -239,6 +253,19 @@ public sealed class BotService : IDisposable
         if (message.IsFirstMessage)
             Say(BotFlow.Welcome, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["viewer"] = message.DisplayName });
     }
+
+    /// <summary>
+    /// A line another service asked for – the spin announcing a win, prompting for a gift recipient,
+    /// answering a command. The flow's own switch and template still decide whether and how it is
+    /// said; this only opens the door that <see cref="Say"/> guards for everything else.
+    /// </summary>
+    /// <param name="ignoreCooldown">
+    /// True for the lines that name one person and answer them alone – silencing the second of two
+    /// winners would leave somebody who paid with nothing. False for the ones viewers can set off
+    /// on purpose, like the list command.
+    /// </param>
+    public void Announce(BotFlow flow, IReadOnlyDictionary<string, string>? values, bool ignoreCooldown = true) =>
+        Say(flow, values, ignoreCooldown);
 
     /// <summary>A raid, a shoutout, a sub, a hype train – the things worth a thank you.</summary>
     public void OnChatEvent(ChatEvent chatEvent)
@@ -404,7 +431,7 @@ public sealed class BotService : IDisposable
 
         foreach (RedemptionNotice notice in due)
         {
-            Say(notice.Subject == "tts" ? BotFlow.TtsRefund : BotFlow.PetRefund,
+            Say(notice.Subject switch { "tts" => BotFlow.TtsRefund, "spin" => BotFlow.SpinRefund, _ => BotFlow.PetRefund },
                 new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["viewer"] = notice.ViewerName,

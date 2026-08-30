@@ -117,6 +117,47 @@ public sealed class PetRegistryTests
     }
 }
 
+public sealed class PetAnimationSpeedTests
+{
+    private static double Normalized(double speed)
+    {
+        var settings = new PetSettings { AnimationSpeed = speed };
+        settings.Normalize();
+        return settings.AnimationSpeed;
+    }
+
+    /// <summary>The pace the pets were drawn for is what a channel that never touches the slider gets.</summary>
+    [Fact]
+    public void DefaultsToTheUnscaledPace()
+    {
+        Assert.Equal(1.0, new PetSettings().AnimationSpeed);
+    }
+
+    [Theory]
+    [InlineData(0.5, 0.5)]
+    [InlineData(1.5, 1.5)]
+    [InlineData(0.75, 0.75)]
+    public void KeepsASpeedTheSliderCouldHaveSet(double speed, double expected)
+    {
+        Assert.Equal(expected, Normalized(speed));
+    }
+
+    /// <summary>
+    /// A hand-edited settings.json is the only way to ask for these. Too slow is a slideshow and too
+    /// fast a blur, so they are pulled back to the ends of the slider rather than obeyed.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 0.5)]
+    [InlineData(-3, 0.5)]
+    [InlineData(9, 1.5)]
+    [InlineData(double.NaN, 1.0)]
+    [InlineData(double.PositiveInfinity, 1.0)]
+    public void RefusesASpeedThatWouldStopOrBlurTheAnimations(double speed, double expected)
+    {
+        Assert.Equal(expected, Normalized(speed));
+    }
+}
+
 public sealed class PetRewardRuleTests
 {
     private static PetSettings Settings(params PetRewardRule[] rules)

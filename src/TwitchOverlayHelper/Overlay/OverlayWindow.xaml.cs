@@ -175,7 +175,10 @@ public partial class OverlayWindow : Window
             if (card.Tag is not ChatTimelineItem { Message: { } existing }) continue;
             if (!string.Equals(existing.Id, message.Id, StringComparison.Ordinal)) continue;
 
-            MessagePanel.Children[i] = CreateMessageCard(message);
+            // Assigning over the index throws – WPF wants the old visual off the panel before the new
+            // one takes its place – so the card is swapped by removing and putting the new one back.
+            MessagePanel.Children.RemoveAt(i);
+            MessagePanel.Children.Insert(i, CreateMessageCard(message));
             // The card just grew by a couple of lines; the newest message must stay the visible one.
             if (i == MessagePanel.Children.Count - 1) ChatScroller.ScrollToEnd();
             return;

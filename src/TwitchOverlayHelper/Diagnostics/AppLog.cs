@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text;
+using TwitchOverlayHelper.Storage;
 
 namespace TwitchOverlayHelper.Diagnostics;
 
@@ -19,9 +20,7 @@ public static class AppLog
 
     private static readonly Lock Gate = new();
 
-    public static string Folder { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "TwitchOverlayHelper", "logs");
+    public static string Folder { get; } = ProfilePaths.Folder("logs");
 
     private static string TodayPath => Path.Combine(Folder, $"app-{DateTime.Now:yyyy-MM-dd}.log");
 

@@ -21,15 +21,19 @@ public enum PetSpawnOutcome
     /// <summary>The lawn is full, and this reward would rather pay back than evict someone else's pet.</summary>
     Full,
     /// <summary>No pet overlay is connected, so nothing would have been drawn for anybody.</summary>
-    NoOverlay
+    NoOverlay,
+    /// <summary>The viewer asked for a win-only pet they never won, so the points go back instead.</summary>
+    NotOwned
 }
 
 /// <summary>
 /// The answer to one redemption: what happened, and the pet it produced when something did.
 /// <paramref name="Refundable"/> is carried along rather than worked out again later, because it
 /// depends on the rule that matched – and that rule is only known here.
+/// <paramref name="Asked"/> is the species the text named when that is what decided the outcome –
+/// only set for <see cref="PetSpawnOutcome.NotOwned"/>, so the bot can say which pet it was about.
 /// </summary>
-public sealed record PetRedemptionResult(PetSpawnOutcome Outcome, PetState? Pet, bool Refundable)
+public sealed record PetRedemptionResult(PetSpawnOutcome Outcome, PetState? Pet, bool Refundable, PetDefinition? Asked = null)
 {
     public static readonly PetRedemptionResult NotAPetReward = new(PetSpawnOutcome.NotAPetReward, null, false);
 }
@@ -49,6 +53,13 @@ public sealed class PetService(AppSettings settings, PetCatalog catalog, PetRegi
     /// would spawn two pets for one purchase – so while this is on, IRC's copy is left alone.
     /// </summary>
     public bool RedemptionsFromEventSub { get; set; }
+
+    /// <summary>
+    /// Whether this viewer has won this pet in the lucky spin, which is what makes a win-only pet
+    /// theirs to ask for. Owns nothing until the app wires in the win store, which keeps every
+    /// win-only pet out of reach rather than handing them to everybody.
+    /// </summary>
+    public Func<string, string, bool> OwnsWonPet { get; set; } = (_, _) => false;
 
     /// <summary>
     /// Raised with the id of a pet that was pushed off a full lawn to make room for a new one. The
@@ -81,6 +92,15 @@ public sealed class PetService(AppSettings settings, PetCatalog catalog, PetRegi
         string id = redemption.UserId.Length > 0 ? redemption.UserId : redemption.UserLogin;
         if (id.Length == 0) return new PetRedemptionResult(PetSpawnOutcome.NotAPetReward, null, refundable);
 
+        // A win-only pet is only its winner's to ask for. Named by anybody else, the redemption is
+        // paid back rather than answered with a species they never mentioned – but only where paying
+        // back is possible. On a reward that cannot refund the spawn goes ahead and the pick order
+        // below quietly steps past the pet they may not have. Asked before the overlay, because it
+        // is the more useful answer: it stays true after the overlay comes back.
+        PetDefinition? asked = catalog.ResolveFromText(redemption.UserInput);
+        if (refundable && asked is { WinOnly: true } && !OwnsWonPet(id, asked.Id))
+            return new PetRedemptionResult(PetSpawnOutcome.NotOwned, null, true, asked);
+
         // A reward that can pay back should not spend the viewer's points on a lawn nobody is
         // watching. Everywhere else this is not knowable and not asked: an overlay that is up but
         // silent, or one connected from before this check existed, looks the same from here.
@@ -101,15 +121,16 @@ public sealed class PetService(AppSettings settings, PetCatalog catalog, PetRegi
         // Which reward was redeemed decides how long the pet stays, so a channel can sell five and
         // ten minutes as separate rewards.
         //
-        // The reading reward is never a pet, on either route. EventSub claims it before the pets are
-        // shown it at all, and the same has to be said here: this route only runs while EventSub is
-        // down, and a channel with no pet rules configured spawns for every reward id it meets – the
-        // reading's included, which would put a creature on the lawn for a purchase that was meant to
-        // be read out loud.
+        // The reading and the spin are never pets, on either route. EventSub claims both before the
+        // pets are shown them at all, and the same has to be said here: this route only runs while
+        // EventSub is down, and a channel with no pet rules configured spawns for every reward id it
+        // meets – theirs included, which would put an ordinary creature on the lawn for a purchase
+        // that was meant to be read out loud, or spun for.
         int? minutes = null;
         if (message.RewardId is { Length: > 0 }
             && !RedemptionsFromEventSub
-            && !settings.Tts.MatchesReward(message.RewardId))
+            && !settings.Tts.MatchesReward(message.RewardId)
+            && !settings.Spin.MatchesReward(message.RewardId, message.RewardTitle))
         {
             PetRewardRule? rule = pets.RuleFor(message.RewardId, message.RewardTitle);
             // A reward the app created is never spawned from here. IRC carries the reward id but
@@ -137,9 +158,11 @@ public sealed class PetService(AppSettings settings, PetCatalog catalog, PetRegi
         if (id.Length == 0) return;
 
         // "!pet boo" should not spawn whatever species happens to be called from the rest of the
-        // sentence, so only the words after the command are searched.
+        // sentence, so only the words after the command are searched. The test command may rehearse
+        // any species, win-only included – it is the streamer's own lawn.
         string wishText = minutes is null ? trimmed["!pet".Length..] : message.Text;
-        Spawn(id, message.DisplayName, message.NameColor, wishText, minutes ?? pets.LifetimeMinutes);
+        Spawn(id, message.DisplayName, message.NameColor, wishText, minutes ?? pets.LifetimeMinutes,
+            mayUse: testCommand && minutes is null ? _ => true : null);
     }
 
     /// <summary>Spawns a throwaway pet from the app's test button, cycling species so each click shows a new one.</summary>
@@ -150,13 +173,31 @@ public sealed class PetService(AppSettings settings, PetCatalog catalog, PetRegi
         PetDefinition chosen = species[(number - 1) % species.Count];
         // The label normally carries the name of the viewer who redeemed. On a test spawn it carries
         // the species instead, so the streamer can tell which pet they are looking at.
-        Spawn($"test-{number}", $"{chosen.Name} (test)", null, chosen.Id, settings.Pets.LifetimeMinutes);
+        Spawn($"test-{number}", $"{chosen.Name} (test)", null, chosen.Id, settings.Pets.LifetimeMinutes, mayUse: _ => true);
     }
 
-    private PetState? Spawn(string id, string name, string? color, string? wishText, int minutes, bool evictWhenFull = true)
+    /// <summary>
+    /// Puts one known species on the lawn, for the spin's winner the moment the reel stops. No text
+    /// to interpret and no ownership to ask about – whoever calls this has just decided both.
+    /// </summary>
+    public void SpawnDirect(string id, string name, string petId)
     {
         PetSettings pets = settings.Pets;
-        PetDefinition species = catalog.Choose(wishText, pets.DefaultPet);
+        if (!pets.Enabled || catalog.Find(petId) is null) return;
+        PetSpawnResult? result = registry.Spawn(id, name, null, petId, TimeSpan.FromMinutes(pets.LifetimeMinutes), pets.MaxPets, evictWhenFull: true);
+        if (result is null) return;
+        hub.PublishPetSpawn(result);
+        if (result.RemovedId is { Length: > 0 } removed) PetEvicted?.Invoke(removed);
+    }
+
+    private PetState? Spawn(string id, string name, string? color, string? wishText, int minutes, bool evictWhenFull = true,
+        Func<PetDefinition, bool>? mayUse = null)
+    {
+        PetSettings pets = settings.Pets;
+        // The default gate: a win-only pet is available exactly to the viewer who won it. Test
+        // spawns pass their own answer instead.
+        mayUse ??= pet => !pet.WinOnly || OwnsWonPet(id, pet.Id);
+        PetDefinition species = catalog.Choose(wishText, pets.DefaultPet, mayUse);
         PetSpawnResult? result = registry.Spawn(id, name, color, species.Id, TimeSpan.FromMinutes(minutes), pets.MaxPets, evictWhenFull);
         if (result is null) return null;
         hub.PublishPetSpawn(result);

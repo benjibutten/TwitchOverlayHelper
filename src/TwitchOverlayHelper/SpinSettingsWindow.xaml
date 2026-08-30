@@ -1,0 +1,198 @@
+<Window x:Class="TwitchOverlayHelper.SpinSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Lyckosnurren" Width="880" Height="900" MinWidth="720" MinHeight="560"
+        Icon="pack://application:,,,/Assets/app.ico"
+        Background="{StaticResource PageBrush}" Foreground="{StaticResource TextBrush}"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="24">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+
+        <StackPanel>
+            <TextBlock Text="LYCKOSNURREN" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" FontSize="12" />
+            <TextBlock Text="Lyckosnurren" FontSize="26" FontWeight="SemiBold" Margin="0,3,0,0" />
+            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" FontSize="13" Margin="0,6,0,14" LineHeight="20"
+                       Text="En belöning som snurrar fram en pet tittaren får behålla. Vinsten knyts till Twitch-kontot, inte namnet, så den följer med genom namnbyten. Markera nedan vilka pets som ska gå att vinna och hur ovanliga de är – bara de är med i snurren, och bara den som vunnit en art kan lösa in den som vanlig pet." />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="0,0,14,0">
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                        CornerRadius="12" Padding="16" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="Belöningen" FontSize="17" FontWeight="SemiBold" />
+                        <TextBlock TextWrapping="Wrap" Foreground="#A8A3B8" FontSize="12.5" LineHeight="18" Margin="0,5,0,12"
+                                   Text="⚡ skapar belöningen i Twitch med kön påslagen, vilket är det enda som gör att poängen kan lämnas tillbaka när något inte går vägen. En belöning du gjort för hand i Twitch fungerar också, men går aldrig att återbetala härifrån." />
+
+                        <CheckBox x:Name="EnabledCheck" Content="Aktivera lyckosnurren" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+
+                        <Grid Margin="0,14,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="1.4*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="96" /><ColumnDefinition Width="10" /><ColumnDefinition Width="44" /></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <TextBlock Text="Namn i Twitch" Foreground="#8F8B9E" FontSize="11.5" Margin="0,0,0,4" />
+                            <TextBlock Grid.Column="2" Text="Belönings-ID" Foreground="#8F8B9E" FontSize="11.5" Margin="0,0,0,4" />
+                            <TextBlock Grid.Column="4" Text="Poäng" Foreground="#8F8B9E" FontSize="11.5" Margin="0,0,0,4" HorizontalAlignment="Center" />
+
+                            <TextBox x:Name="RewardNameBox" Grid.Row="1" TextChanged="Setting_Changed"
+                                     ToolTip="Namnet belöningen får i Twitch när du skapar den härifrån. Matchas också mot inlösen, så en belöning med samma namn hittas även utan ID." />
+                            <!-- Låst när appen skapat belöningen, av samma skäl som pets-raderna: ID:t är
+                                 det enda som binder inställningen till den belöning Twitch låter oss svara på. -->
+                            <TextBox x:Name="RewardIdBox" Grid.Row="1" Grid.Column="2" TextChanged="Setting_Changed"
+                                     FontFamily="Consolas" FontSize="13" Padding="9,10"
+                                     ToolTip="Belöningens ID från Twitch. Skapade appen belöningen är ID:t låst." />
+                            <TextBox x:Name="CostBox" Grid.Row="1" Grid.Column="4" TextChanged="Setting_Changed" TextAlignment="Center"
+                                     LostKeyboardFocus="Number_LostKeyboardFocus"
+                                     ToolTip="Vad snurren ska kosta i channel points när appen skapar belöningen." />
+                            <Button x:Name="CreateRewardButton" Grid.Row="1" Grid.Column="6" Content="⚡" Background="#343B50" Padding="0,8"
+                                    Click="CreateReward_Click" ToolTip="Skapa belöningen i Twitch." />
+                        </Grid>
+
+                        <TextBlock x:Name="RewardStatusText" Text="" Foreground="#7C7890" FontSize="11.5" Margin="0,10,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                        CornerRadius="12" Padding="16" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="Hur den ser ut" FontSize="17" FontWeight="SemiBold" />
+                        <TextBlock TextWrapping="Wrap" Foreground="#A8A3B8" FontSize="12.5" LineHeight="18" Margin="0,5,0,12"
+                                   Text="Snurren glider in i pet-overlayen, så den behöver ingen egen källa i OBS. Vinnaren är dragen och sparad innan animationen ens börjar – går overlayen ner mitt i snurren är vinsten ändå kvar." />
+
+                        <Grid Margin="0,2,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <TextBlock Text="Glider in från" Foreground="#8F8B9E" FontSize="11.5" Margin="0,0,0,4" />
+                            <TextBlock Grid.Column="2" Text="Snurrtid, sekunder" Foreground="#8F8B9E" FontSize="11.5" Margin="0,0,0,4" />
+                            <TextBlock Grid.Column="4" Text="Rubrik på skärmen" Foreground="#8F8B9E" FontSize="11.5" Margin="0,0,0,4" />
+
+                            <ComboBox x:Name="SideBox" Grid.Row="1" SelectionChanged="Setting_Changed">
+                                <ComboBoxItem Content="Höger" Tag="right" />
+                                <ComboBoxItem Content="Vänster" Tag="left" />
+                                <ComboBoxItem Content="Uppifrån" Tag="top" />
+                                <ComboBoxItem Content="Nerifrån" Tag="bottom" />
+                            </ComboBox>
+                            <TextBox x:Name="SecondsBox" Grid.Row="1" Grid.Column="2" TextChanged="Setting_Changed" TextAlignment="Center"
+                                     LostKeyboardFocus="Number_LostKeyboardFocus" ToolTip="4–20 sekunder." />
+                            <TextBox x:Name="TitleBox" Grid.Row="1" Grid.Column="4" TextChanged="Setting_Changed"
+                                     LostKeyboardFocus="Text_LostKeyboardFocus"
+                                     ToolTip="Texten över snurren. Kanalens egna ord, inte appens." />
+                        </Grid>
+
+                        <Button x:Name="TestSpinButton" Content="Testa snurren" Background="#343B50" HorizontalAlignment="Left" Margin="0,14,0,0"
+                                Click="TestSpin_Click" ToolTip="Kör en riktig snurr i overlayen utan att vinna något eller säga något i chatten." />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                        CornerRadius="12" Padding="16" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="Kommandon och dubbletter" FontSize="17" FontWeight="SemiBold" />
+                        <TextBlock TextWrapping="Wrap" Foreground="#A8A3B8" FontSize="12.5" LineHeight="18" Margin="0,5,0,12"
+                                   Text="Landar snurren på något vinnaren redan äger får de skänka bort den i stället. Poängen är spenderade som vid vilken vinst som helst – det de får är en chans att placera peten, och den chansen tar slut när tiden går ut eller när de råkar välja någon som också redan har den. Kräver att boten är igång – utan den hoppar dragningen i stället över det de redan har. Vad boten svarar ändrar du under “Vad boten säger”." />
+
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <TextBlock Text="Se sin samling" Foreground="#8F8B9E" FontSize="11.5" Margin="0,0,0,4" />
+                            <TextBlock Grid.Column="2" Text="Skänka bort" Foreground="#8F8B9E" FontSize="11.5" Margin="0,0,0,4" />
+                            <TextBlock Grid.Column="4" Text="Tid att välja, minuter" Foreground="#8F8B9E" FontSize="11.5" Margin="0,0,0,4" />
+
+                            <TextBox x:Name="ListCommandBox" Grid.Row="1" TextChanged="Setting_Changed" FontFamily="Consolas" FontSize="13" Padding="9,10"
+                                     LostKeyboardFocus="Text_LostKeyboardFocus" ToolTip="Ett ord. Saknas ! läggs det till." />
+                            <TextBox x:Name="GiveCommandBox" Grid.Row="1" Grid.Column="2" TextChanged="Setting_Changed" FontFamily="Consolas" FontSize="13" Padding="9,10"
+                                     LostKeyboardFocus="Text_LostKeyboardFocus" ToolTip="Skrivs med ett namn efter sig: !ge kajsa" />
+                            <TextBox x:Name="GiftMinutesBox" Grid.Row="1" Grid.Column="4" TextChanged="Setting_Changed" TextAlignment="Center"
+                                     LostKeyboardFocus="Number_LostKeyboardFocus" ToolTip="1–120 minuter." />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                        CornerRadius="12" Padding="16" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="Vad som går att vinna" FontSize="17" FontWeight="SemiBold" />
+                        <TextBlock TextWrapping="Wrap" Foreground="#A8A3B8" FontSize="12.5" LineHeight="18" Margin="0,5,0,12"
+                                   Text="Kryssa i de pets som bara ska gå att få genom snurren. 🔍 öppnar peten ensam i webbläsaren, där du kan prova varje animation mot vilken bakgrund du vill – en testvy som inte rör overlayen. En ikryssad pet försvinner ur den vanliga pet-belöningen för alla utom dem som vunnit den. Sällsyntheten avgör hur ofta den kommer upp: vanlig är ungefär trettio gånger så trolig som legendarisk. Dubbelklicka på ett namn för att döpa om peten eller ge den ett nytt id – redan vunna pets följer med bytet. Valen sparas i petens egen pet.json, så de följer med mappen." />
+
+                        <ItemsControl x:Name="PetList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#1E2233" BorderBrush="#2C3247" BorderThickness="1" CornerRadius="10" Padding="10" Margin="0,0,0,8">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="56" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="130" /><ColumnDefinition Width="12" /><ColumnDefinition Width="150" /><ColumnDefinition Width="10" /><ColumnDefinition Width="40" /></Grid.ColumnDefinitions>
+
+                                            <Border Width="52" Height="52" Background="#141826" CornerRadius="8">
+                                                <Grid>
+                                                    <!-- Faller tillbaka på emoji när bilden inte går att avkoda: en pet utan
+                                                         förhandsbild ska fortfarande gå att kryssa i. -->
+                                                    <TextBlock Text="{Binding Emoji}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Visibility="{Binding EmojiVisibility}" />
+                                                    <Image Source="{Binding Portrait}" Stretch="Uniform" Margin="2" />
+                                                </Grid>
+                                            </Border>
+
+                                            <Grid Grid.Column="2" VerticalAlignment="Center">
+                                                <!-- Namnet som det är: dubbelklick eller pennan öppnar raden för byte. -->
+                                                <Grid Visibility="{Binding ReadVisibility}" Background="Transparent"
+                                                      MouseLeftButtonDown="PetName_DoubleClick"
+                                                      ToolTip="Dubbelklicka för att byta namn och id.">
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding Subtitle}" Foreground="#7C7890" FontSize="11.5" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="1" Content="✎" Click="PetRename_Click" VerticalAlignment="Center"
+                                                            Background="Transparent" Foreground="#7C7890" FontSize="14" Padding="8,4"
+                                                            ToolTip="Byt namn och id på peten." />
+                                                </Grid>
+
+                                                <Grid Visibility="{Binding EditVisibility}">
+                                                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="6" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="4" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+
+                                                    <TextBox Grid.ColumnSpan="5" Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}"
+                                                             Padding="9,6" KeyDown="PetEdit_KeyDown" IsVisibleChanged="PetEditBox_IsVisibleChanged"
+                                                             ToolTip="Namnet som visas – och som tittarna kan skriva i chatten." />
+                                                    <TextBox Grid.Row="1" Text="{Binding EditId, UpdateSourceTrigger=PropertyChanged}"
+                                                             FontFamily="Consolas" FontSize="12.5" Padding="9,6" Margin="0,5,0,0" KeyDown="PetEdit_KeyDown"
+                                                             ToolTip="Petens id: a–z, 0–9, - och _. Vunna pets följer med när det byts." />
+                                                    <Button Grid.Row="1" Grid.Column="2" Content="✓" Margin="0,5,0,0" Padding="11,6"
+                                                            Click="PetEditSave_Click" ToolTip="Spara (Enter)" />
+                                                    <Button Grid.Row="1" Grid.Column="4" Content="✕" Margin="0,5,0,0" Padding="11,6" Background="#343B50"
+                                                            Click="PetEditCancel_Click" ToolTip="Ångra (Esc)" />
+                                                </Grid>
+                                            </Grid>
+
+                                            <CheckBox Grid.Column="4" Content="Går att vinna" VerticalAlignment="Center"
+                                                      IsChecked="{Binding IsWinnable, UpdateSourceTrigger=PropertyChanged}"
+                                                      Checked="Pet_Changed" Unchecked="Pet_Changed" />
+
+                                            <ComboBox Grid.Column="6" VerticalAlignment="Center"
+                                                      ItemsSource="{Binding Rarities}"
+                                                      SelectedItem="{Binding Rarity, UpdateSourceTrigger=PropertyChanged}"
+                                                      IsEnabled="{Binding IsWinnable}"
+                                                      SelectionChanged="Pet_Changed" />
+
+                                            <!-- Testvyn. Öppnas i webbläsaren för att det är där en
+                                                 WebP-spritesheet går att bedöma; appen ritar bara
+                                                 dess första ruta. -->
+                                            <Button Grid.Column="8" Content="🔍" Background="#343B50" Padding="0,8" VerticalAlignment="Center"
+                                                    Click="PetInspect_Click"
+                                                    ToolTip="Öppna peten ensam i webbläsaren: prova varje animation, byt bakgrund och se vad appen läser ur spritesheeten." />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock x:Name="PetEmptyText" Text="Inga pets hittades i pets-mappen." Foreground="#8F8B9E" FontSize="12" TextWrapping="Wrap" />
+                        <TextBlock x:Name="PetStatusText" Text="" Foreground="#F0A85C" FontSize="11.5" Margin="0,10,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Button Grid.Row="2" Content="Stäng" Background="#343B50" HorizontalAlignment="Right" Margin="0,16,0,0" Padding="20,9" Click="Close_Click" />
+    </Grid>
+</Window>

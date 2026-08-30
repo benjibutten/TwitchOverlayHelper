@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using TwitchOverlayHelper.Settings;
+using TwitchOverlayHelper.Storage;
 
 namespace TwitchOverlayHelper.Speech;
 
@@ -45,9 +46,7 @@ public sealed class NameSpeechService
         _play = play;
         _deepSeek = new DeepSeekClient(httpClient);
         _elevenLabs = new ElevenLabsClient(httpClient);
-        _audioDirectory = audioDirectory ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "TwitchOverlayHelper", "namecache");
+        _audioDirectory = audioDirectory ?? ProfilePaths.Folder("namecache");
     }
 
     /// <summary>Both keys and a voice are in place, so a name can be spoken.</summary>

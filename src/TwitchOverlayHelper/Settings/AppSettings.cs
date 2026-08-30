@@ -1,7 +1,34 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace TwitchOverlayHelper.Settings;
 
 public sealed class AppSettings
 {
+    /// <summary>
+    /// Which shape this file is in, so <see cref="SettingsMigrations"/> knows what it is looking
+    /// at. 0 means a file written before the stamp existed. Written first in the document because
+    /// it is the first thing anybody reads when a settings file has gone strange.
+    /// </summary>
+    public int SchemaVersion { get; set; }
+
+    /// <summary>
+    /// The app version that last wrote this file. What tells the app it is running under a new
+    /// build for the first time, which is when the whole profile is copied aside.
+    /// </summary>
+    public string LastRunVersion { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Everything in the file this build has no property for.
+    ///
+    /// <para>Without this, going back a version – an update rolled back, an older build started by
+    /// mistake – costs every setting the newer one added: they are read as nothing and the first
+    /// save writes the file without them. Kept here, they ride through untouched and are still
+    /// there when the newer build comes back.</para>
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
+
     public string Channel { get; set; } = string.Empty;
     public string ClientId { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
@@ -73,6 +100,9 @@ public sealed class AppSettings
     /// <summary>Channel point pets in the OBS pet overlay.</summary>
     public PetSettings Pets { get; set; } = new();
 
+    /// <summary>Lyckosnurren – the spin that wins a viewer a pet of their own for good.</summary>
+    public SpinSettings Spin { get; set; } = new();
+
     /// <summary>The edge glow that catches the streamer's eye – mod call and new chatters.</summary>
     public EdgeAlertSettings EdgeAlerts { get; set; } = new();
 
@@ -97,6 +127,8 @@ public sealed class AppSettings
         Tts.Normalize();
         Pets ??= new PetSettings();
         Pets.Normalize();
+        Spin ??= new SpinSettings();
+        Spin.Normalize();
         EdgeAlerts ??= new EdgeAlertSettings();
         EdgeAlerts.Normalize();
         Bot ??= new BotSettings();

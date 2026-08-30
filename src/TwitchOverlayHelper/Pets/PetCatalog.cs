@@ -1,6 +1,8 @@
 using System.IO;
-using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.Json;
+using TwitchOverlayHelper.Storage;
 
 namespace TwitchOverlayHelper.Pets;
 
@@ -18,7 +20,9 @@ public sealed record PetDefinition(
     string? BodyFile = null,
     string? SpriteFile = null,
     double Fps = 10,
-    int SpriteVersion = 1);
+    int SpriteVersion = 1,
+    bool WinOnly = false,
+    string Rarity = PetRarity.Common);
 
 /// <summary>
 /// Every pet species the overlay can show, read from the user's pets folder. The pets that ship
@@ -48,14 +52,13 @@ public sealed class PetCatalog
     private readonly Lock _lock = new();
     private IReadOnlyList<PetDefinition> _pets;
     private Dictionary<string, PetDefinition> _byAlias;
+    private Dictionary<string, string> _manifestPaths = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<string> _warnings = [];
 
     public PetCatalog(string? petsFolder = null)
     {
-        PetsFolder = petsFolder ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "TwitchOverlayHelper", "pets");
-        (_pets, _byAlias, _warnings) = Load();
+        PetsFolder = petsFolder ?? ProfilePaths.Folder("pets");
+        (_pets, _byAlias, _manifestPaths, _warnings) = Load();
     }
 
     /// <summary>Where every pet lives, the shipped ones included. Seeded on first read.</summary>
@@ -69,13 +72,125 @@ public sealed class PetCatalog
     /// <summary>Re-reads the folder, so an edited or newly dropped-in pet shows up without a restart.</summary>
     public void Reload()
     {
-        (IReadOnlyList<PetDefinition> pets, Dictionary<string, PetDefinition> byAlias, IReadOnlyList<string> warnings) = Load();
+        (IReadOnlyList<PetDefinition> pets, Dictionary<string, PetDefinition> byAlias,
+            Dictionary<string, string> manifestPaths, IReadOnlyList<string> warnings) = Load();
         lock (_lock)
         {
             _pets = pets;
             _byAlias = byAlias;
+            _manifestPaths = manifestPaths;
             _warnings = warnings;
         }
+    }
+
+    /// <summary>The pets the lucky spin can hand out. Empty means there is nothing to win at all.</summary>
+    public IReadOnlyList<PetDefinition> Winnable => Pets.Where(pet => pet.WinOnly).ToArray();
+
+    /// <summary>
+    /// Writes a pet's spin settings into its own pet.json, and reloads so the change is live.
+    ///
+    /// <para>The file is edited as a document rather than re-serialized from what this app read of
+    /// it: pet.json is Codex's format and carries fields this app has no properties for, and a
+    /// round-trip through <see cref="PetManifest"/> would silently drop every one of them.</para>
+    /// </summary>
+    public bool TrySetWinnable(string id, bool winOnly, string rarity, out string error) =>
+        TryEditManifest(id, manifest =>
+        {
+            manifest["winOnly"] = winOnly;
+            manifest["rarity"] = PetRarity.Normalize(rarity);
+        }, out error);
+
+    /// <summary>
+    /// Gives a pet a new id and a new display name, in its own pet.json.
+    ///
+    /// <para>The folder keeps the name it has: the id in the manifest is what the app goes by, and
+    /// renaming the folder underneath a running app would pull the spritesheet out from under every
+    /// pet already on screen. What the id does carry is ownership – wins are booked against it – so
+    /// a caller that changes it has to move those along with it.</para>
+    ///
+    /// <para>Refused when the new id or name already belongs to another pet, alias included: names
+    /// are looked up in one shared table where the first pet wins, and a duplicate would quietly
+    /// make one of the two unreachable by name instead of saying so.</para>
+    /// </summary>
+    public bool TryRename(string id, string newId, string newName, out string error)
+    {
+        error = string.Empty;
+        newId = SanitizeId(newId);
+        newName = (newName ?? string.Empty).Trim();
+
+        if (newId.Length == 0)
+        {
+            error = "Id:t behöver minst en bokstav eller siffra (a–z, 0–9, - och _).";
+            return false;
+        }
+        if (newName.Length == 0)
+        {
+            error = "Namnet får inte vara tomt.";
+            return false;
+        }
+
+        // An unchanged id is not a clash with itself, and neither is an unchanged name.
+        string[] wanted = string.Equals(newId, id, StringComparison.OrdinalIgnoreCase)
+            ? [newName]
+            : [newId, newName];
+
+        lock (_lock)
+        {
+            foreach (string taken in wanted)
+                if (_byAlias.TryGetValue(taken, out PetDefinition? owner)
+                    && !string.Equals(owner.Id, id, StringComparison.OrdinalIgnoreCase))
+                {
+                    error = $"\"{taken}\" är redan upptaget av {owner.Name} ({owner.Id}).";
+                    return false;
+                }
+        }
+
+        return TryEditManifest(id, manifest =>
+        {
+            manifest["id"] = newId;
+            manifest["displayName"] = newName;
+        }, out error);
+    }
+
+    /// <summary>
+    /// Changes one pet's pet.json and reloads so the change is live. The shared half of every edit
+    /// this app makes to a manifest.
+    /// </summary>
+    private bool TryEditManifest(string id, Action<JsonObject> edit, out string error)
+    {
+        error = string.Empty;
+        string? manifestPath;
+        lock (_lock) manifestPath = _manifestPaths.GetValueOrDefault(id);
+        if (manifestPath is null || !File.Exists(manifestPath))
+        {
+            // Only the built-in fallback pets lack a file – the folder itself was unreadable, and
+            // there is nowhere durable to write the choice.
+            error = $"Peten \"{id}\" har ingen pet.json att spara i.";
+            return false;
+        }
+
+        try
+        {
+            JsonNode document = JsonNode.Parse(File.ReadAllText(manifestPath),
+                documentOptions: new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true })
+                ?? new JsonObject();
+            if (document is not JsonObject manifest)
+            {
+                error = $"{Path.GetFileName(Path.GetDirectoryName(manifestPath))}: pet.json är inte ett objekt.";
+                return false;
+            }
+
+            edit(manifest);
+            File.WriteAllText(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            error = $"Kunde inte skriva {manifestPath}: {ex.Message}";
+            return false;
+        }
+
+        Reload();
+        return true;
     }
 
     /// <summary>Looks up one species by id, display name or alias.</summary>
@@ -113,13 +228,21 @@ public sealed class PetCatalog
     /// <summary>
     /// The full pick order for a spawn: the species the viewer asked for, else the streamer's
     /// default, else a random one so nobody ever gets an empty hand.
+    ///
+    /// <para><paramref name="mayUse"/> is who this viewer is allowed to be handed. Left out, no
+    /// win-only pet is ever chosen – asking for one by name, having it as the channel default and
+    /// drawing it at random are all ways somebody who never won it would end up with it. A caller
+    /// who knows the viewer's wins passes their own answer instead.</para>
     /// </summary>
-    public PetDefinition Choose(string? text, string? defaultPetId)
+    public PetDefinition Choose(string? text, string? defaultPetId, Func<PetDefinition, bool>? mayUse = null)
     {
-        PetDefinition? chosen = ResolveFromText(text) ?? Find(defaultPetId);
-        if (chosen is not null) return chosen;
-        IReadOnlyList<PetDefinition> pets = Pets;
-        return pets.Count > 0 ? pets[Random.Shared.Next(pets.Count)] : Placeholder;
+        mayUse ??= pet => !pet.WinOnly;
+        PetDefinition? chosen = ResolveFromText(text);
+        if (chosen is not null && mayUse(chosen)) return chosen;
+        chosen = Find(defaultPetId);
+        if (chosen is not null && mayUse(chosen)) return chosen;
+        PetDefinition[] pets = Pets.Where(mayUse).ToArray();
+        return pets.Length > 0 ? pets[Random.Shared.Next(pets.Length)] : Placeholder;
     }
 
     /// <summary>Absolute spritesheet path for a spritesheet pet, for the server's sprite endpoint.</summary>
@@ -179,12 +302,18 @@ public sealed class PetCatalog
     private static bool IsEdge(string text, int index) =>
         index < 0 || index >= text.Length || !char.IsLetterOrDigit(text[index]);
 
-    private (IReadOnlyList<PetDefinition>, Dictionary<string, PetDefinition>, IReadOnlyList<string>) Load()
+    private (IReadOnlyList<PetDefinition>, Dictionary<string, PetDefinition>, Dictionary<string, string>, IReadOnlyList<string>) Load()
     {
         var warnings = new List<string>();
         Seed(warnings);
 
-        var pets = LoadFolder(warnings).ToList();
+        var manifestPaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var pets = new List<PetDefinition>();
+        foreach ((PetDefinition pet, string manifestPath) in LoadFolder(warnings))
+        {
+            pets.Add(pet);
+            manifestPaths.TryAdd(pet.Id, manifestPath);
+        }
         if (pets.Count == 0) pets.AddRange(Shipped());
 
         // The pets that ship with the app keep first claim on their names, so a pet added later
@@ -198,7 +327,7 @@ public sealed class PetCatalog
             byAlias.TryAdd(pet.Name, pet);
             foreach (string alias in pet.Aliases) byAlias.TryAdd(alias, pet);
         }
-        return (pets, byAlias, warnings);
+        return (pets, byAlias, manifestPaths, warnings);
     }
 
     /// <summary>
@@ -247,7 +376,7 @@ public sealed class PetCatalog
         }
     }
 
-    private IEnumerable<PetDefinition> LoadFolder(List<string> warnings)
+    private IEnumerable<(PetDefinition Pet, string ManifestPath)> LoadFolder(List<string> warnings)
     {
         if (!Directory.Exists(PetsFolder)) yield break;
 
@@ -258,7 +387,7 @@ public sealed class PetCatalog
         foreach (string folder in folders.OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
         {
             PetDefinition? pet = LoadOne(folder, warnings);
-            if (pet is not null) yield return pet;
+            if (pet is not null) yield return (pet, Path.Combine(folder, "pet.json"));
         }
     }
 
@@ -348,16 +477,22 @@ public sealed class PetCatalog
         manifest.Fps is > 0 and <= 30 ? manifest.Fps.Value : 10,
         // Version 2 is the extended sheet with the two look-direction rows. Anything newer is
         // read as a 2: later versions extend the sheet downwards, so the rows a 2 knows are safe.
-        manifest.SpriteVersionNumber is >= 2 ? 2 : 1);
+        manifest.SpriteVersionNumber is >= 2 ? 2 : 1,
+        manifest.WinOnly == true,
+        PetRarity.Normalize(manifest.Rarity));
 
     private static IReadOnlyList<string> Clean(string[]? values) =>
         (values ?? []).Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value.Trim()).ToArray();
 
     /// <summary>The id is used in URLs and DOM lookups, so anything but simple characters is dropped.</summary>
-    private static string SanitizeId(string raw) =>
+    public static string SanitizeId(string raw) =>
         new(raw.Trim().ToLowerInvariant().Where(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_').ToArray());
 
-    /// <summary>The subset of Codex's pet.json this app reads; unknown fields are ignored.</summary>
+    /// <summary>
+    /// The subset of Codex's pet.json this app reads; unknown fields are ignored. <c>winOnly</c>
+    /// and <c>rarity</c> are this app's own additions: a pet marked winOnly can only be won in the
+    /// lucky spin and only used by whoever won it.
+    /// </summary>
     private sealed record PetManifest(
         string? Id,
         string? DisplayName,
@@ -367,5 +502,7 @@ public sealed class PetCatalog
         string[]? Aliases,
         string[]? Emoji,
         double? Fps,
-        [property: JsonPropertyName("spriteVersionNumber")] int? SpriteVersionNumber);
+        [property: JsonPropertyName("spriteVersionNumber")] int? SpriteVersionNumber,
+        [property: JsonPropertyName("winOnly")] bool? WinOnly,
+        [property: JsonPropertyName("rarity")] string? Rarity);
 }

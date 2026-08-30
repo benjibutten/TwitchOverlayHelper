@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace TwitchOverlayHelper.Settings;
 
 /// <summary>Who says the bot's lines in chat, if anyone.</summary>
-[JsonConverter(typeof(JsonStringEnumConverter<BotMode>))]
+[JsonConverter(typeof(BotModeJsonConverter))]
 public enum BotMode
 {
     /// <summary>Nothing is ever written to chat. The app still says everything it says today.</summary>
@@ -97,7 +97,69 @@ public enum BotFlow
     HypeTrainBegin,
 
     /// <summary>A hype train ended.</summary>
-    HypeTrainEnd
+    HypeTrainEnd,
+
+    /// <summary>The lucky spin landed and somebody owns a new pet.</summary>
+    SpinWin,
+
+    /// <summary>
+    /// The spin landed on something the winner already owns. The points are spent either way; what
+    /// is left is one chance to give the pet to somebody else.
+    /// </summary>
+    SpinDuplicate,
+
+    /// <summary>A duplicate win found a new home.</summary>
+    SpinGifted,
+
+    /// <summary>The name given with the give command matched nobody on Twitch.</summary>
+    SpinGiftUnknown,
+
+    /// <summary>
+    /// The named recipient already owns the prize – themselves included – so nobody receives it and
+    /// the chance is spent.
+    /// </summary>
+    SpinGiftOwned,
+
+    /// <summary>A duplicate was never given away in time, so its chance ran out.</summary>
+    SpinGiftExpired,
+
+    /// <summary>The answer to the list command: what this viewer has won.</summary>
+    SpinList,
+
+    /// <summary>The answer to the list command when the viewer has won nothing yet.</summary>
+    SpinListEmpty,
+
+    /// <summary>Somebody asked a pet reward for a win-only pet they never won.</summary>
+    SpinNotOwned,
+
+    /// <summary>A spin redemption was paid back.</summary>
+    SpinRefund
+}
+
+/// <summary>
+/// Reads the bot's mode, and answers <see cref="BotMode.Off"/> for a name it does not know instead
+/// of throwing.
+///
+/// <para>The stock string converter throws, and the exception does not stop at this property: it
+/// travels out through the whole document, so a settings file naming a mode this build has never
+/// heard of is a settings file this build cannot read at all – the overlay, the channel, the pets,
+/// the bot's own wording, everything. That is what a downgrade looks like from here, and one word
+/// is not worth the rest of the file.</para>
+///
+/// <para>Off rather than a guess at what was meant: this decides who writes in the streamer's chat,
+/// and a build that cannot tell should not be picking an account to speak as.</para>
+/// </summary>
+public sealed class BotModeJsonConverter : JsonConverter<BotMode>
+{
+    public override BotMode Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        reader.TokenType == JsonTokenType.String
+        && Enum.TryParse(reader.GetString(), ignoreCase: true, out BotMode mode)
+        && Enum.IsDefined(mode)
+            ? mode
+            : BotMode.Off;
+
+    public override void Write(Utf8JsonWriter writer, BotMode value, JsonSerializerOptions options) =>
+        writer.WriteStringValue(Enum.GetName(value) ?? nameof(BotMode.Off));
 }
 
 /// <summary>
@@ -164,6 +226,10 @@ public sealed class BotCommand
         if (Response.Length > 400) Response = Response[..400];
         CooldownSeconds = Math.Clamp(CooldownSeconds, 0, 3600);
     }
+
+    /// <inheritdoc cref="AppSettings.Unknown"/>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
 }
 
 /// <summary>
@@ -194,6 +260,10 @@ public sealed class BotMessageRule
         if (Template.Length > 400) Template = Template[..400];
         CooldownSeconds = Math.Clamp(CooldownSeconds, 0, 3600);
     }
+
+    /// <inheritdoc cref="AppSettings.Unknown"/>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
 }
 
 /// <summary>
@@ -365,9 +435,25 @@ public sealed class BotSettings
         Rule(BotFlow.ShoutoutReceived, true, "Tack för shoutouten @{viewer}!"),
         Rule(BotFlow.Subscription, false, "Tack för stödet @{viewer}!"),
         Rule(BotFlow.HypeTrainBegin, false, "Hypetåget har lämnat stationen! 🚂"),
-        Rule(BotFlow.HypeTrainEnd, false, "Hypetåget slutade på nivå {level} – tack allihop!")
+        Rule(BotFlow.HypeTrainEnd, false, "Hypetåget slutade på nivå {level} – tack allihop!"),
+        // The spin flows are on by default, unlike the celebratory ones: every line here is an
+        // answer somebody is waiting on – what they won, what to type next, where their gift went.
+        Rule(BotFlow.SpinWin, true, "🎉 @{viewer} vann {prize} i lyckosnurren!"),
+        Rule(BotFlow.SpinDuplicate, true, "@{viewer} du vann {prize} – men den har du redan! Skriv \"{command} namn\" inom {minutes} min för att skänka den till någon, annars är chansen borta."),
+        Rule(BotFlow.SpinGifted, true, "🎁 @{viewer} skänkte {prize} till @{target}!"),
+        Rule(BotFlow.SpinGiftUnknown, true, "@{viewer} hittade ingen som heter \"{target}\" – testa igen."),
+        Rule(BotFlow.SpinGiftOwned, true, "@{viewer} @{target} hade redan {prize} – chansen är borta."),
+        Rule(BotFlow.SpinGiftExpired, true, "@{viewer} hann inte skänka {prize} – den är borta nu."),
+        Rule(BotFlow.SpinList, true, "@{viewer} din samling: {list}.", cooldown: 15),
+        Rule(BotFlow.SpinListEmpty, true, "@{viewer} du har inte vunnit någon {pet} än – lyckosnurren väntar!", cooldown: 15),
+        Rule(BotFlow.SpinNotOwned, true, "@{viewer} {prize} kan bara användas av den som vunnit den i lyckosnurren."),
+        Rule(BotFlow.SpinRefund, true, "@{viewer} fick tillbaka {cost} poäng – {reason}.")
     ];
 
     private static BotMessageRule Rule(BotFlow flow, bool enabled, string template, int cooldown = 0) =>
         new() { Flow = flow, Enabled = enabled, Template = template, CooldownSeconds = cooldown };
+
+    /// <inheritdoc cref="AppSettings.Unknown"/>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
 }

@@ -98,6 +98,28 @@ Allt som lösts in **medan appen inte lyssnade** betalas tillbaka när den koppl
 
 Belöningar du redan har fungerar precis som förut: peten spawnar, poängen är spenderade, ingenting nytt händer, och chattvägen bär dem även utan EventSub. Bara rader med 🔒 kan besvaras – och deras ID är låst, eftersom det är det enda som binder raden till belöningen Twitch låter oss svara på. Peka om en rad genom att ta bort den och skapa en ny.
 
+## Lyckosnurren
+
+En egen belöning som snurrar fram en pet tittaren får **behålla**. Snurren glider in i pet-overlayen från den kant du väljer, loopar igenom allt som går att vinna och stannar på vinsten – som sedan hoppar ut på gräsmattan. Ingen ny källa i OBS behövs.
+
+Vinsten knyts till **Twitch-ID:t**, inte namnet. Byter någon namn följer samlingen med, och `!mina` svarar likadant efteråt. Allt sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\spinwins.json`, som skrivs atomiskt vid varje ändring med en daterad kopia bredvid – går huvudfilen sönder läses den nyaste kopia som fortfarande går att tolka.
+
+**Vad som går att vinna** väljer du under **Pets → Lyckosnurren**. Varje pet har en kryssruta och en sällsynthet: `vanlig`, `ovanlig`, `sällsynt` eller `legendarisk`, där en vanlig är ungefär trettio gånger så trolig som en legendarisk. Valen skrivs i petens egen `pet.json` (`winOnly` och `rarity`), så de följer med mappen till en annan dator – och fält appen inte känner till, som Codex egna, lämnas orörda.
+
+**Sällsyntheten syns på gräsmattan.** En ovanlig pet går omkring i en svag grön skimrande aura, en sällsynt i lila med ett ljus som sveper över kroppen då och då, och en legendarisk i guld med gnistor och en varmare fläck mark under sig. Vanliga pets ser ut precis som förut – en effekt alla bär är ingen effekt. Samma färger lyser upp snurrens fönster när den stannar. Auran är till för ögonblicket peten kommer in, så den **tonar bort efter tio sekunder** och lämnar kvar bara varelsen – annars står sex pets och lyser i fem minuter var ovanpå spelet. Tiden ändrar du under **Pets → Inställningar**, och `0` låter dem lysa hela tiden. Vill du ha overlayen helt ren stänger du av alltihop med **Visa sällsynthet med skimmer**.
+
+**🔍 öppnar peten ensam i webbläsaren.** Knappen längst till höger på varje rad startar en fristående testvy: en enda pet, i den storlek du vill, mot rutmönster, svart, vitt, greenscreen eller en färg du väljer själv. Där kan du spela varje beteende overlayen kan sätta peten i, stega ruta för ruta, låsa en enskild rad i spritesheeten, vrida blicken runt hela varvet och prova hur den ser ut i varje sällsynthet. Under den ligger hela arket med sitt rutnät – tomma rutor är streckade, och ett klick fryser peten på just den rutan – och en ruta som säger vad appen läser ut ur filen: bildstorlek, cellstorlek, antal rader, hur många blickriktningar som är ifyllda, och varningar när något inte stämmer (en tom rad, en lucka mitt i en animation, ett `spriteVersion` som säger något annat än arket).
+
+Vyn ritas med overlayens egen stilmall, så det som ser fel ut där ser fel ut i OBS också. Den är till för när du sätter upp en pet: den startar inget, ändrar ingenting och påverkar varken overlayen eller det tittarna ser – att stänga fliken är hela avstängningen. Kräver att appens lokala server är igång, samma som pet-overlayen. Har du ändrat i `pet.json` klickar du **Ladda om pets** i appen först; har du ritat om bilden räcker **↻ Ladda om** i vyn.
+
+En pet markerad som vinstbar försvinner ur den vanliga pet-belöningen för alla utom den som vunnit den. Ber någon annan om den med namn betalas inlösen tillbaka och boten säger varför; kan belöningen inte återbetalas får de en vanlig pet i stället. Du och dina moderatorer kommer fortfarande åt alla arter med `!pet namn`.
+
+**Dubbletter blir gåvor.** Landar snurren på något vinnaren redan äger får de skänka bort den: boten ber om ett namn, och `!ge kajsa` knyter vinsten till det kontot. Poängen kommer aldrig tillbaka för en dubblett – inlösen bokförs som levererad i samma stund den dras, precis som en vanlig vinst. Det snurren köpte är en chans att placera peten, och den chansen är slut när tiden du satt går ut, och när namnet de väljer visar sig äga peten redan. Ett namn som inte finns på Twitch räknas inte som ett försök, så där ligger gåvan kvar. Kan boten inte skriva just då finns ingen som kan hålla samtalet – avstängd, utloggad, chatten nere, eller raden avslagen under **Vad boten säger** – och då hoppar dragningen i stället över det de redan har, så att bara den som samlat allt får sina poäng tillbaka. Snurrar någon igen medan deras förra gåva fortfarande letar mottagare ersätts den av den nya, och den gamla chansen är över.
+
+**Vinnaren är dragen och sparad innan animationen ens börjar.** Går overlayen ner mitt i snurren, eller kvitterar den aldrig, gäller vinsten ändå – det enda som går förlorat är showen. Inlösen betalas tillbaka när snurren aldrig blev av: lyckosnurren avstängd, pets avstängda, ingen pet-overlay igång, ingenting markerat som vinstbart, eller hela samlingen redan vunnen. Och en vinst som hann bokföras men inte kvitteras hos Twitch innan appen stängdes ligger kvar som en skuld på disk: den kvitteras när appen är uppkopplad igen, i stället för att städas bort som obetald och ge tittaren både peten och poängen.
+
+Kommandona (`!mina` och `!ge` som standard) och all text boten säger går att byta – under **Vad boten säger** finns elva nya rader för snurren, och `{pets}`-orden du valt fungerar i dem precis som i resten.
+
 ## Chatten ligger kvar
 
 Chatten sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\chat-history.json` och läggs tillbaka när appen startar, så en omstart mitt i strömmen inte lämnar en tom spalt. Det som sparas är bara det appen själv har sett: Twitch skickar ingen historik när man ansluter, och det finns ingen Helix-endpoint för chatt.
@@ -265,8 +287,9 @@ Kallar din kanal dem något annat än "pets" skriver du det under *Ord boten anv
 - Uppläsning av chattares namn via DeepSeek och ElevenLabs, för namn som är svåra att läsa högt.
 - **Uppläsning av tittarnas meddelanden**, köpta med bits (custom Power-up) eller channel points, med godkännande i docken och ljudet via en egen browserkälla i OBS. Se [Uppläsning av tittarnas meddelanden](#uppläsning-av-tittarnas-meddelanden).
 - **Chatbot** på ett eget Twitch-konto som säger till tittaren varför poängen kom tillbaka, att uppläsningen fortfarande väntar på svar och att overlayen ligger nere – plus egna kommandon du skriver själv. Varje meddelande går att slå av och skriva om, med kanalens egna ord för både dig och dina pets. Se [Chatbot](#chatbot).
+- **Lyckosnurren**: en belöning som snurrar fram en pet tittaren får behålla, knuten till Twitch-kontot så den överlever namnbyten. Sällsynthet per pet, dubbletter som går att skänka bort, och kommandon för att se sin samling. Se [Lyckosnurren](#lyckosnurren).
 - Egna smeknamn på chattare, synliga i både dock och overlay, sparade med säkerhetskopia vid varje ändring.
-- Inställningar sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\settings.json`. OAuth-token sparas aldrig.
+- Inställningar sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\settings.json`, med daterade kopior och en zip av hela profilen vid varje ny version. Se [Dina data](#dina-data). OAuth-token sparas aldrig.
 - Körs som en enda instans; en ny vanlig start öppnar den redan körande appens inställningsfönster.
 - **Uppdaterar sig själv** från GitHub-släppen. Se [Uppdateringar](#uppdateringar).
 - Valbar **Starta med Windows**-inställning som startar appen minimerad i meddelandefältet utan extra bakgrundstjänst.
@@ -278,6 +301,20 @@ Appen håller sig själv uppdaterad. Åtta sekunder efter start – och som mest
 Säger du ja hämtas zip-filen, kontrolleras mot släppets SHA-256-summa och packas upp av en kopia av appen som kör från `%TEMP%`. Den kopian väntar på att appen stängs ordentligt – inställningar och chatthistorik hinner sparas – byter filerna och startar den nya versionen. Varje fil som skrivs över säkerhetskopieras först, så ett avbrott mitt i installationen lämnar den gamla versionen hel i stället för en halv av varje. Ligger appen i en mapp som kräver administratör frågar Windows om godkännande; ligger den i din egen profil frågar den ingenting.
 
 Vill du kolla själv finns **Sök efter uppdateringar** längst ned i inställningsfönstret och i meddelandefältets meny. En lokal `dotnet run`-byggnad har ingen släppt version och uppdaterar sig aldrig – annars skulle den installera ett släpp ovanpå din arbetskopia.
+
+## Dina data
+
+Allt du har ställt in ligger i `%LOCALAPPDATA%\TwitchOverlayHelper\` – inställningar, smeknamn, pets, vinster från lyckosnurren, inloggningar och cache. Knappen **Säkerhetskopior** längst ned i inställningsfönstret öppnar mappen.
+
+Inget av det är värt något om det kan försvinna, så det finns tre skyddsnät, ett för varje sätt det faktiskt går sönder på:
+
+**Halvskriven fil.** Varje sparning skrivs till en temporärfil och byts in med ett namnbyte. En läsare ser antingen hela den gamla filen eller hela den nya – aldrig hälften av en sparning som avbröts när strömmen gick.
+
+**Trasig eller feltömd fil.** Vid varje sparning läggs en daterad kopia i `backups\`; de tjugo senaste sparas. Går huvudfilen inte att läsa svarar appen från den nyaste kopian som fortfarande går att tolka och skriver tillbaka den på plats. Går inte den heller att läsa flyttas den trasiga filen undan till `backups\unreadable\` i stället för att skrivas över – appen startar med standardvärden och säger till var filen tog vägen. Inställningarna får en kopia som mest var femte minut, så att en kväll med reglagen inte fyller hela historiken med samma kväll.
+
+**Ny version.** Första gången appen startar under en version den inte har kört under förut kopieras hela profilen till en zip i `snapshots\`, *innan* något skrivs tillbaka – det är precis då ett program kan läsa en gammal fil, förstå bara hälften av den, och spara tillbaka det den förstod. De åtta senaste behålls. Cachar och loggar hoppas över; resten ligger som vanliga filer i zippen och går att lägga tillbaka med Utforskaren när appen är stängd. Kunde någon fil inte läsas – något annat program höll den öppet – heter zippen `-delvis` och versionen räknas inte som säkrad: nästa start gör om försöket och ersätter den ofullständiga kopian i stället för att lägga en till.
+
+Inställningsfilen har dessutom ett `SchemaVersion`-fält. Byter en framtida version namn på en inställning kan den läsa den gamla formen och flytta över värdet i stället för att tyst börja om från standard. Åt andra hållet: startar du en äldre version ovanpå en nyare fil lämnas allt den inte känner igen orört i stället för att skrivas bort.
 
 ## Kör
 

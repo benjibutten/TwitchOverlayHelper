@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace TwitchOverlayHelper.Settings;
 
 /// <summary>Where in the picture the card sits. Nine anchors, the way an OBS source is placed.</summary>
@@ -140,4 +143,8 @@ public sealed class TtsWidgetSettings
 
     private static bool IsHexColor(string? value) =>
         value is { Length: 7 } && value[0] == '#' && value.Skip(1).All(Uri.IsHexDigit);
+
+    /// <inheritdoc cref="AppSettings.Unknown"/>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
 }

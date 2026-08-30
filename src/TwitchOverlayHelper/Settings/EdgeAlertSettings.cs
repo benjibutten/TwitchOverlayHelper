@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using TwitchOverlayHelper.Models;
 
 namespace TwitchOverlayHelper.Settings;
@@ -70,6 +72,10 @@ public sealed class EdgeAlertSettings
         ModCommand = CleanCommand(ModCommand);
         EdgeWidth = double.IsFinite(EdgeWidth) ? Math.Clamp(EdgeWidth, 60, 320) : 160;
     }
+
+    /// <inheritdoc cref="AppSettings.Unknown"/>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
 }
 
 /// <summary>How one of the edge glows looks: its colour, how strong it gets, and how long it stays.</summary>
@@ -95,4 +101,8 @@ public sealed class EdgeAlertStyle
 
     private static bool IsHexColor(string? value) =>
         value is { Length: 7 } && value[0] == '#' && value.Skip(1).All(Uri.IsHexDigit);
+
+    /// <inheritdoc cref="AppSettings.Unknown"/>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
 }

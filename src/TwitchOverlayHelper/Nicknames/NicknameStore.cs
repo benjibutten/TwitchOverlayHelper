@@ -19,9 +19,7 @@ public sealed class NicknameStore
     public NicknameStore(string? path = null, int keepBackups = BackedUpJsonFile.DefaultKeep)
     {
         _file = new BackedUpJsonFile(
-            path ?? Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "TwitchOverlayHelper", "nicknames.json"),
+            path ?? ProfilePaths.File("nicknames.json"),
             keepBackups);
     }
 
