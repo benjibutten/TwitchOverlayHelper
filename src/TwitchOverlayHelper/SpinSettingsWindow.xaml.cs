@@ -178,6 +178,7 @@ public partial class SpinSettingsWindow : Window
         TitleBox.Text = Spin.Title;
         ListCommandBox.Text = Spin.ListCommand;
         GiveCommandBox.Text = Spin.GiveCommand;
+        PoolCommandBox.Text = Spin.PoolCommand;
         GiftMinutesBox.Text = Spin.GiftTimeoutMinutes.ToString();
         SelectSide(Spin.Side);
         UpdateRewardStatus();
@@ -293,6 +294,7 @@ public partial class SpinSettingsWindow : Window
         Spin.Title = TitleBox.Text;
         Spin.ListCommand = ListCommandBox.Text;
         Spin.GiveCommand = GiveCommandBox.Text;
+        Spin.PoolCommand = PoolCommandBox.Text;
         if (SideBox.SelectedItem is ComboBoxItem side && side.Tag is string tag) Spin.Side = tag;
         if (int.TryParse(CostBox.Text, out int cost)) Spin.Cost = cost;
         if (int.TryParse(SecondsBox.Text, out int seconds)) Spin.SpinSeconds = seconds;
@@ -323,6 +325,7 @@ public partial class SpinSettingsWindow : Window
         TitleBox.Text = Spin.Title;
         ListCommandBox.Text = Spin.ListCommand;
         GiveCommandBox.Text = Spin.GiveCommand;
+        PoolCommandBox.Text = Spin.PoolCommand;
     }
 
     /// <summary>

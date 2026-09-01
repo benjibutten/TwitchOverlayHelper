@@ -144,6 +144,47 @@ public sealed class SettingsDurabilityTests
     }
 
     [Fact]
+    public void TheSpinWinLinesGetTheRarityWordWithoutTakingOverAWrittenOne()
+    {
+        using var folder = new TempFolder();
+        string path = Path.Combine(folder.Path, "settings.json");
+        // A file from the build before the rarity existed: the win line still reads word for word as
+        // that build shipped it, and the duplicate line is one the streamer has made their own.
+        File.WriteAllText(path, """
+            {
+              "SchemaVersion": 2,
+              "Bot": {
+                "Messages": [
+                  { "Flow": "SpinWin", "Enabled": true, "Template": "🎉 @{viewer} vann {prize} i lyckosnurren!" },
+                  { "Flow": "SpinDuplicate", "Enabled": true, "Template": "@{viewer} dubblett! {prize} igen." }
+                ]
+              }
+            }
+            """);
+
+        AppSettings loaded = new SettingsStore(path).Load();
+
+        Assert.Contains("{rarity}", loaded.Bot.Rule(BotFlow.SpinWin).Template);
+        Assert.Equal("@{viewer} dubblett! {prize} igen.", loaded.Bot.Rule(BotFlow.SpinDuplicate).Template);
+    }
+
+    // A flow an old file never held at all: the migration has nothing to reword, and normalisation
+    // is what has to put this build's wording there instead.
+    [Fact]
+    public void AFlowMissingFromAnOldFileArrivesOnThisBuildsWording()
+    {
+        using var folder = new TempFolder();
+        string path = Path.Combine(folder.Path, "settings.json");
+        File.WriteAllText(path, """{"SchemaVersion":2,"Bot":{"Messages":[]}}""");
+
+        AppSettings loaded = new SettingsStore(path).Load();
+
+        Assert.Equal(
+            BotSettings.Defaults.First(rule => rule.Flow == BotFlow.SpinWin).Template,
+            loaded.Bot.Rule(BotFlow.SpinWin).Template);
+    }
+
+    [Fact]
     public void SaysWhenItStartedWithNothing()
     {
         using var folder = new TempFolder();

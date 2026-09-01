@@ -93,7 +93,7 @@
 
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                             <TextBlock Text="Se sin samling" Foreground="#8F8B9E" FontSize="11.5" Margin="0,0,0,4" />
                             <TextBlock Grid.Column="2" Text="Skänka bort" Foreground="#8F8B9E" FontSize="11.5" Margin="0,0,0,4" />
                             <TextBlock Grid.Column="4" Text="Tid att välja, minuter" Foreground="#8F8B9E" FontSize="11.5" Margin="0,0,0,4" />
@@ -104,6 +104,11 @@
                                      LostKeyboardFocus="Text_LostKeyboardFocus" ToolTip="Skrivs med ett namn efter sig: !ge kajsa" />
                             <TextBox x:Name="GiftMinutesBox" Grid.Row="1" Grid.Column="4" TextChanged="Setting_Changed" TextAlignment="Center"
                                      LostKeyboardFocus="Number_LostKeyboardFocus" ToolTip="1–120 minuter." />
+
+                            <TextBlock Grid.Row="2" Text="Se allt som går att vinna" Foreground="#8F8B9E" FontSize="11.5" Margin="0,12,0,4" />
+                            <TextBox x:Name="PoolCommandBox" Grid.Row="3" TextChanged="Setting_Changed" FontFamily="Consolas" FontSize="13" Padding="9,10"
+                                     LostKeyboardFocus="Text_LostKeyboardFocus"
+                                     ToolTip="Svarar med varje utsatt art och hur sällsynt den är. Ett ord. Saknas ! läggs det till." />
                         </Grid>
                     </StackPanel>
                 </Border>

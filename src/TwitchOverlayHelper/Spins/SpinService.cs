@@ -224,7 +224,8 @@ public sealed class SpinService(
         }
 
         AppLog.Info($"Lyckosnurren: {name} {(duplicate ? "vann en dubblett av" : "vann")} {prize.Name}.");
-        Enqueue(new QueuedSpin(Guid.NewGuid().ToString("n"), redemption.Id, id, name, prize.Id, duplicate, Test: false));
+        Enqueue(new QueuedSpin(
+            Guid.NewGuid().ToString("n"), redemption.Id, id, name, prize.Id, PetRarity.Normalize(prize.Rarity), duplicate, Test: false));
         return new SpinRedemptionResult(SpinOutcome.Spinning, refundable);
     }
 
@@ -264,6 +265,19 @@ public sealed class SpinService(
             return true;
         }
 
+        if (Matches(text, spin.PoolCommand))
+        {
+            IReadOnlyList<PetDefinition> pool = catalog.Winnable;
+            if (pool.Count == 0)
+                Announced?.Invoke(BotFlow.SpinPoolEmpty, Values(("viewer", message.DisplayName)), false);
+            else
+                Announced?.Invoke(BotFlow.SpinPool, Values(
+                    ("viewer", message.DisplayName),
+                    ("list", PoolOf(pool)),
+                    ("count", pool.Count.ToString())), false);
+            return true;
+        }
+
         if (Matches(text, spin.GiveCommand))
         {
             SpinPendingGift? pending = store.PendingFor(id);
@@ -279,7 +293,7 @@ public sealed class SpinService(
             if (target.Length == 0)
             {
                 // A bare "!ge" is somebody who lost the instructions; hand them back.
-                Announced?.Invoke(BotFlow.SpinDuplicate, DuplicateValues(message.DisplayName, PrizeName(pending.PetId), spin), true);
+                Announced?.Invoke(BotFlow.SpinDuplicate, DuplicateValues(message.DisplayName, PrizeName(pending.PetId), PrizeRarity(pending.PetId), spin), true);
                 return true;
             }
 
@@ -335,7 +349,8 @@ public sealed class SpinService(
         int number = Interlocked.Increment(ref _testCounter);
         PetDefinition prize = Draw(pool, Random.Shared);
         Enqueue(new QueuedSpin(
-            Guid.NewGuid().ToString("n"), string.Empty, $"spin-test-{number}", $"{prize.Name} (test)", prize.Id, Duplicate: false, Test: true));
+            Guid.NewGuid().ToString("n"), string.Empty, $"spin-test-{number}", $"{prize.Name} (test)", prize.Id,
+            PetRarity.Normalize(prize.Rarity), Duplicate: false, Test: true));
     }
 
     /// <summary>The overlay reports the reel has stopped, so the stage is free.</summary>
@@ -567,24 +582,66 @@ public sealed class SpinService(
         if (!spin.Duplicate) pets.SpawnDirect(spin.UserId, spin.DisplayName, spin.PetId);
         if (spin.Test) return;
 
+        // The tier the reel was drawn on, not the one the pet wears now: a rehearsal or a queued spin
+        // can outlive a change in the settings window, and the announcement belongs to the draw.
+        string rarity = spin.Rarity;
         if (spin.Duplicate)
-            Announced?.Invoke(BotFlow.SpinDuplicate, DuplicateValues(spin.DisplayName, prize, settings.Spin), true);
+            Announced?.Invoke(BotFlow.SpinDuplicate, DuplicateValues(spin.DisplayName, prize, rarity, settings.Spin), true);
         else
-            Announced?.Invoke(BotFlow.SpinWin, Values(("viewer", spin.DisplayName), ("prize", prize)), true);
+            Announced?.Invoke(BotFlow.SpinWin, Values(("viewer", spin.DisplayName), ("prize", prize), ("rarity", rarity)), true);
     }
 
     private string PrizeName(string petId) => catalog.Find(petId)?.Name ?? petId;
 
-    /// <summary>The viewer's wins as one readable line, cut before it can crowd out the template around it.</summary>
+    /// <summary>
+    /// The tier a pet sits in today, worded for chat. A pet the catalog no longer knows reads as
+    /// common, which is the same thing <see cref="Draw"/> assumes about an unknown tier.
+    ///
+    /// <para>This is the live answer, not the one a win was drawn on: what a spin in flight was
+    /// announced with is carried on the reel itself. A win is stored by id alone, so a collection
+    /// listed long afterwards can only be read against the catalog as it stands – and should be,
+    /// since a re-tiered art is worth what it is worth now to everybody who owns it.</para>
+    /// </summary>
+    private string PrizeRarity(string petId) => PetRarity.Normalize(catalog.Find(petId)?.Rarity);
+
+    /// <summary>
+    /// The viewer's wins as one readable line, cut before it can crowd out the template around it.
+    /// Each art carries the tier it sits in today – a collection is worth showing off for what is
+    /// rare in it, not only for how long it is.
+    /// </summary>
     private string ListOf(IReadOnlyList<SpinWin> wins)
     {
-        string list = string.Join(", ", wins.Select(win => PrizeName(win.PetId)));
+        string list = string.Join(", ", wins.Select(win => $"{PrizeName(win.PetId)} ({PrizeRarity(win.PetId)})"));
         return list.Length <= 300 ? list : list[..299] + "…";
     }
 
-    private static Dictionary<string, string> DuplicateValues(string viewer, string prize, SpinSettings spin) => Values(
+    /// <summary>
+    /// Everything the reel can land on, gathered under the tier it sits in rather than repeated art
+    /// by art: a pool is read as a rarity guide, and grouping keeps a channel with twenty arts inside
+    /// the line the collection has to fit in too. Rarest first, so a list long enough to be cut loses
+    /// the commons at the end instead of the legendaries nobody asked about the commons for.
+    /// </summary>
+    private static string PoolOf(IReadOnlyList<PetDefinition> pool)
+    {
+        var groups = new List<string>(PetRarity.All.Count);
+        foreach (string tier in PetRarity.All.Reverse())
+        {
+            string[] names = pool
+                .Where(pet => string.Equals(PetRarity.Normalize(pet.Rarity), tier, StringComparison.Ordinal))
+                .Select(pet => pet.Name)
+                .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+                .ToArray();
+            if (names.Length > 0) groups.Add($"{tier}: {string.Join(", ", names)}");
+        }
+
+        string list = string.Join(" · ", groups);
+        return list.Length <= 300 ? list : list[..299] + "…";
+    }
+
+    private static Dictionary<string, string> DuplicateValues(string viewer, string prize, string rarity, SpinSettings spin) => Values(
         ("viewer", viewer),
         ("prize", prize),
+        ("rarity", rarity),
         ("command", spin.GiveCommand),
         ("minutes", spin.GiftTimeoutMinutes.ToString()));
 
@@ -607,8 +664,13 @@ public sealed class SpinService(
     /// <param name="RedemptionId">
     /// What bought the reel, so a refund can find it again. Empty for a rehearsal.
     /// </param>
+    /// <param name="Rarity">
+    /// The tier the prize was actually drawn on, carried rather than looked up again at the curtain
+    /// call: the streamer can re-tier a pet while its reel is still turning, and the word chat hears
+    /// has to be the odds the win was won at, not the ones the next spin will use.
+    /// </param>
     private sealed record QueuedSpin(
-        string SpinId, string RedemptionId, string UserId, string DisplayName, string PetId, bool Duplicate, bool Test)
+        string SpinId, string RedemptionId, string UserId, string DisplayName, string PetId, string Rarity, bool Duplicate, bool Test)
     {
         /// <summary>
         /// Set when the redemption behind this reel was paid back. The show is already running and
