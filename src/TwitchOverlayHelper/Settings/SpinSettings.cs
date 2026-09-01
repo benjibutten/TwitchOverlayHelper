@@ -47,6 +47,13 @@ public sealed class SpinSettings
     /// <summary>What a winner types, followed by a name, to give a duplicate win away.</summary>
     public string GiveCommand { get; set; } = "!ge";
 
+    /// <summary>
+    /// What anyone types to see the whole pool: every art the reel can land on and how rare each is.
+    /// The counterpart to <see cref="ListCommand"/> – that one answers "what do I have", this one
+    /// "what is there", which is the question somebody has to answer before the price looks worth it.
+    /// </summary>
+    public string PoolCommand { get; set; } = "!alla";
+
     /// <inheritdoc cref="PetRewardRule.CanRefund"/>
     public bool CanRefund => Managed && RewardId.Length > 0;
 
@@ -74,10 +81,24 @@ public sealed class SpinSettings
         GiftTimeoutMinutes = Math.Clamp(GiftTimeoutMinutes, 1, 120);
         ListCommand = EdgeAlertSettings.CleanCommand(string.IsNullOrWhiteSpace(ListCommand) ? "!mina" : ListCommand);
         GiveCommand = EdgeAlertSettings.CleanCommand(string.IsNullOrWhiteSpace(GiveCommand) ? "!ge" : GiveCommand);
+        PoolCommand = EdgeAlertSettings.CleanCommand(string.IsNullOrWhiteSpace(PoolCommand) ? "!alla" : PoolCommand);
         // Two commands answering the same word would leave "!x namn" meaning two things; the give
         // command yields, because the list command is the one viewers meet first.
         if (string.Equals(ListCommand, GiveCommand, StringComparison.OrdinalIgnoreCase))
             GiveCommand = string.Equals(ListCommand, "!ge", StringComparison.OrdinalIgnoreCase) ? "!skänk" : "!ge";
+        // The pool command yields to both for the same reason, and to a second-choice word that is
+        // free rather than one that would only collide again.
+        if (string.Equals(PoolCommand, ListCommand, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(PoolCommand, GiveCommand, StringComparison.OrdinalIgnoreCase))
+            PoolCommand = FreeWord(["!alla", "!vinster", "!lista"], ListCommand, GiveCommand);
+    }
+
+    /// <summary>The first of these words nothing else has already claimed. The last is the fallback.</summary>
+    private static string FreeWord(IReadOnlyList<string> candidates, params string[] taken)
+    {
+        foreach (string word in candidates)
+            if (!taken.Contains(word, StringComparer.OrdinalIgnoreCase)) return word;
+        return candidates[^1];
     }
 
     /// <inheritdoc cref="AppSettings.Unknown"/>

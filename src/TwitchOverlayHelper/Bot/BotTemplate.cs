@@ -1,4 +1,5 @@
 using System.Text;
+using TwitchOverlayHelper.Pets;
 using TwitchOverlayHelper.Settings;
 
 namespace TwitchOverlayHelper.Bot;
@@ -64,14 +65,16 @@ public static class BotTemplate
         BotFlow.Welcome or BotFlow.ShoutoutReceived or BotFlow.Subscription => ["viewer"],
         BotFlow.Raid => ["viewer", "viewers", "link"],
         BotFlow.HypeTrainEnd => ["level"],
-        BotFlow.SpinWin => ["viewer", "prize"],
-        BotFlow.SpinDuplicate => ["viewer", "prize", "command", "minutes"],
+        BotFlow.SpinWin => ["viewer", "prize", "rarity"],
+        BotFlow.SpinDuplicate => ["viewer", "prize", "rarity", "command", "minutes"],
         BotFlow.SpinGifted => ["viewer", "prize", "target"],
         BotFlow.SpinGiftUnknown => ["viewer", "target"],
         BotFlow.SpinGiftOwned => ["viewer", "prize", "target"],
         BotFlow.SpinGiftExpired => ["viewer", "prize"],
         BotFlow.SpinList => ["viewer", "list", "count"],
         BotFlow.SpinListEmpty => ["viewer"],
+        BotFlow.SpinPool => ["viewer", "list", "count"],
+        BotFlow.SpinPoolEmpty => ["viewer"],
         BotFlow.SpinNotOwned => ["viewer", "prize"],
         BotFlow.SpinRefund => ["viewer", "cost", "reason"],
         _ => []
@@ -102,8 +105,9 @@ public static class BotTemplate
             ["level"] = "3",
             ["link"] = "twitch.tv/kajsa",
             ["prize"] = "Gyllene Draken",
+            ["rarity"] = PetRarity.Legendary,
             ["target"] = "Pelle",
-            ["list"] = "Gyllene Draken, Space-Cat",
+            ["list"] = $"Gyllene Draken ({PetRarity.Legendary}), Space-Cat ({PetRarity.Common})",
             ["command"] = "!ge",
             ["minutes"] = "10"
         };

@@ -129,6 +129,12 @@ public enum BotFlow
     /// <summary>The answer to the list command when the viewer has won nothing yet.</summary>
     SpinListEmpty,
 
+    /// <summary>The answer to the pool command: every art the spin can land on, and how rare each is.</summary>
+    SpinPool,
+
+    /// <summary>The answer to the pool command when nothing is marked winnable at all.</summary>
+    SpinPoolEmpty,
+
     /// <summary>Somebody asked a pet reward for a win-only pet they never won.</summary>
     SpinNotOwned,
 
@@ -438,14 +444,18 @@ public sealed class BotSettings
         Rule(BotFlow.HypeTrainEnd, false, "Hypetåget slutade på nivå {level} – tack allihop!"),
         // The spin flows are on by default, unlike the celebratory ones: every line here is an
         // answer somebody is waiting on – what they won, what to type next, where their gift went.
-        Rule(BotFlow.SpinWin, true, "🎉 @{viewer} vann {prize} i lyckosnurren!"),
-        Rule(BotFlow.SpinDuplicate, true, "@{viewer} du vann {prize} – men den har du redan! Skriv \"{command} namn\" inom {minutes} min för att skänka den till någon, annars är chansen borta."),
+        Rule(BotFlow.SpinWin, true, "🎉 @{viewer} vann {prize} ({rarity}) i lyckosnurren!"),
+        Rule(BotFlow.SpinDuplicate, true, "@{viewer} du vann {prize} ({rarity}) – men den har du redan! Skriv \"{command} namn\" inom {minutes} min för att skänka den till någon, annars är chansen borta."),
         Rule(BotFlow.SpinGifted, true, "🎁 @{viewer} skänkte {prize} till @{target}!"),
         Rule(BotFlow.SpinGiftUnknown, true, "@{viewer} hittade ingen som heter \"{target}\" – testa igen."),
         Rule(BotFlow.SpinGiftOwned, true, "@{viewer} @{target} hade redan {prize} – chansen är borta."),
         Rule(BotFlow.SpinGiftExpired, true, "@{viewer} hann inte skänka {prize} – den är borta nu."),
         Rule(BotFlow.SpinList, true, "@{viewer} din samling: {list}.", cooldown: 15),
         Rule(BotFlow.SpinListEmpty, true, "@{viewer} du har inte vunnit någon {pet} än – lyckosnurren väntar!", cooldown: 15),
+        // The one answer here that is the same for everybody who asks, so it keeps quiet for longer:
+        // a whole chat trying the word at once would otherwise repeat one list a dozen times.
+        Rule(BotFlow.SpinPool, true, "@{viewer} {pets} som går att vinna ({count} st): {list}", cooldown: 30),
+        Rule(BotFlow.SpinPoolEmpty, true, "@{viewer} inga {pets} går att vinna just nu.", cooldown: 30),
         Rule(BotFlow.SpinNotOwned, true, "@{viewer} {prize} kan bara användas av den som vunnit den i lyckosnurren."),
         Rule(BotFlow.SpinRefund, true, "@{viewer} fick tillbaka {cost} poäng – {reason}.")
     ];

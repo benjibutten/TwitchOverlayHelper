@@ -86,7 +86,7 @@ public sealed class SpinSettingsTests
     }
 
     [Fact]
-    public void TheTwoCommandsCanNeverCollide()
+    public void TheThreeCommandsCanNeverCollide()
     {
         var settings = new SpinSettings { ListCommand = "mina", GiveCommand = "!MINA" };
         settings.Normalize();
@@ -96,6 +96,18 @@ public sealed class SpinSettingsTests
         var reversed = new SpinSettings { ListCommand = "!ge", GiveCommand = "ge" };
         reversed.Normalize();
         Assert.NotEqual(reversed.ListCommand, reversed.GiveCommand, StringComparer.OrdinalIgnoreCase);
+
+        // The pool command gives way to both, and to a word that is actually free rather than one
+        // that would only collide with the other of them.
+        var crowded = new SpinSettings { ListCommand = "!alla", GiveCommand = "!vinster", PoolCommand = "ALLA" };
+        crowded.Normalize();
+        Assert.Equal("!alla", crowded.ListCommand);
+        Assert.NotEqual(crowded.PoolCommand, crowded.ListCommand, StringComparer.OrdinalIgnoreCase);
+        Assert.NotEqual(crowded.PoolCommand, crowded.GiveCommand, StringComparer.OrdinalIgnoreCase);
+
+        var blank = new SpinSettings { PoolCommand = "   " };
+        blank.Normalize();
+        Assert.Equal("!alla", blank.PoolCommand);
     }
 
     [Fact]
@@ -613,9 +625,20 @@ public sealed class SpinServiceTests : IDisposable
         File.WriteAllBytes(Path.Combine(dir, "spritesheet.webp"), [1, 2, 3]);
     }
 
+    /// <summary>An ordinary pet: on the lawn for anyone to redeem, and never something the reel draws.</summary>
+    private void WriteOrdinaryPet(string id, string displayName)
+    {
+        string dir = Path.Combine(_folder, "pets", id);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "pet.json"),
+            $$"""{ "id": "{{id}}", "displayName": "{{displayName}}" }""");
+        File.WriteAllBytes(Path.Combine(dir, "spritesheet.webp"), [1, 2, 3]);
+    }
+
     private sealed record Harness(
         SpinService Spins,
         SpinWinStore Store,
+        PetCatalog Catalog,
         PetRegistry Registry,
         AppSettings Settings,
         List<SpinVerdict> Verdicts,
@@ -643,7 +666,7 @@ public sealed class SpinServiceTests : IDisposable
         spins.Verdict += verdicts.Add;
         var announced = new List<(BotFlow, IReadOnlyDictionary<string, string>)>();
         spins.Announced += (flow, values, _) => announced.Add((flow, values));
-        return new Harness(spins, store, registry, settings, verdicts, announced);
+        return new Harness(spins, store, catalog, registry, settings, verdicts, announced);
     }
 
     private static RewardRedemption Redemption(string rewardId = "snurr", string id = "r1", string userId = "7", string name = "Kajsa") =>
@@ -704,7 +727,7 @@ public sealed class SpinServiceTests : IDisposable
     [Fact]
     public void TheCurtainCallAnnouncesTheWinAndPutsThePetOnTheLawn()
     {
-        WriteWinnablePet("drake", "Gyllene Draken");
+        WriteWinnablePet("drake", "Gyllene Draken", PetRarity.Rare);
         Harness harness = Build();
         harness.Spins.HandleRedemption(Redemption());
 
@@ -716,8 +739,27 @@ public sealed class SpinServiceTests : IDisposable
         (BotFlow flow, IReadOnlyDictionary<string, string> values) = Assert.Single(harness.Announced);
         Assert.Equal(BotFlow.SpinWin, flow);
         Assert.Equal("Gyllene Draken", values["prize"]);
+        Assert.Equal("sällsynt", values["rarity"]);
         Assert.Equal("drake", Assert.Single(harness.Registry.Snapshot()).Species);
         Assert.Equal(0, harness.Spins.QueueLength);
+    }
+
+    [Fact]
+    public void TheTierAnnouncedIsTheOneTheReelWasDrawnOnEvenIfThePetIsRetieredMeanwhile()
+    {
+        WriteWinnablePet("drake", "Gyllene Draken", PetRarity.Legendary);
+        Harness harness = Build();
+        harness.Spins.HandleRedemption(Redemption());
+
+        // The streamer re-tiers the art in the settings window while its reel is still turning. The
+        // draw is long since made against the old odds, and that is what the winner is owed the word
+        // for – the new tier belongs to the next spin.
+        Assert.True(harness.Catalog.TrySetWinnable("drake", winOnly: true, PetRarity.Common, out _));
+
+        harness.Spins.OnSpinShown(harness.Spins.CurrentSpinId!);
+
+        (_, IReadOnlyDictionary<string, string> values) = Assert.Single(harness.Announced);
+        Assert.Equal(PetRarity.Legendary, values["rarity"]);
     }
 
     [Fact]
@@ -875,7 +917,7 @@ public sealed class SpinServiceTests : IDisposable
     [Fact]
     public void TheListCommandAnswersWithTheCollectionOrItsAbsence()
     {
-        WriteWinnablePet("drake", "Gyllene Draken");
+        WriteWinnablePet("drake", "Gyllene Draken", PetRarity.Legendary);
         Harness harness = Build();
 
         Assert.True(harness.Spins.HandleChatMessage(Message("!mina")));
@@ -885,10 +927,41 @@ public sealed class SpinServiceTests : IDisposable
         harness.Store.Add(new SpinWin("7", "kajsa", "Kajsa", "drake", DateTimeOffset.UtcNow));
         Assert.True(harness.Spins.HandleChatMessage(Message("!mina")));
 
+        // The tier travels with every art, so a collection reads for what is rare in it.
         (BotFlow flow, IReadOnlyDictionary<string, string> values) = Assert.Single(harness.Announced);
         Assert.Equal(BotFlow.SpinList, flow);
-        Assert.Equal("Gyllene Draken", values["list"]);
+        Assert.Equal("Gyllene Draken (legendarisk)", values["list"]);
         Assert.Equal("1", values["count"]);
+    }
+
+    [Fact]
+    public void ThePoolCommandListsEveryWinnableArtUnderItsTier()
+    {
+        WriteWinnablePet("drake", "Gyllene Draken", PetRarity.Legendary);
+        WriteWinnablePet("katt", "Space-Cat");
+        WriteWinnablePet("rav", "Räven", PetRarity.Uncommon);
+        // Not marked winnable, so it is not something the reel can land on and not something to list.
+        WriteOrdinaryPet("hund", "Vovven");
+        Harness harness = Build();
+
+        Assert.True(harness.Spins.HandleChatMessage(Message("!alla")));
+
+        // Rarest first, and gathered under the tier rather than repeated art by art: a list that has
+        // to be cut loses the commons at the end, not the legendary somebody asked in order to see.
+        (BotFlow flow, IReadOnlyDictionary<string, string> values) = Assert.Single(harness.Announced);
+        Assert.Equal(BotFlow.SpinPool, flow);
+        Assert.Equal("legendarisk: Gyllene Draken · ovanlig: Räven · vanlig: Space-Cat", values["list"]);
+        Assert.Equal("3", values["count"]);
+    }
+
+    [Fact]
+    public void ThePoolCommandSaysSoWhenNothingIsMarkedWinnable()
+    {
+        WriteOrdinaryPet("hund", "Vovven");
+        Harness harness = Build();
+
+        Assert.True(harness.Spins.HandleChatMessage(Message("!alla")));
+        Assert.Equal(BotFlow.SpinPoolEmpty, Assert.Single(harness.Announced).Flow);
     }
 
     [Fact]

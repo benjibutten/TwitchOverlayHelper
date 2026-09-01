@@ -35,9 +35,11 @@ public static class SettingsMigrations
     /// <item><description>1 – the stamp itself, so later changes have something to migrate from.</description></item>
     /// <item><description>2 – the lucky spin stopped paying back duplicates, so the two bot lines that
     /// promised the points back are worded afresh where the streamer had left them as they were.</description></item>
+    /// <item><description>3 – the spin's win lines can say the tier the prize was drawn on, and the
+    /// two that announce a win are given the <c>{rarity}</c> wording where they were left untouched.</description></item>
     /// </list>
     /// </summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     public static SettingsMigrationResult Apply(AppSettings settings)
     {
@@ -72,6 +74,15 @@ public static class SettingsMigrations
                 Reword(settings.Bot, BotFlow.SpinDuplicate,
                     "@{viewer} du vann {prize} – men den har du redan! Skriv \"{command} namn\" inom {minutes} min för att skänka den till någon, annars får du tillbaka poängen.");
                 Reword(settings.Bot, BotFlow.SpinGiftOwned, "@{viewer} @{target} har redan {prize} – välj någon annan.");
+                break;
+
+            case 2:
+                // The prize's rarity is a value the bot can fill in now. A line the streamer never
+                // touched gets it; one they wrote themselves keeps their words, and {rarity} is
+                // there for them to add whenever they want it.
+                Reword(settings.Bot, BotFlow.SpinWin, "🎉 @{viewer} vann {prize} i lyckosnurren!");
+                Reword(settings.Bot, BotFlow.SpinDuplicate,
+                    "@{viewer} du vann {prize} – men den har du redan! Skriv \"{command} namn\" inom {minutes} min för att skänka den till någon, annars är chansen borta.");
                 break;
         }
     }

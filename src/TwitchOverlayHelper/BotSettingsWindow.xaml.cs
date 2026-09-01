@@ -216,6 +216,8 @@ internal static class BotFlowText
         BotFlow.SpinGiftExpired => "Gåvan hann rinna ut",
         BotFlow.SpinList => "Svar på samlingskommandot",
         BotFlow.SpinListEmpty => "Samlingen är tom",
+        BotFlow.SpinPool => "Svar på vinstlistan",
+        BotFlow.SpinPoolEmpty => "Inget är utsatt som vinst",
         BotFlow.SpinNotOwned => "Bad om en vinstpet de inte äger",
         BotFlow.SpinRefund => "Lyckosnurren betalade tillbaka",
         _ => "Okänt"
@@ -251,9 +253,9 @@ internal static class BotFlowText
         BotFlow.Subscription => "Nya prenumerationer, resubs och gåvor. Avstängt från början – Twitch säger redan det mesta av det.",
         BotFlow.HypeTrainBegin => "När ett hypetåg drar igång.",
         BotFlow.HypeTrainEnd => "När hypetåget är slut, med nivån det nådde.",
-        BotFlow.SpinWin => "När snurren stannat och någon fått en ny pet till sitt konto. {prize} är den de vann.",
+        BotFlow.SpinWin => "När snurren stannat och någon fått en ny pet till sitt konto. {prize} är den de vann och {rarity} hur sällsynt den är.",
         BotFlow.SpinDuplicate =>
-            "När snurren landat på något de redan äger. Poängen är spenderade – det som återstår är en chans att skänka bort peten, och raden är instruktionen för det. Utan den vet vinnaren inte vad som ska skrivas, och chansen rinner ut i onödan. {command} är kommandot och {minutes} tiden de har på sig.",
+            "När snurren landat på något de redan äger. Poängen är spenderade – det som återstår är en chans att skänka bort peten, och raden är instruktionen för det. Utan den vet vinnaren inte vad som ska skrivas, och chansen rinner ut i onödan. {command} är kommandot, {minutes} tiden de har på sig och {rarity} hur sällsynt vinsten var.",
         BotFlow.SpinGifted => "När en dubblett skänkts vidare. {target} är den som fick den.",
         BotFlow.SpinGiftUnknown => "När namnet de skrev inte matchar något Twitch-konto. Gåvan ligger kvar, så de kan skriva igen.",
         BotFlow.SpinGiftOwned =>
@@ -261,8 +263,11 @@ internal static class BotFlowText
         BotFlow.SpinGiftExpired =>
             "När tiden gått ut utan att någon mottagare valdes, eller när vinnaren snurrat fram en ny dubblett innan de hann skänka den förra. Inga poäng kommer tillbaka – raden finns för att ingen ska sitta och vänta på en gåva som inte längre går att ge.",
         BotFlow.SpinList =>
-            "Svaret när någon skriver kommandot för att se sin samling. {list} är arterna de vunnit och {count} hur många.",
+            "Svaret när någon skriver kommandot för att se sin samling. {list} är arterna de vunnit – var och en med sin raritet – och {count} hur många.",
         BotFlow.SpinListEmpty => "Samma kommando, men från någon som inte vunnit något än.",
+        BotFlow.SpinPool =>
+            "Svaret när någon frågar vad som över huvud taget går att vinna. {list} är alla utsatta arter samlade under sin sällsynthet, med de mest sällsynta först, och {count} hur många de är. Frågan alla ställer innan de bestämmer sig för om priset är värt det.",
+        BotFlow.SpinPoolEmpty => "Samma kommando, när ingen pet är ikryssad som vinst. Då går snurren inte att köpa heller.",
         BotFlow.SpinNotOwned =>
             "När någon löser in en vanlig pet-belöning och ber om en art som bara går att vinna. Kan belöningen återbetalas får de tillbaka poängen; annars får de en vanlig pet i stället.",
         BotFlow.SpinRefund =>
