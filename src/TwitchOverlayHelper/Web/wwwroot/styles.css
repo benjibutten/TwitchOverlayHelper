@@ -344,6 +344,13 @@ body[data-nameline="false"] .msg-text { display: inline; }
 .emote[data-giant="true"] {
   display: block; height: 3.2em; margin: 3px 0; vertical-align: baseline;
 }
+/* A GIF is a picture, not a piece of a sentence: on its own row, capped so one of them cannot take
+   over a column that is meant to be read, and never wider than the column itself. */
+.chat-gif {
+  display: block; max-width: min(100%, 260px); max-height: 200px;
+  width: auto; height: auto; margin: 4px 0 2px; border-radius: 8px;
+  background: var(--surface-alt);
+}
 .link-chip {
   display: inline-block; font-size: 0.8em; padding: 0 6px; border-radius: 5px;
   background: var(--surface-alt); border: 1px solid var(--line); color: var(--accent);

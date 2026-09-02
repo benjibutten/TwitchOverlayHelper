@@ -22,6 +22,19 @@ public partial class OverlayWindow : Window
     /// <summary>How much bigger a gigantified emote is drawn. Twitch shows it at roughly triple.</summary>
     private const double GiantEmoteScale = 3;
 
+    /// <summary>
+    /// How tall a chat GIF may be, in text lines. Big enough to be worth sending and small enough
+    /// that one picture cannot push the rest of the conversation off the overlay.
+    /// </summary>
+    private const double GifLineHeights = 7;
+
+    /// <summary>
+    /// Ceilings for the chat GIFs, well above the emote ones: an emote is a few kilobytes from
+    /// Twitch's CDN, a GIF somebody picked out of Giphy is routinely a couple of megabytes.
+    /// </summary>
+    private const int MaxGifBytes = 6 * 1024 * 1024;
+    private const long MaxGifCacheBytes = 64L * 1024 * 1024;
+
     private static readonly System.Windows.Media.Effects.DropShadowEffect TextOutlineEffect = CreateTextOutline();
     private static readonly HttpClient EmoteHttpClient = new()
     {
@@ -37,6 +50,13 @@ public partial class OverlayWindow : Window
     /// </summary>
     private readonly NicknameBook _nicknames;
     private readonly AnimatedEmoteLoader _animatedEmotes = new(EmoteHttpClient);
+
+    /// <summary>
+    /// The GIFs tier 2 and tier 3 subscribers send. A loader of its own rather than the emote one so
+    /// the two cannot evict each other: a single GIF is worth a hundred emotes in bytes, and the
+    /// emotes are what almost every line is made of.
+    /// </summary>
+    private readonly AnimatedEmoteLoader _chatGifs = new(EmoteHttpClient, MaxGifBytes, MaxGifCacheBytes);
     private readonly DispatcherTimer _topmostTimer;
     private readonly Dictionary<string, BitmapImage> _imageCache = new(StringComparer.Ordinal);
     /// <summary>Insertion order for <see cref="_imageCache"/>, so the cap evicts rather than empties.</summary>
@@ -412,18 +432,33 @@ public partial class OverlayWindow : Window
     };
 
     private TextBlock CreateMessageBody(ChatMessage message) =>
-        CreateBody(message.Text, message.Emotes, _settings.GiantEmotes ? message.GigantifiedEmoteIndex : -1);
+        CreateBody(message.Text, message.Emotes, message.Gifs, _settings.GiantEmotes ? message.GigantifiedEmoteIndex : -1);
 
-    private TextBlock CreateBody(string text, IReadOnlyList<EmoteSpan> emotes, int giantIndex = -1)
+    /// <summary>
+    /// The words of a line, with the pictures put back where they belong. Emotes and GIFs are two
+    /// lists of ranges over the same text and are walked together in reading order, because they can
+    /// share a line – "hej Kappa [Yes GIF by Someone]" – and each range may only be drawn once the
+    /// cursor has reached it.
+    /// </summary>
+    private TextBlock CreateBody(
+        string text,
+        IReadOnlyList<EmoteSpan> emotes,
+        IReadOnlyList<GifSpan>? gifs = null,
+        int giantIndex = -1)
     {
         var body = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.White };
-        if (!_settings.ShowEmotes)
+        IReadOnlyList<EmoteSpan> shownEmotes = _settings.ShowEmotes ? emotes : Array.Empty<EmoteSpan>();
+        IReadOnlyList<GifSpan> shownGifs = _settings.ShowGifs && gifs is not null ? gifs : Array.Empty<GifSpan>();
+
+        // With the emotes switched off the line is left as plain text, twemoji included: that switch
+        // is about pictures in the chat column, and the unicode ones are no different.
+        if (!_settings.ShowEmotes && shownGifs.Count == 0)
         {
             body.Text = text;
             return body;
         }
 
-        if (emotes.Count == 0)
+        if (shownEmotes.Count == 0 && shownGifs.Count == 0)
         {
             AddTextAndEmojiInlines(body, text);
             return body;
@@ -432,19 +467,53 @@ public partial class OverlayWindow : Window
         // Cap emote height to the fixed block line height so images never clip.
         double emoteSize = Math.Round(_settings.FontSize * Math.Min(1.35, _settings.LineSpacing * 0.95));
         int cursor = 0;
-        for (int i = 0; i < emotes.Count; i++)
+        int nextEmote = 0;
+        int nextGif = 0;
+        while (nextEmote < shownEmotes.Count || nextGif < shownGifs.Count)
         {
-            EmoteSpan emote = emotes[i];
-            if (emote.Start < cursor || emote.Start + emote.Length > text.Length) continue;
-            if (emote.Start > cursor) AddTextAndEmojiInlines(body, text[cursor..emote.Start]);
-            // A gigantified emote is the one image allowed to break out of the line box; the card
-            // lets its lines grow for it, see ApplyMessageTypography.
-            double size = i == giantIndex ? emoteSize * GiantEmoteScale : emoteSize;
-            body.Inlines.Add(CreateEmoteInline(emote, text.Substring(emote.Start, emote.Length), size, i == giantIndex));
-            cursor = emote.Start + emote.Length;
+            bool takeGif = nextEmote >= shownEmotes.Count
+                || (nextGif < shownGifs.Count && shownGifs[nextGif].Start < shownEmotes[nextEmote].Start);
+            int start = takeGif ? shownGifs[nextGif].Start : shownEmotes[nextEmote].Start;
+            int length = takeGif ? shownGifs[nextGif].Length : shownEmotes[nextEmote].Length;
+
+            // A range that has been overtaken – overlapping the one before it, or pointing past the
+            // end of the text – has nothing left to stand in for.
+            if (start < cursor || start + length > text.Length)
+            {
+                if (takeGif) nextGif++; else nextEmote++;
+                continue;
+            }
+
+            if (start > cursor) AddBodyText(body, text[cursor..start]);
+            string covered = text.Substring(start, length);
+            if (takeGif)
+            {
+                body.Inlines.Add(CreateGifInline(shownGifs[nextGif], covered));
+                nextGif++;
+            }
+            else
+            {
+                // A gigantified emote is the one emote allowed to break out of the line box; the
+                // card lets its lines grow for it, see ApplyMessageTypography.
+                bool giant = nextEmote == giantIndex;
+                body.Inlines.Add(CreateEmoteInline(
+                    shownEmotes[nextEmote], covered, giant ? emoteSize * GiantEmoteScale : emoteSize, giant));
+                nextEmote++;
+            }
+            cursor = start + length;
         }
-        if (cursor < text.Length) AddTextAndEmojiInlines(body, text[cursor..]);
+        if (cursor < text.Length) AddBodyText(body, text[cursor..]);
         return body;
+    }
+
+    /// <summary>
+    /// A stretch of ordinary words. Kept apart from <see cref="AddTextAndEmojiInlines"/> so a line
+    /// that is only in here because it carries a GIF still honours "show emotes: off" for its text.
+    /// </summary>
+    private void AddBodyText(TextBlock body, string text)
+    {
+        if (_settings.ShowEmotes) AddTextAndEmojiInlines(body, text);
+        else body.Inlines.Add(new Run(text));
     }
 
     private void AddTextAndEmojiInlines(TextBlock body, string text)
@@ -498,6 +567,90 @@ public partial class OverlayWindow : Window
         }
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
         return new InlineUIContainer(image) { BaselineAlignment = BaselineAlignment.Center };
+    }
+
+    /// <summary>
+    /// A chat GIF, drawn over the description Twitch wrote into the message. The description is not
+    /// thrown away but left standing behind the picture: it is what the card shows while the file is
+    /// still on the wire, and what it falls back to when the download or the decode comes to nothing.
+    /// </summary>
+    private Inline CreateGifInline(GifSpan gif, string description)
+    {
+        // An inline container is measured with no width to speak of, so the width the card has is
+        // spelled out here – without it the description would run off the side rather than wrap.
+        double maxWidth = Math.Max(160, _settings.OverlayWidth - 64);
+        var placeholder = new TextBlock
+        {
+            Text = description,
+            Foreground = Fill(Color.FromRgb(183, 180, 194)),
+            FontFamily = Font(_settings.FontFamily),
+            FontSize = _settings.FontSize,
+            MaxWidth = maxWidth,
+            TextWrapping = TextWrapping.Wrap
+        };
+        var image = new Image
+        {
+            // Scaled down to fit and never up: a small GIF blown up to the ceiling is a blurry mess.
+            MaxHeight = Math.Round(_settings.FontSize * GifLineHeights),
+            MaxWidth = maxWidth,
+            Stretch = Stretch.Uniform,
+            StretchDirection = StretchDirection.DownOnly,
+            ToolTip = description,
+            Visibility = Visibility.Collapsed
+        };
+        RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
+
+        var holder = new Grid();
+        holder.Children.Add(placeholder);
+        holder.Children.Add(image);
+        ShowGifWhenLoaded(gif.Url, image, placeholder);
+        return new InlineUIContainer(holder) { BaselineAlignment = BaselineAlignment.Center };
+    }
+
+    private void ShowGifWhenLoaded(string url, Image image, UIElement placeholder)
+    {
+        bool removed = false;
+
+        void StopAnimation(object sender, RoutedEventArgs args)
+        {
+            removed = true;
+            image.ClearValue(AnimationBehavior.SourceStreamProperty);
+            image.Unloaded -= StopAnimation;
+            AnimationBehavior.RemoveErrorHandler(image, FallBackToDescription);
+        }
+
+        void FallBackToDescription(object sender, AnimationErrorEventArgs args)
+        {
+            args.Handled = true;
+            image.ClearValue(AnimationBehavior.SourceStreamProperty);
+            image.Visibility = Visibility.Collapsed;
+            placeholder.Visibility = Visibility.Visible;
+        }
+
+        image.Unloaded += StopAnimation;
+        AnimationBehavior.AddErrorHandler(image, FallBackToDescription);
+        _ = LoadGifAsync();
+
+        async Task LoadGifAsync()
+        {
+            try
+            {
+                byte[]? bytes = await _chatGifs.GetGifAsync(url);
+                if (removed || bytes is null) return;
+
+                var stream = new MemoryStream(bytes, writable: false);
+                AnimationBehavior.SetCacheFramesInMemory(image, false);
+                AnimationBehavior.SetRepeatBehavior(image, System.Windows.Media.Animation.RepeatBehavior.Forever);
+                AnimationBehavior.SetSourceStream(image, stream);
+                image.Visibility = Visibility.Visible;
+                placeholder.Visibility = Visibility.Collapsed;
+            }
+            catch (Exception)
+            {
+                // A GIF somebody else picked must never be able to take the overlay down; the
+                // description is still there and still says what was sent.
+            }
+        }
     }
 
     private void EnableAnimation(Image image, string emoteId, ImageSource staticImage)
@@ -638,13 +791,13 @@ public partial class OverlayWindow : Window
         body.FontSize = _settings.FontSize;
 
         // Every line is normally locked to the same height, which is what makes a column of messages
-        // scannable. A gigantified emote is three times that, and BlockLineHeight would crop it to
-        // the line box instead of showing it – so the one card carrying one is allowed to let its
-        // lines grow to whatever is in them.
-        bool giant = _settings.GiantEmotes
-            && card.Tag is ChatTimelineItem { Message: { } message }
-            && message.GigantifiedEmoteIndex >= 0;
-        if (giant)
+        // scannable. A gigantified emote is three times that and a GIF is taller still, and
+        // BlockLineHeight would crop either to the line box instead of showing it – so a card
+        // carrying one is allowed to let its lines grow to whatever is in them.
+        bool tall = card.Tag is ChatTimelineItem { Message: { } message }
+            && ((_settings.GiantEmotes && message.GigantifiedEmoteIndex >= 0)
+                || (_settings.ShowGifs && message.Gifs.Count > 0));
+        if (tall)
         {
             body.ClearValue(TextBlock.LineHeightProperty);
             body.LineStackingStrategy = LineStackingStrategy.MaxHeight;
@@ -718,6 +871,7 @@ public partial class OverlayWindow : Window
         bool EmphasizeMentions,
         bool ShowEmotes,
         bool GiantEmotes,
+        bool ShowGifs,
         // A copy, not the live object: comparing the settings against themselves would find them
         // equal however often they changed, and the rebuild would never run.
         ChatEventVisibility Events,
@@ -735,6 +889,7 @@ public partial class OverlayWindow : Window
             settings.EmphasizeMentions,
             settings.ShowEmotes,
             settings.GiantEmotes,
+            settings.ShowGifs,
             settings.Events with { },
             settings.TextOutline,
             string.IsNullOrWhiteSpace(settings.UserName) ? settings.Channel : settings.UserName);

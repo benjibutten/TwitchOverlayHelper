@@ -39,8 +39,9 @@ internal static class IrcMessageParser
         // Emote positions are counted against the text as Twitch sent it, so they have to be read
         // before the reply mention is cut away – and moved along with it.
         IReadOnlyList<EmoteSpan> emotes = ParseEmotes(tags.GetValueOrDefault("emotes"), text);
+        IReadOnlyList<GifSpan> gifs = ParseGifs(tags.GetValueOrDefault("gifs"), text);
         ChatReply? reply = ParseReply(tags);
-        if (reply is not null) StripReplyMention(ref text, ref emotes, reply);
+        if (reply is not null) StripReplyMention(ref text, ref emotes, ref gifs, reply);
 
         message = new ChatMessage(
             tags.GetValueOrDefault("id") ?? Guid.NewGuid().ToString("N"),
@@ -53,6 +54,7 @@ internal static class IrcMessageParser
             ParseTimestamp(tags.GetValueOrDefault("tmi-sent-ts")),
             emotes)
         {
+            Gifs = gifs,
             UserId = tags.GetValueOrDefault("user-id") ?? string.Empty,
             UserLogin = login,
             HasModTag = ReadModTag(tags),
@@ -93,7 +95,11 @@ internal static class IrcMessageParser
     /// The name is matched against both the display name and the login, because Twitch writes
     /// whichever of the two the sender's client used.
     /// </summary>
-    internal static bool StripReplyMention(ref string text, ref IReadOnlyList<EmoteSpan> emotes, ChatReply reply)
+    internal static bool StripReplyMention(
+        ref string text,
+        ref IReadOnlyList<EmoteSpan> emotes,
+        ref IReadOnlyList<GifSpan> gifs,
+        ChatReply reply)
     {
         foreach (string name in new[] { reply.ParentDisplayName, reply.ParentLogin })
         {
@@ -103,6 +109,7 @@ internal static class IrcMessageParser
 
             text = text[mention.Length..];
             emotes = ShiftEmotes(emotes, mention.Length);
+            gifs = ShiftGifs(gifs, mention.Length);
             return true;
         }
         return false;
@@ -117,6 +124,18 @@ internal static class IrcMessageParser
             // A span inside the cut-away mention has nothing left to point at.
             if (emote.Start < offset) continue;
             result.Add(emote with { Start = emote.Start - offset });
+        }
+        return result;
+    }
+
+    private static IReadOnlyList<GifSpan> ShiftGifs(IReadOnlyList<GifSpan> gifs, int offset)
+    {
+        if (gifs.Count == 0) return gifs;
+        var result = new List<GifSpan>(gifs.Count);
+        foreach (GifSpan gif in gifs)
+        {
+            if (gif.Start < offset) continue;
+            result.Add(gif with { Start = gif.Start - offset });
         }
         return result;
     }
@@ -345,7 +364,7 @@ internal static class IrcMessageParser
                 if (dash <= 0
                     || !int.TryParse(range[..dash], out int start)
                     || !int.TryParse(range[(dash + 1)..], out int end)
-                    || start < 0 || end < start || end + 1 >= codePointToUtf16.Length)
+                    || start < 0 || end < start || end >= codePointToUtf16.Length - 1)
                     continue;
                 int utf16Start = codePointToUtf16[start];
                 int utf16End = codePointToUtf16[end + 1];
@@ -356,6 +375,80 @@ internal static class IrcMessageParser
         return result;
     }
 
+    // Tag format: "0-33|joSNxeswxuc74Juo8X|https://media4.giphy.com/media/...". Ranges are
+    // inclusive and counted the way the emote tag counts – in Unicode code points – so the same map
+    // turns them into UTF-16 indices. Twitch documents no escaping for the address it hands over
+    // and asks that it be used unchanged, which is why nothing here touches it beyond checking that
+    // it is an https URL: the machine that renders chat is the streamer's own, and a line from IRC
+    // must not be able to point it at just any scheme.
+    internal static IReadOnlyList<GifSpan> ParseGifs(string? raw, string text)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return Array.Empty<GifSpan>();
+
+        int[] codePointToUtf16 = BuildCodePointIndexMap(text);
+        var result = new List<GifSpan>();
+        foreach (string entry in SplitGifEntries(raw))
+        {
+            // Three fields at most, so an address containing a pipe of its own stays whole.
+            string[] parts = entry.Split('|', 3);
+            if (parts.Length < 3) continue;
+
+            int dash = parts[0].IndexOf('-');
+            if (dash <= 0
+                || !int.TryParse(parts[0][..dash], out int start)
+                || !int.TryParse(parts[0][(dash + 1)..], out int end)
+                || start < 0 || end < start || end >= codePointToUtf16.Length - 1)
+                continue;
+            if (!IsHttpsUrl(parts[2])) continue;
+
+            int utf16Start = codePointToUtf16[start];
+            int utf16End = codePointToUtf16[end + 1];
+            result.Add(new GifSpan(parts[1], parts[2], utf16Start, utf16End - utf16Start));
+        }
+        result.Sort((a, b) => a.Start.CompareTo(b.Start));
+        return result;
+    }
+
+    /// <summary>
+    /// Cuts the gifs tag into its entries. Twitch separates them with a comma, which is also a
+    /// character a query string may legally contain – so a comma only starts a new entry when what
+    /// follows it opens one, "digits-digits|". Anything else is given back to the address it came
+    /// from rather than turning one GIF into two unreadable halves.
+    /// </summary>
+    private static List<string> SplitGifEntries(string raw)
+    {
+        var entries = new List<string>();
+        foreach (string part in raw.Split(','))
+        {
+            if (entries.Count > 0 && !StartsEntry(part)) entries[^1] += "," + part;
+            else entries.Add(part);
+        }
+        return entries;
+    }
+
+    private static bool StartsEntry(string part)
+    {
+        int i = 0;
+        while (i < part.Length && char.IsAsciiDigit(part[i])) i++;
+        if (i == 0 || i >= part.Length || part[i] != '-') return false;
+        int dash = i++;
+        while (i < part.Length && char.IsAsciiDigit(part[i])) i++;
+        return i > dash + 1 && i < part.Length && part[i] == '|';
+    }
+
+    private static bool IsHttpsUrl(string value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out Uri? url) && url.Scheme == Uri.UriSchemeHttps;
+
+    /// <summary>
+    /// Where every code point in the text begins, counted in UTF-16 indices, with the length of the
+    /// text as a final entry so the character after the last one has a place too. That is what lets
+    /// a Twitch range, whose end is inclusive and counted in code points, be read as map[end + 1].
+    ///
+    /// <para>Callers bound that end against <c>Length - 1</c> rather than testing <c>end + 1</c>:
+    /// the range comes off the wire, and an end of <see cref="int.MaxValue"/> makes <c>end + 1</c>
+    /// wrap round to a negative number that passes any upper bound and then indexes the map off its
+    /// front.</para>
+    /// </summary>
     private static int[] BuildCodePointIndexMap(string text)
     {
         var map = new List<int>(text.Length + 1);

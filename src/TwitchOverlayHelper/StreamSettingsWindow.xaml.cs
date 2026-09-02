@@ -44,6 +44,7 @@ public partial class StreamSettingsWindow : Window
         NameColorsCheck.IsChecked = stream.UseTwitchNameColors;
         EmotesCheck.IsChecked = stream.ShowEmotes;
         GiantEmotesCheck.IsChecked = stream.GiantEmotes;
+        GifsCheck.IsChecked = stream.ShowGifs;
         RepliesCheck.IsChecked = stream.ShowReplies;
         TimestampsCheck.IsChecked = stream.ShowTimestamps;
         LinksCheck.IsChecked = stream.CollapseLinks;
@@ -81,6 +82,7 @@ public partial class StreamSettingsWindow : Window
         stream.UseTwitchNameColors = NameColorsCheck.IsChecked == true;
         stream.ShowEmotes = EmotesCheck.IsChecked == true;
         stream.GiantEmotes = GiantEmotesCheck.IsChecked == true;
+        stream.ShowGifs = GifsCheck.IsChecked == true;
         stream.ShowReplies = RepliesCheck.IsChecked == true;
         stream.ShowTimestamps = TimestampsCheck.IsChecked == true;
         stream.CollapseLinks = LinksCheck.IsChecked == true;

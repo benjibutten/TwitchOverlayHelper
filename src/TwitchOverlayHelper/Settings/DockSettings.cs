@@ -25,6 +25,11 @@ public sealed class DockSettings
     public bool UseTwitchNameColors { get; set; } = true;
     public bool ShowEmotes { get; set; } = true;
     /// <summary>
+    /// Draws the GIFs tier 2 and tier 3 subscribers can send. Off leaves the line as Twitch worded
+    /// it – "[Yes GIF by Someone]" – which is a sentence in its own right, so nothing goes missing.
+    /// </summary>
+    public bool ShowGifs { get; set; } = true;
+    /// <summary>
     /// Draws an emote a Gigantify power-up enlarged at its full size, on a row of its own. On by
     /// default: someone spent bits to make it big, and shrinking it back would throw that away.
     /// Off leaves the emote at reading size with a "⚡ förstorad" marker, for a calm column.
