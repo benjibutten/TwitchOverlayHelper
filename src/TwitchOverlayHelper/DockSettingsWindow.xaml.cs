@@ -46,6 +46,7 @@ public partial class DockSettingsWindow : Window
         NameColorsCheck.IsChecked = dock.UseTwitchNameColors;
         EmotesCheck.IsChecked = dock.ShowEmotes;
         GiantEmotesCheck.IsChecked = dock.GiantEmotes;
+        GifsCheck.IsChecked = dock.ShowGifs;
         LinksCheck.IsChecked = dock.CollapseLinks;
         ShoutingCheck.IsChecked = dock.CalmShouting;
         CommandsCheck.IsChecked = dock.DimCommands;
@@ -84,6 +85,7 @@ public partial class DockSettingsWindow : Window
         dock.UseTwitchNameColors = NameColorsCheck.IsChecked == true;
         dock.ShowEmotes = EmotesCheck.IsChecked == true;
         dock.GiantEmotes = GiantEmotesCheck.IsChecked == true;
+        dock.ShowGifs = GifsCheck.IsChecked == true;
         dock.CollapseLinks = LinksCheck.IsChecked == true;
         dock.CalmShouting = ShoutingCheck.IsChecked == true;
         dock.DimCommands = CommandsCheck.IsChecked == true;

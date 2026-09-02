@@ -25,7 +25,7 @@ let settings = {
   fontSize: 26, fontFamily: "Verdana", lineHeight: 1.35, messageGap: 8,
   maxMessages: 12, fadeAfterSeconds: 0, newestOnTop: false, animate: true,
   messageBackgroundOpacity: 0.35, textOutline: true, nameOnOwnLine: false,
-  showBadges: true, useTwitchNameColors: true, showEmotes: true, giantEmotes: true,
+  showBadges: true, useTwitchNameColors: true, showEmotes: true, giantEmotes: true, showGifs: true,
   showTimestamps: false, showReplies: true, collapseLinks: true, calmShouting: false,
   hideCommands: true, ignoredAccounts: "", events: {},
 };

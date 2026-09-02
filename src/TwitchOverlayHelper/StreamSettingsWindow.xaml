@@ -82,6 +82,7 @@
                         <CheckBox x:Name="NameColorsCheck" Content="Twitch-namnfärger" Checked="Setting_Changed" Unchecked="Setting_Changed" />
                         <CheckBox x:Name="EmotesCheck" Content="Visa emotes" Checked="Setting_Changed" Unchecked="Setting_Changed" />
                         <CheckBox x:Name="GiantEmotesCheck" Content="Förstorade emotes i full storlek" ToolTip="Power-upen “Gigantify an Emote”. Av: vanlig storlek med en markör i stället." Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="GifsCheck" Content="Visa gif:ar från prenumeranter" ToolTip="Tier 2- och tier 3-prenumeranter kan skicka gif:ar i chatten. Av: raden visas som Twitch beskriver den, till exempel [Yes GIF by Someone]." Checked="Setting_Changed" Unchecked="Setting_Changed" />
                         <CheckBox x:Name="RepliesCheck" Content="Visa vem meddelandet svarar på" Checked="Setting_Changed" Unchecked="Setting_Changed" />
                         <CheckBox x:Name="TimestampsCheck" Content="Visa klockslag" ToolTip="Sällan värt platsen – tittarna ser chatten i realtid" Checked="Setting_Changed" Unchecked="Setting_Changed" />
                         <CheckBox x:Name="LinksCheck" Content="Korta ner länkar till en liten knapp" ToolTip="Hindrar att någon får upp en läsbar adress på din stream" Checked="Setting_Changed" Unchecked="Setting_Changed" />

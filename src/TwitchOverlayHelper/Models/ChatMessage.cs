@@ -6,6 +6,17 @@ public sealed record ChatBadge(string SetId, string Version);
 public sealed record EmoteSpan(string EmoteId, int Start, int Length);
 
 /// <summary>
+/// A GIF a tier 2 or tier 3 subscriber sent, and the stretch of <see cref="ChatMessage.Text"/> it
+/// replaces. Twitch writes the picture's own description into the message – "[Yes GIF by Someone]" –
+/// and names the range covering it in the gifs tag, so a view that knows nothing about this still
+/// shows a sentence that reads, and one that does swaps the picture in over those characters.
+///
+/// <para><paramref name="Url"/> is Twitch's, passed on exactly as it arrived: their documentation
+/// asks that the address not be rewritten, and the signed query it carries is what makes it load.</para>
+/// </summary>
+public sealed record GifSpan(string GifId, string Url, int Start, int Length);
+
+/// <summary>
 /// The message this one answers. Twitch carries it as reply-parent-* tags and additionally repeats
 /// the parent's author as a leading "@name" inside the text; the parser strips that copy, so the
 /// reply reads as its own sentence with the parent shown above it instead of as a bare mention.
@@ -29,6 +40,12 @@ public sealed record ChatMessage(
     IReadOnlyList<EmoteSpan>? Emotes = null)
 {
     public IReadOnlyList<EmoteSpan> Emotes { get; init; } = Emotes ?? Array.Empty<EmoteSpan>();
+
+    /// <summary>
+    /// The GIFs in this line, in reading order. Empty for almost every message: only tier 2 and
+    /// tier 3 subscribers can send one, and only where the streamer has left the feature on.
+    /// </summary>
+    public IReadOnlyList<GifSpan> Gifs { get; init; } = Array.Empty<GifSpan>();
 
     /// <summary>Twitch numeric user id. Required for Helix moderation calls; empty for locally generated messages.</summary>
     public string UserId { get; init; } = string.Empty;

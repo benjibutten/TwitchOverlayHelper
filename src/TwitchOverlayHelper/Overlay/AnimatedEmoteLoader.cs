@@ -5,9 +5,14 @@ using System.Net.Http;
 namespace TwitchOverlayHelper.Overlay;
 
 /// <summary>
-/// Downloads and deduplicates Twitch's animated GIF variants. A null result means
-/// that the emote has no usable animated variant and is safe to cache negatively.
-/// Transient network failures are deliberately evicted so a later message retries.
+/// Downloads and deduplicates animated GIFs: Twitch's animated emote variants, and the GIFs tier 2
+/// and tier 3 subscribers send into chat. A null result means there is no usable animation at that
+/// address and is safe to cache negatively. Transient network failures are deliberately evicted so
+/// a later message retries.
+///
+/// <para>The two uses are the same machinery with different ceilings, which is why the limits are
+/// constructor arguments: an emote is a small picture on a fixed CDN, while a chat GIF is somebody
+/// else's file and routinely a few megabytes.</para>
 /// </summary>
 internal sealed class AnimatedEmoteLoader
 {
@@ -19,12 +24,14 @@ internal sealed class AnimatedEmoteLoader
     /// them at the per-animation limit is half a gigabyte, and this runs on the machine that is
     /// also playing the game and encoding the stream. Whichever ceiling is reached first evicts.
     /// </summary>
-    private const long MaxCacheBytes = 48L * 1024 * 1024;
+    internal const long DefaultMaxCacheBytes = 48L * 1024 * 1024;
 
     private static readonly byte[] Gif87Header = "GIF87a"u8.ToArray();
     private static readonly byte[] Gif89Header = "GIF89a"u8.ToArray();
 
     private readonly HttpClient _httpClient;
+    private readonly int _maxAnimationBytes;
+    private readonly long _maxCacheBytes;
     private readonly object _cacheLock = new();
     private readonly Dictionary<string, Entry> _cache = new(StringComparer.Ordinal);
 
@@ -36,7 +43,15 @@ internal sealed class AnimatedEmoteLoader
 
     private long _cachedBytes;
 
-    public AnimatedEmoteLoader(HttpClient httpClient) => _httpClient = httpClient;
+    public AnimatedEmoteLoader(
+        HttpClient httpClient,
+        int maxAnimationBytes = MaxAnimationBytes,
+        long maxCacheBytes = DefaultMaxCacheBytes)
+    {
+        _httpClient = httpClient;
+        _maxAnimationBytes = maxAnimationBytes;
+        _maxCacheBytes = maxCacheBytes;
+    }
 
     /// <summary>
     /// One id's animation, and what it is counted as holding.
@@ -79,23 +94,41 @@ internal sealed class AnimatedEmoteLoader
     public Task<byte[]?> GetAnimationAsync(string emoteId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(emoteId)) return Task.FromResult<byte[]?>(null);
+        return GetAsync(
+            emoteId,
+            $"https://static-cdn.jtvnw.net/emoticons/v2/{Uri.EscapeDataString(emoteId)}/animated/dark/2.0",
+            cancellationToken);
+    }
 
+    /// <summary>
+    /// One chat GIF, fetched from the address Twitch handed over and cached under it. The address is
+    /// the identity here: there is no id we could rebuild it from, and two messages carrying the
+    /// same GIF carry the same URL, which is what makes the deduplication work.
+    /// </summary>
+    public Task<byte[]?> GetGifAsync(string url, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return Task.FromResult<byte[]?>(null);
+        return GetAsync(url, url, cancellationToken);
+    }
+
+    private Task<byte[]?> GetAsync(string key, string url, CancellationToken cancellationToken)
+    {
         Entry entry;
         lock (_cacheLock)
         {
-            if (!_cache.TryGetValue(emoteId, out entry!))
+            if (!_cache.TryGetValue(key, out entry!))
             {
                 // Built before the Lazy so the download can close over it. The factory only runs
                 // when the first caller reads Value, which is below and outside this lock.
                 entry = new Entry();
                 entry.Animation = new Lazy<Task<byte[]?>>(
-                    () => DownloadAnimationAsync(emoteId, entry),
+                    () => DownloadAnimationAsync(key, url, entry),
                     LazyThreadSafetyMode.ExecutionAndPublication);
-                Remember(emoteId, entry);
+                Remember(key, entry);
             }
         }
 
-        return AwaitEntryAsync(emoteId, entry, cancellationToken);
+        return AwaitEntryAsync(key, entry, cancellationToken);
     }
 
     public void MarkUnavailable(string emoteId)
@@ -144,10 +177,8 @@ internal sealed class AnimatedEmoteLoader
         }
     }
 
-    private async Task<byte[]?> DownloadAnimationAsync(string emoteId, Entry entry)
+    private async Task<byte[]?> DownloadAnimationAsync(string key, string url, Entry entry)
     {
-        string escapedId = Uri.EscapeDataString(emoteId);
-        string url = $"https://static-cdn.jtvnw.net/emoticons/v2/{escapedId}/animated/dark/2.0";
         using HttpResponseMessage response = await _httpClient.GetAsync(
             url,
             HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
@@ -155,18 +186,18 @@ internal sealed class AnimatedEmoteLoader
         if (response.StatusCode == HttpStatusCode.NotFound) return null;
         response.EnsureSuccessStatusCode();
 
-        if (response.Content.Headers.ContentLength is > MaxAnimationBytes) return null;
+        if (response.Content.Headers.ContentLength > _maxAnimationBytes) return null;
         await using Stream source = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
-        byte[] bytes = await ReadWithLimitAsync(source).ConfigureAwait(false);
+        byte[] bytes = await ReadWithLimitAsync(source, _maxAnimationBytes).ConfigureAwait(false);
         byte[]? animation = HasGifHeader(bytes) ? bytes : null;
         // Now that the size is known the byte ceiling can be applied. Anything this download pushed
         // over the limit goes, oldest first – possibly including this one, which is the right
         // answer: it has already been handed to the caller and only the cache copy is dropped.
-        RecordSize(emoteId, entry, animation?.Length ?? 0);
+        RecordSize(key, entry, animation?.Length ?? 0);
         return animation;
     }
 
-    private static async Task<byte[]> ReadWithLimitAsync(Stream source)
+    private static async Task<byte[]> ReadWithLimitAsync(Stream source, int limit)
     {
         using var destination = new MemoryStream();
         byte[] buffer = new byte[16 * 1024];
@@ -174,7 +205,7 @@ internal sealed class AnimatedEmoteLoader
         {
             int read = await source.ReadAsync(buffer).ConfigureAwait(false);
             if (read == 0) return destination.ToArray();
-            if (destination.Length + read > MaxAnimationBytes) return [];
+            if (destination.Length + read > limit) return [];
             destination.Write(buffer, 0, read);
         }
     }
@@ -234,7 +265,7 @@ internal sealed class AnimatedEmoteLoader
     private void TrimCache()
     {
         DropStaleOrder();
-        while ((_cache.Count > MaxCacheEntries || _cachedBytes > MaxCacheBytes)
+        while ((_cache.Count > MaxCacheEntries || _cachedBytes > _maxCacheBytes)
                && _insertionOrder.TryDequeue(out (string Id, Entry Entry) oldest))
         {
             if (IsCurrent(oldest)) Forget(oldest.Id);

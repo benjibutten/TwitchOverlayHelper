@@ -48,6 +48,11 @@ public sealed class AppSettings
     public bool EmphasizeMentions { get; set; } = true;
     public bool ShowEmotes { get; set; } = true;
     /// <summary>
+    /// Draws the GIFs tier 2 and tier 3 subscribers can send. Off leaves the line as Twitch worded
+    /// it – "[Yes GIF by Someone]" – which is a sentence in its own right, so nothing goes missing.
+    /// </summary>
+    public bool ShowGifs { get; set; } = true;
+    /// <summary>
     /// Whether to ask recent-messages.robotty.de for the lines said before the app connected, so a
     /// restart mid-stream comes back to a chat that reads on rather than starting from nothing.
     ///

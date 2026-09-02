@@ -2218,6 +2218,7 @@ public partial class MainWindow : Window
         MentionsCheck.IsChecked = _settings.EmphasizeMentions;
         EmotesCheck.IsChecked = _settings.ShowEmotes;
         GiantEmotesCheck.IsChecked = _settings.GiantEmotes;
+        GifsCheck.IsChecked = _settings.ShowGifs;
         EventSubsCheck.IsChecked = _settings.Events.Subs;
         EventRaidsCheck.IsChecked = _settings.Events.Raids;
         EventAnnouncementsCheck.IsChecked = _settings.Events.Announcements;
@@ -2517,6 +2518,7 @@ public partial class MainWindow : Window
         _settings.EmphasizeMentions = MentionsCheck.IsChecked == true;
         _settings.ShowEmotes = EmotesCheck.IsChecked == true;
         _settings.GiantEmotes = GiantEmotesCheck.IsChecked == true;
+        _settings.ShowGifs = GifsCheck.IsChecked == true;
         _settings.Events.Subs = EventSubsCheck.IsChecked == true;
         _settings.Events.Raids = EventRaidsCheck.IsChecked == true;
         _settings.Events.Announcements = EventAnnouncementsCheck.IsChecked == true;

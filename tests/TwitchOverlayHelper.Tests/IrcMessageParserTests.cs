@@ -136,6 +136,109 @@ public sealed class IrcMessageParserTests
         Assert.Empty(IrcMessageParser.ParseEmotes(null, text));
     }
 
+    /// <summary>
+    /// The GIFs tier 2 and tier 3 subscribers send. Twitch writes the picture's description into the
+    /// message itself and names the range covering it, so the line still reads without us – but the
+    /// range is what lets the views put the picture back where the sender meant it to go.
+    /// </summary>
+    [Fact]
+    public void ParsesGifTag()
+    {
+        const string url = "https://media4.giphy.com/media/joSNxeswxuc74Juo8X/giphy.gif?cid=095d7a5d&ep=v1_gifs_trending&rid=giphy.gif&ct=g";
+        string raw = "@display-name=Fan;gifs=0-33|joSNxeswxuc74Juo8X|" + url
+                     + ";id=g1 :fan!fan@fan.tmi.twitch.tv PRIVMSG #demo :[Y A Y Yes GIF by Djemilah Birnie]";
+
+        Assert.True(IrcMessageParser.TryParseChatMessage(raw, out var message));
+        var gif = Assert.Single(message!.Gifs);
+        Assert.Equal("joSNxeswxuc74Juo8X", gif.GifId);
+        Assert.Equal(url, gif.Url);
+        Assert.Equal("[Y A Y Yes GIF by Djemilah Birnie]", message.Text.Substring(gif.Start, gif.Length));
+    }
+
+    /// <summary>
+    /// A comma separates two GIFs, and is also a character a query string may legally carry. The
+    /// entry only starts where "digits-digits|" does, or one address would be torn in half.
+    /// </summary>
+    [Fact]
+    public void KeepsACommaInsideAGifAddress()
+    {
+        const string url = "https://media.giphy.com/media/abc/giphy.gif?ep=v1,gifs&ct=g";
+        string raw = "@gifs=0-6|abc|" + url + " :fan!fan@fan.tmi.twitch.tv PRIVMSG #demo :[a GIF]";
+
+        Assert.True(IrcMessageParser.TryParseChatMessage(raw, out var message));
+        Assert.Equal(url, Assert.Single(message!.Gifs).Url);
+    }
+
+    [Fact]
+    public void ParsesSeveralGifsSortedByPosition()
+    {
+        const string text = "[b GIF] mitt emellan [a GIF]";
+        var gifs = IrcMessageParser.ParseGifs(
+            "21-27|a|https://media.giphy.com/a.gif,0-6|b|https://media.giphy.com/b.gif", text);
+
+        Assert.Collection(gifs,
+            gif => { Assert.Equal("b", gif.GifId); Assert.Equal("[b GIF]", text.Substring(gif.Start, gif.Length)); },
+            gif => { Assert.Equal("a", gif.GifId); Assert.Equal("[a GIF]", text.Substring(gif.Start, gif.Length)); });
+    }
+
+    [Fact]
+    public void MapsGifIndicesThroughSurrogatePairs()
+    {
+        const string text = "\U0001F600 [a GIF]";
+        var gif = Assert.Single(IrcMessageParser.ParseGifs("2-8|a|https://media.giphy.com/a.gif", text));
+        Assert.Equal("[a GIF]", text.Substring(gif.Start, gif.Length));
+    }
+
+    /// <summary>
+    /// The address comes off the wire and is handed straight to a browser source and to WPF, so
+    /// anything that is not an ordinary https URL is dropped rather than rendered.
+    /// </summary>
+    [Fact]
+    public void IgnoresMalformedGifEntries()
+    {
+        const string text = "[a GIF]";
+        Assert.Empty(IrcMessageParser.ParseGifs("0-6|a|javascript:alert(1)", text));
+        Assert.Empty(IrcMessageParser.ParseGifs("0-6|a|file://C:/secret.gif", text));
+        Assert.Empty(IrcMessageParser.ParseGifs("0-6|a", text));
+        Assert.Empty(IrcMessageParser.ParseGifs("0-99|a|https://media.giphy.com/a.gif", text));
+        Assert.Empty(IrcMessageParser.ParseGifs("x-y|a|https://media.giphy.com/a.gif", text));
+        Assert.Empty(IrcMessageParser.ParseGifs(null, text));
+    }
+
+    /// <summary>
+    /// The end of a range is read one past itself, so an end at the top of the int range used to
+    /// wrap round to a negative index and throw – on the socket read loop, which took the whole
+    /// connection down with it. Anything a stranger can put in a tag has to come back empty instead.
+    /// </summary>
+    [Theory]
+    [InlineData("2147483647")]
+    [InlineData("2147483646")]
+    public void IgnoresRangesAtTheTopOfTheIntRange(string end)
+    {
+        const string text = "[a GIF]";
+        Assert.Empty(IrcMessageParser.ParseGifs($"0-{end}|a|https://media.giphy.com/a.gif", text));
+        Assert.Empty(IrcMessageParser.ParseEmotes($"25:0-{end}", text));
+        Assert.Empty(IrcMessageParser.ParseGifs($"{end}-{end}|a|https://media.giphy.com/a.gif", text));
+        Assert.Empty(IrcMessageParser.ParseEmotes($"25:{end}-{end}", text));
+    }
+
+    /// <summary>
+    /// A GIF sent as a reply. The positions are counted against the text as Twitch sent it, so they
+    /// have to move along with the "@name " the parser cuts off the front.
+    /// </summary>
+    [Fact]
+    public void MovesGifPositionsWhenTheReplyMentionIsCut()
+    {
+        const string raw = "@gifs=7-13|a|https://media.giphy.com/a.gif;reply-parent-msg-id=p1;reply-parent-user-login=benji;"
+                           + "reply-parent-display-name=Benji;reply-parent-user-id=1;reply-parent-msg-body=hej"
+                           + " :fan!fan@fan.tmi.twitch.tv PRIVMSG #demo :@Benji [a GIF]";
+
+        Assert.True(IrcMessageParser.TryParseChatMessage(raw, out var message));
+        Assert.Equal("[a GIF]", message!.Text);
+        var gif = Assert.Single(message.Gifs);
+        Assert.Equal("[a GIF]", message.Text.Substring(gif.Start, gif.Length));
+    }
+
     [Fact]
     public void ParsesReplyTagsAndCutsTheRepeatedMention()
     {

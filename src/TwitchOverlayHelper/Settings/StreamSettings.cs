@@ -46,6 +46,11 @@ public sealed class StreamSettings
     public bool UseTwitchNameColors { get; set; } = true;
     public bool ShowEmotes { get; set; } = true;
     public bool GiantEmotes { get; set; } = true;
+    /// <summary>
+    /// Draws the GIFs tier 2 and tier 3 subscribers can send. Off leaves the line as Twitch worded
+    /// it – "[Yes GIF by Someone]" – which is a sentence in its own right, so nothing goes missing.
+    /// </summary>
+    public bool ShowGifs { get; set; } = true;
     /// <summary>Off by default: the viewers can see the clock on their own stream.</summary>
     public bool ShowTimestamps { get; set; }
     /// <summary>The quiet "answering X" line above a reply, so an answer is not read as a new thought.</summary>

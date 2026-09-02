@@ -22,6 +22,12 @@ internal sealed record DockBadge(string SetId, string Version, string? ImageUrl,
 
 internal sealed record DockEmote(string Id, int Start, int Length);
 
+/// <summary>
+/// One GIF and the stretch of the message text it stands in for. The address is Twitch's own and
+/// travels unchanged – see <see cref="GifSpan"/>.
+/// </summary>
+internal sealed record DockGif(string Id, string Url, int Start, int Length);
+
 /// <summary>The answered message, shown as one quiet line above the reply. The id lets the dock
 /// jump to it when it is still on screen.</summary>
 internal sealed record DockReply(string MessageId, string Login, string DisplayName, string Text);
@@ -35,6 +41,7 @@ internal sealed record DockMessage(
     string? Color,
     IReadOnlyList<DockBadge> Badges,
     IReadOnlyList<DockEmote> Emotes,
+    IReadOnlyList<DockGif> Gifs,
     bool IsFirstMessage,
     bool IsHighlighted,
     bool IsAction,
@@ -350,6 +357,7 @@ internal static class DockMapper
             message.NameColor,
             badges,
             ToDock(message.Emotes),
+            ToDock(message.Gifs),
             message.IsFirstMessage,
             message.IsHighlighted,
             message.IsAction,
@@ -446,6 +454,14 @@ internal static class DockMapper
         var result = new List<DockEmote>(emotes.Count);
         foreach (EmoteSpan emote in emotes)
             result.Add(new DockEmote(emote.EmoteId, emote.Start, emote.Length));
+        return result;
+    }
+
+    private static IReadOnlyList<DockGif> ToDock(IReadOnlyList<GifSpan> gifs)
+    {
+        var result = new List<DockGif>(gifs.Count);
+        foreach (GifSpan gif in gifs)
+            result.Add(new DockGif(gif.GifId, gif.Url, gif.Start, gif.Length));
         return result;
     }
 

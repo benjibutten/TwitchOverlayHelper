@@ -10,8 +10,8 @@
    different opinions about what a name is for, and the moment this file knew about either of them it
    would stop being usable by both.
 
-   The settings object needs four things: calmShouting, showEmotes, giantEmotes and collapseLinks.
-   Both views' settings carry them under those names, which is why neither has to translate. */
+   The settings object needs five things: calmShouting, showEmotes, showGifs, giantEmotes and
+   collapseLinks. Both views' settings carry them under those names, so neither has to translate. */
 
 /* Nobody in chat types "https://". A link is written the way it is read – "linktr.ee/perralinks" –
    and a pattern that only knows schemes leaves most of them lying there as dead text. So a bare
@@ -90,6 +90,90 @@ function appendText(target, text, calm, collapse) {
    is the same choice the picker makes – the two must never show different pictures of one emote. */
 const emoteUrl = (id, size) => `https://static-cdn.jtvnw.net/emoticons/v2/${encodeURIComponent(id)}/default/dark/${size}`;
 
+/* The same ceiling the desktop overlay puts on a chat GIF – see MaxGifBytes in OverlayWindow.
+   Whoever picked the GIF is a stranger with a tier 2 sub, and a browser source is the last place
+   that should be talked into pulling down a hundred megabytes: the CSS only decides how big the
+   picture is drawn, not how much of it comes over the wire. */
+const MAX_GIF_BYTES = 6 * 1024 * 1024;
+
+/* Reads the body and gives up the moment it goes past the ceiling, rather than trusting the length
+   the server declared – the header is a claim, and the bytes are what actually arrive. Cancelling
+   the reader closes the connection, so an oversized GIF stops costing anything at that point. */
+async function readWithinLimit(response, limit) {
+  const type = response.headers.get("content-type") || "image/gif";
+  if (!response.body) {
+    const whole = await response.blob();
+    if (whole.size > limit) throw new Error("för stor");
+    return whole;
+  }
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel();
+      throw new Error("för stor");
+    }
+    chunks.push(value);
+  }
+  return new Blob(chunks, { type });
+}
+
+/* Fetched rather than handed straight to the img element, because that is the only way a page gets
+   to see the size before the picture is on screen. Giphy, which is where the power-up takes them
+   from, answers with "access-control-allow-origin: *", so this reads the same bytes an img would
+   have – the address is still Twitch's own and still goes out unrewritten, signed query and all. */
+async function loadGifWithinLimit(url) {
+  const response = await fetch(url, { mode: "cors", credentials: "omit", referrerPolicy: "no-referrer" });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+  // Believed when it is over the ceiling, so an oversized GIF is dropped before a byte of it is read.
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_GIF_BYTES) throw new Error("för stor");
+
+  return URL.createObjectURL(await readWithinLimit(response, MAX_GIF_BYTES));
+}
+
+/* One picture a tier 2 or tier 3 subscriber sent. The description Twitch wrote into the message
+   becomes the alt text, so a GIF that never loads still says what it was. */
+function appendGif(target, gif, description) {
+  const image = document.createElement("img");
+  image.className = "chat-gif";
+  image.alt = description;
+  image.title = description;
+  target.appendChild(image);
+
+  /* Falling back to the words, which is the same thing the overlay does: an image that failed is a
+     broken-picture icon, and the sentence Twitch wrote is better than that. Too big falls back the
+     same way, and for the same reason it does there – the line still reads without the picture. */
+  const fallBackToDescription = () => image.replaceWith(document.createTextNode(description));
+  image.addEventListener("error", fallBackToDescription, { once: true });
+
+  loadGifWithinLimit(gif.url).then((objectUrl) => {
+    // Handed back as soon as the picture is decoded; the drawn image, animation and all, lives on
+    // without it. A stream runs for hours, and every GIF held onto here would be held until it ends.
+    const release = () => URL.revokeObjectURL(objectUrl);
+    image.addEventListener("load", release, { once: true });
+    image.addEventListener("error", release, { once: true });
+    image.src = objectUrl;
+  }, fallBackToDescription);
+}
+
+/* The emotes and the GIFs are two lists of ranges over the same text, and a line can carry both –
+   "hej Kappa [Yes GIF by Someone]". Merged into one list in reading order so the walk below stays a
+   single pass with a single cursor, which is what keeps overlapping ranges from drawing twice. */
+function spansOf(emotes, gifs) {
+  const spans = [];
+  for (let i = 0; i < emotes.length; i++) spans.push({ kind: "emote", value: emotes[i], index: i });
+  for (const gif of gifs) spans.push({ kind: "gif", value: gif, index: -1 });
+  spans.sort((a, b) => a.value.start - b.value.start);
+  return spans;
+}
+
 function renderBody(message, view) {
   const body = document.createElement("span");
   body.className = "msg-text";
@@ -107,23 +191,31 @@ function renderBody(message, view) {
      enlarges the same emote; showing it big is a setting of its own, because a three-line-tall image
      is exactly the kind of thing a narrow column – or a corner of a broadcast – wants to tame. */
   const giant = view.giantEmotes ? message.giantEmote : undefined;
+  const gifs = view.showGifs !== false ? (message.gifs || []) : [];
 
   let cursor = 0;
-  for (let i = 0; i < emotes.length; i++) {
-    const emote = emotes[i];
-    if (emote.start < cursor || emote.start + emote.length > message.text.length) continue;
-    if (emote.start > cursor) appendText(body, message.text.slice(cursor, emote.start), calm, collapse);
+  for (const span of spansOf(emotes, gifs)) {
+    const { start, length } = span.value;
+    if (start < cursor || start + length > message.text.length) continue;
+    if (start > cursor) appendText(body, message.text.slice(cursor, start), calm, collapse);
+    const covered = message.text.substr(start, length);
+    cursor = start + length;
+
+    if (span.kind === "gif") {
+      appendGif(body, span.value, covered);
+      continue;
+    }
+
     const image = document.createElement("img");
     image.className = "emote";
     image.loading = "lazy";
-    image.alt = message.text.substr(emote.start, emote.length);
+    image.alt = covered;
     image.title = image.alt;
     // The 3.0 variant is the only one with the pixels for it; 2.0 scaled up is a blurry mess.
-    const size = i === giant ? "3.0" : "2.0";
-    if (i === giant) image.dataset.giant = "true";
-    image.src = emoteUrl(emote.id, size);
+    const size = span.index === giant ? "3.0" : "2.0";
+    if (span.index === giant) image.dataset.giant = "true";
+    image.src = emoteUrl(span.value.id, size);
     body.appendChild(image);
-    cursor = emote.start + emote.length;
   }
   if (cursor < message.text.length) appendText(body, message.text.slice(cursor), calm, collapse);
   return body;

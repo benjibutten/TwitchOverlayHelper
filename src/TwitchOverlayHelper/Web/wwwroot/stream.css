@@ -108,6 +108,12 @@ body[data-nameline="true"] .msg-head::after { content: ""; margin: 0; }
 .badge { height: 1em; width: auto; vertical-align: -0.12em; margin-right: 0.15em; }
 .emote { height: 1.4em; width: auto; vertical-align: -0.35em; }
 .emote[data-giant="true"] { height: 3em; vertical-align: -0.9em; }
+/* A GIF on the broadcast: a row of its own, and capped tighter than the dock's – this one is lying
+   over the picture, and a viewer's GIF must not become the largest thing on the stream. */
+.chat-gif {
+  display: block; max-width: min(100%, 280px); max-height: 180px;
+  width: auto; height: auto; margin: 0.2em 0 0.1em; border-radius: 8px;
+}
 
 .tag {
   display: inline-block;

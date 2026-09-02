@@ -243,6 +243,7 @@
                                     <CheckBox x:Name="MentionsCheck" Content="Markera meddelanden till mig" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
                                     <CheckBox x:Name="EmotesCheck" Content="Visa emotes som bilder" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
                                     <CheckBox x:Name="GiantEmotesCheck" Content="Visa förstorade emotes i full storlek" ToolTip="Power-upen “Gigantify an Emote” gör en emote tre gånger så stor. Av: emoten visas i vanlig storlek med en markör i stället." Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
+                                    <CheckBox x:Name="GifsCheck" Content="Visa gif:ar från prenumeranter" ToolTip="Tier 2- och tier 3-prenumeranter kan skicka gif:ar i chatten. Av: raden visas som Twitch beskriver den, till exempel [Yes GIF by Someone]." Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
                                     <CheckBox x:Name="OutlineCheck" Content="Kantlinje runt texten" ToolTip="Gör texten läsbar även utan bakgrund" Checked="Setting_ValueChanged" Unchecked="Setting_ValueChanged" />
                                 </StackPanel>
                             </Border>
