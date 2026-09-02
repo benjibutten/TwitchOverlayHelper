@@ -681,6 +681,74 @@ public sealed class BotServiceTests
     }
 
     /// <summary>
+    /// The spin's collection commands answer with one viewer's own data, so their cooldown must not
+    /// let one viewer's turn eat the next viewer's – that reads as the command being broken for
+    /// whoever asks second. Answered per {viewer}; asked again by the same one before the cooldown
+    /// is up still says nothing.
+    /// </summary>
+    [Fact]
+    public async Task A_named_flows_cooldown_is_per_viewer_not_channel_wide()
+    {
+        await using var app = new BotHarness();
+
+        app.Bot.Announce(BotFlow.SpinList, Values("Kajsa"), ignoreCooldown: false);
+        app.Bot.Announce(BotFlow.SpinList, Values("Ove"), ignoreCooldown: false);
+
+        IReadOnlyList<string> lines = await app.Chat.WaitFor(2);
+        Assert.Equal(2, lines.Count);
+        Assert.Contains(lines, line => line.Contains("Kajsa"));
+        Assert.Contains(lines, line => line.Contains("Ove"));
+
+        app.Bot.Announce(BotFlow.SpinList, Values("Kajsa"), ignoreCooldown: false);
+        Assert.Equal(2, (await app.Chat.Settle()).Count);
+
+        static Dictionary<string, string> Values(string viewer) =>
+            new(StringComparer.OrdinalIgnoreCase) { ["viewer"] = viewer, ["list"] = "Space-Cat", ["count"] = "1" };
+    }
+
+    /// <summary>
+    /// The pool is the same list for everyone who asks, unlike the collection commands above, so its
+    /// cooldown stays channel-wide on purpose even though its template also names the asker.
+    /// </summary>
+    [Fact]
+    public async Task The_pool_commands_cooldown_stays_channel_wide()
+    {
+        await using var app = new BotHarness();
+
+        app.Bot.Announce(BotFlow.SpinPool, Values("Kajsa"), ignoreCooldown: false);
+        app.Bot.Announce(BotFlow.SpinPool, Values("Ove"), ignoreCooldown: false);
+
+        IReadOnlyList<string> lines = await app.Chat.WaitFor(1);
+        Assert.Single(lines);
+        Assert.Contains("Kajsa", lines[0]);
+        Assert.Single(await app.Chat.Settle());
+
+        static Dictionary<string, string> Values(string viewer) =>
+            new(StringComparer.OrdinalIgnoreCase) { ["viewer"] = viewer, ["list"] = "Space-Cat", ["count"] = "1" };
+    }
+
+    /// <summary>
+    /// A long-lived stream must not grow the cooldown table by one entry per viewer forever – once an
+    /// entry's own window has passed it can no longer block anything, so the tick sweeps it away.
+    /// </summary>
+    [Fact]
+    public async Task A_tick_prunes_cooldown_entries_once_their_window_has_passed()
+    {
+        await using var app = new BotHarness(bot => bot.Rule(BotFlow.SpinList).CooldownSeconds = 1);
+        Dictionary<string, string> values =
+            new(StringComparer.OrdinalIgnoreCase) { ["viewer"] = "Kajsa", ["list"] = "Space-Cat", ["count"] = "1" };
+
+        app.Bot.Announce(BotFlow.SpinList, values, ignoreCooldown: false);
+        await app.Chat.WaitFor(1);
+        Assert.Equal(1, app.Bot.CooldownEntryCount);
+
+        await Task.Delay(1100);
+        app.Bot.Tick();
+
+        Assert.Equal(0, app.Bot.CooldownEntryCount);
+    }
+
+    /// <summary>
     /// A scene change in OBS drops every lawn for a second or two. Announcing that would be
     /// announcing the streamer's scene changes to the channel.
     /// </summary>

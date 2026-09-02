@@ -52,8 +52,15 @@ public sealed class BotService : IDisposable
     private readonly Timer _timer;
     private readonly Lock _gate = new();
 
-    /// <summary>When each flow last spoke, so its cooldown can be honoured.</summary>
-    private readonly Dictionary<BotFlow, DateTimeOffset> _lastSaid = [];
+    /// <summary>
+    /// When each flow last spoke, so its cooldown can be honoured. Keyed by the viewer named in the
+    /// line too, not the flow alone: a flow that answers with one person's own data (the spin's
+    /// collection commands, above all) would otherwise let one viewer's answer use up the cooldown
+    /// for everybody else's, which reads as the command "not working" for the second person to try
+    /// it. A flow that names nobody keys on the empty string, which is exactly today's channel-wide
+    /// behaviour.
+    /// </summary>
+    private readonly Dictionary<(BotFlow Flow, string Viewer), DateTimeOffset> _lastSaid = [];
 
     /// <summary>The same for the streamer's own commands, keyed by the word that sets them off.</summary>
     private readonly Dictionary<string, DateTimeOffset> _commandsSaid = new(StringComparer.OrdinalIgnoreCase);
@@ -360,6 +367,12 @@ public sealed class BotService : IDisposable
     /// answered yet, a batch of refunds old enough to be counted, and an overlay that has been gone
     /// long enough to mean it.
     /// </summary>
+    /// <summary>How many cooldown entries are being kept, for the test that proves they get pruned.</summary>
+    internal int CooldownEntryCount
+    {
+        get { lock (_gate) return _lastSaid.Count; }
+    }
+
     internal void Tick()
     {
         try
@@ -369,12 +382,37 @@ public sealed class BotService : IDisposable
             NudgeWaitingReadings(now);
             FlushRefunds(now);
             ReportOverlayDown(now);
+            PruneExpiredCooldowns(now);
         }
         catch (Exception ex)
         {
             // A timer callback that throws takes the process with it, and this one runs while the
             // streamer is live.
             AppLog.Error("Bot: fel i botens rond", ex);
+        }
+    }
+
+    /// <summary>
+    /// Drops the cooldown entries that could no longer block anything even if asked about right now.
+    /// A per-viewer flow leaves one entry behind per person who has ever asked, and on a stream that
+    /// runs for hours that would otherwise grow for as long as the bot does; nothing here shortens or
+    /// lengthens a cooldown, since an entry is only ever removed once its own window has already
+    /// passed.
+    /// </summary>
+    private void PruneExpiredCooldowns(DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            if (_lastSaid.Count == 0) return;
+            List<(BotFlow Flow, string Viewer)>? expired = null;
+            foreach ((BotFlow Flow, string Viewer) key in _lastSaid.Keys)
+            {
+                int cooldown = Bot.Rule(key.Flow).CooldownSeconds;
+                if (cooldown <= 0 || now - _lastSaid[key] >= TimeSpan.FromSeconds(cooldown))
+                    (expired ??= []).Add(key);
+            }
+            if (expired is null) return;
+            foreach ((BotFlow Flow, string Viewer) key in expired) _lastSaid.Remove(key);
         }
     }
 
@@ -454,6 +492,15 @@ public sealed class BotService : IDisposable
     }
 
     /// <summary>
+    /// The flows whose cooldown protects one viewer's own turn rather than the channel's – asking
+    /// again too soon blocks only the asker, not whoever asks next. Everything not listed here keeps
+    /// a single channel-wide cooldown, which is the right default: a flow added later without an
+    /// entry here fails safe as "shared", the same throttling every other flow has always had, rather
+    /// than silently opening up as per-viewer.
+    /// </summary>
+    private static readonly HashSet<BotFlow> PerViewerCooldownFlows = [BotFlow.SpinList, BotFlow.SpinListEmpty];
+
+    /// <summary>
     /// Writes one line, if this flow is switched on and has not just spoken. The cooldown is skipped
     /// for the flows that name a person: two viewers owed their points back are two answers, and
     /// silencing the second one leaves somebody who paid with nothing at all.
@@ -466,12 +513,16 @@ public sealed class BotService : IDisposable
         if (!ignoreCooldown && rule.CooldownSeconds > 0)
         {
             DateTimeOffset now = DateTimeOffset.UtcNow;
+            (BotFlow, string) key = (flow, PerViewerCooldownFlows.Contains(flow)
+                && values is not null && values.TryGetValue("viewer", out string? viewer)
+                ? viewer.ToLowerInvariant()
+                : string.Empty);
             lock (_gate)
             {
-                if (_lastSaid.TryGetValue(flow, out DateTimeOffset last)
+                if (_lastSaid.TryGetValue(key, out DateTimeOffset last)
                     && now - last < TimeSpan.FromSeconds(rule.CooldownSeconds))
                     return;
-                _lastSaid[flow] = now;
+                _lastSaid[key] = now;
             }
         }
 
