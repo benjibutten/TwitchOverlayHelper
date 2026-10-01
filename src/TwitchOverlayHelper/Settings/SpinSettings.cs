@@ -54,6 +54,12 @@ public sealed class SpinSettings
     /// </summary>
     public string PoolCommand { get; set; } = "!alla";
 
+    /// <summary>
+    /// What a winner types to put a duplicate win on the lawn themselves instead of giving it away.
+    /// Spends the gift the same way a gift does.
+    /// </summary>
+    public string ReleaseCommand { get; set; } = "!släpp";
+
     /// <inheritdoc cref="PetRewardRule.CanRefund"/>
     public bool CanRefund => Managed && RewardId.Length > 0;
 
@@ -91,6 +97,11 @@ public sealed class SpinSettings
         if (string.Equals(PoolCommand, ListCommand, StringComparison.OrdinalIgnoreCase)
             || string.Equals(PoolCommand, GiveCommand, StringComparison.OrdinalIgnoreCase))
             PoolCommand = FreeWord(["!alla", "!vinster", "!lista"], ListCommand, GiveCommand);
+        ReleaseCommand = EdgeAlertSettings.CleanCommand(string.IsNullOrWhiteSpace(ReleaseCommand) ? "!släpp" : ReleaseCommand);
+        if (string.Equals(ReleaseCommand, ListCommand, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ReleaseCommand, GiveCommand, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ReleaseCommand, PoolCommand, StringComparison.OrdinalIgnoreCase))
+            ReleaseCommand = FreeWord(["!släpp", "!visa", "!ut"], ListCommand, GiveCommand, PoolCommand);
     }
 
     /// <summary>The first of these words nothing else has already claimed. The last is the fallback.</summary>

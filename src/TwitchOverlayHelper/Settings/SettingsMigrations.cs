@@ -37,9 +37,11 @@ public static class SettingsMigrations
     /// promised the points back are worded afresh where the streamer had left them as they were.</description></item>
     /// <item><description>3 – the spin's win lines can say the tier the prize was drawn on, and the
     /// two that announce a win are given the <c>{rarity}</c> wording where they were left untouched.</description></item>
+    /// <item><description>4 – a duplicate can be released onto the lawn instead of given away, and the
+    /// line that explains the choice names the <c>{release}</c> command where it was left untouched.</description></item>
     /// </list>
     /// </summary>
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     public static SettingsMigrationResult Apply(AppSettings settings)
     {
@@ -83,6 +85,11 @@ public static class SettingsMigrations
                 Reword(settings.Bot, BotFlow.SpinWin, "🎉 @{viewer} vann {prize} i lyckosnurren!");
                 Reword(settings.Bot, BotFlow.SpinDuplicate,
                     "@{viewer} du vann {prize} – men den har du redan! Skriv \"{command} namn\" inom {minutes} min för att skänka den till någon, annars är chansen borta.");
+                break;
+
+            case 3:
+                Reword(settings.Bot, BotFlow.SpinDuplicate,
+                    "@{viewer} du vann {prize} ({rarity}) – men den har du redan! Skriv \"{command} namn\" inom {minutes} min för att skänka den till någon, annars är chansen borta.");
                 break;
         }
     }

@@ -120,6 +120,7 @@ const ui = {
   notes: document.getElementById("notes"),
   title: document.getElementById("petTitle"),
   reload: document.getElementById("reloadBtn"),
+  preview: document.getElementById("previewBtn"),
 };
 
 /* ------------------------------------------------------------------ the catalog */
@@ -760,6 +761,12 @@ ui.reload.addEventListener("click", async () => {
     ui.petPick.value = current;
     showPet(current);
   }
+});
+
+// One named tab, so a second pet replaces the first instead of piling up tabs.
+ui.preview.addEventListener("click", () => {
+  if (!state.def) return;
+  window.open(`pet-preview.html?key=${encodeURIComponent(KEY)}&preview=${encodeURIComponent(state.def.id)}`, "pet-preview");
 });
 
 ui.animPick.addEventListener("change", () => {

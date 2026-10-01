@@ -66,11 +66,12 @@ public static class BotTemplate
         BotFlow.Raid => ["viewer", "viewers", "link"],
         BotFlow.HypeTrainEnd => ["level"],
         BotFlow.SpinWin => ["viewer", "prize", "rarity"],
-        BotFlow.SpinDuplicate => ["viewer", "prize", "rarity", "command", "minutes"],
+        BotFlow.SpinDuplicate => ["viewer", "prize", "rarity", "command", "release", "minutes"],
         BotFlow.SpinGifted => ["viewer", "prize", "target"],
         BotFlow.SpinGiftUnknown => ["viewer", "target"],
         BotFlow.SpinGiftOwned => ["viewer", "prize", "target"],
         BotFlow.SpinGiftExpired => ["viewer", "prize"],
+        BotFlow.SpinReleased => ["viewer", "prize"],
         BotFlow.SpinList => ["viewer", "list", "count"],
         BotFlow.SpinListEmpty => ["viewer"],
         BotFlow.SpinPool => ["viewer", "list", "count"],
@@ -109,6 +110,7 @@ public static class BotTemplate
             ["target"] = "Pelle",
             ["list"] = $"Gyllene Draken ({PetRarity.Legendary}), Space-Cat ({PetRarity.Common})",
             ["command"] = "!ge",
+            ["release"] = "!släpp",
             ["minutes"] = "10"
         };
         values["reason"] = flow switch

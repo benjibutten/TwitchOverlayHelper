@@ -5,6 +5,8 @@
    the server says is alive. */
 
 const KEY = new URLSearchParams(location.search).get("key") || "";
+/* The species pet-preview.html shows alone. Empty on the real overlay. */
+const PREVIEW = new URLSearchParams(location.search).get("preview") || "";
 const stage = document.getElementById("stage");
 
 const pets = new Map(); // id -> pet
@@ -786,6 +788,78 @@ function celebrate(panel) {
 
 function nextFrame() { return new Promise((resolve) => requestAnimationFrame(() => resolve())); }
 
+/* ------------------------------------------------------------------ preview
+
+   pet-preview.html runs this same file with one species named in its address, so the creature it
+   shows is drawn, sized and paced exactly as on stream. It never opens the socket: nothing it does
+   reaches the app, the real lawn or the viewers, and the settings and the catalog are read once over
+   HTTP the way the inspector reads them. */
+
+const PREVIEW_ID = "preview";
+let previewReturning = false;
+
+async function startPreview() {
+  const status = document.getElementById("previewStatus");
+  const get = (path) => fetch(`${path}?key=${encodeURIComponent(KEY)}`)
+    .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))));
+  try {
+    const [petSettings, list] = await Promise.all([get("/api/pets/settings"), get("/api/pets/catalog")]);
+    // Shown even with the pets switched off in the app: looking at one is the page's whole purpose.
+    applySettings({ ...petSettings, enabled: true });
+    applyCatalog(list);
+  } catch {
+    status.textContent = "Kunde inte hämta pets från appen. Kör chattservern och öppna sidan från appen igen.";
+    return;
+  }
+
+  const def = catalog.get(PREVIEW);
+  if (!def) {
+    status.textContent = `Det finns ingen pet som heter "${PREVIEW}" längre.`;
+    return;
+  }
+  document.title = `${def.name} – som på streamen`;
+  document.getElementById("previewName").textContent = def.name;
+  spawnPreview();
+}
+
+function spawnPreview() {
+  const def = catalog.get(PREVIEW);
+  if (def) spawnPet({ id: PREVIEW_ID, name: def.name, species: def.id, expiresAt: Infinity });
+}
+
+/* The page's own button: the pet leaves the way it leaves the lawn and arrives again, so the
+   entrance can be watched as often as it takes. */
+function respawnPreview() {
+  if (previewReturning) return;
+  if (!pets.has(PREVIEW_ID)) { spawnPreview(); return; }
+  previewReturning = true;
+  removePet(PREVIEW_ID, true);
+  setTimeout(() => { previewReturning = false; spawnPreview(); }, 1100);
+}
+
+const BUDDY_ID = "preview-buddy";
+let buddyArriving = false;
+
+/* A random other species beside the previewed one, so a fight, a cuddle or a meal together can be
+   watched. A second click swaps the buddy for a new one. */
+function spawnBuddy() {
+  if (buddyArriving) return;
+  const others = [...catalog.values()].filter((def) => def.id !== PREVIEW);
+  const def = pick(others.length > 0 ? others : [...catalog.values()]);
+  if (!def) return;
+
+  const arrive = () => {
+    buddyArriving = false;
+    spawnPet({ id: BUDDY_ID, name: def.name, species: def.id, expiresAt: Infinity });
+    // On the lawn a duet waits up to half a minute; here the meeting is the point of the button.
+    nextDuetAt = Date.now() + 2500;
+  };
+  if (!pets.has(BUDDY_ID)) { arrive(); return; }
+  buddyArriving = true;
+  removePet(BUDDY_ID, true);
+  setTimeout(arrive, 1100);
+}
+
 /* ------------------------------------------------------------------ main loop */
 
 let lastTick = performance.now();
@@ -854,5 +928,5 @@ addEventListener("resize", () => {
   }
 });
 
-connect();
+if (PREVIEW) startPreview(); else connect();
 requestAnimationFrame(tick);

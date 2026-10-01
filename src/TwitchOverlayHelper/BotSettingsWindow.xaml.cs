@@ -214,6 +214,7 @@ internal static class BotFlowText
         BotFlow.SpinGiftUnknown => "Mottagaren finns inte",
         BotFlow.SpinGiftOwned => "Mottagaren hade den redan",
         BotFlow.SpinGiftExpired => "Gåvan hann rinna ut",
+        BotFlow.SpinReleased => "Dubbletten släpptes ut på skärmen",
         BotFlow.SpinList => "Svar på samlingskommandot",
         BotFlow.SpinListEmpty => "Samlingen är tom",
         BotFlow.SpinPool => "Svar på vinstlistan",
@@ -255,13 +256,15 @@ internal static class BotFlowText
         BotFlow.HypeTrainEnd => "När hypetåget är slut, med nivån det nådde.",
         BotFlow.SpinWin => "När snurren stannat och någon fått en ny pet till sitt konto. {prize} är den de vann och {rarity} hur sällsynt den är.",
         BotFlow.SpinDuplicate =>
-            "När snurren landat på något de redan äger. Poängen är spenderade – det som återstår är en chans att skänka bort peten, och raden är instruktionen för det. Utan den vet vinnaren inte vad som ska skrivas, och chansen rinner ut i onödan. {command} är kommandot, {minutes} tiden de har på sig och {rarity} hur sällsynt vinsten var.",
+            "När snurren landat på något de redan äger. Poängen är spenderade – det som återstår är en chans att skänka bort peten, och raden är instruktionen för det. Utan den vet vinnaren inte vad som ska skrivas, och chansen rinner ut i onödan. {command} är kommandot för att skänka, {release} det för att släppa ut peten på skärmen själv, {minutes} tiden de har på sig och {rarity} hur sällsynt vinsten var.",
         BotFlow.SpinGifted => "När en dubblett skänkts vidare. {target} är den som fick den.",
         BotFlow.SpinGiftUnknown => "När namnet de skrev inte matchar något Twitch-konto. Gåvan ligger kvar, så de kan skriva igen.",
         BotFlow.SpinGiftOwned =>
             "När den de valde redan äger vinsten – dem själva inräknat. Ingen får peten och gåvan är slut: det var chansen. Ett namn som inte finns på Twitch räknas inte som ett försök, så där ligger gåvan kvar.",
         BotFlow.SpinGiftExpired =>
             "När tiden gått ut utan att någon mottagare valdes, eller när vinnaren snurrat fram en ny dubblett innan de hann skänka den förra. Inga poäng kommer tillbaka – raden finns för att ingen ska sitta och vänta på en gåva som inte längre går att ge.",
+        BotFlow.SpinReleased =>
+            "När vinnaren av en dubblett valt att släppa ut den på skärmen i stället för att skänka bort den. Peten stannar lika länge som en vanlig pet, och gåvan är förbrukad.",
         BotFlow.SpinList =>
             "Svaret när någon skriver kommandot för att se sin samling. {list} är arterna de vunnit – var och en med sin raritet – och {count} hur många.",
         BotFlow.SpinListEmpty => "Samma kommando, men från någon som inte vunnit något än.",
