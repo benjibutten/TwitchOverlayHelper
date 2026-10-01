@@ -168,6 +168,27 @@ public sealed class SettingsDurabilityTests
         Assert.Equal("@{viewer} dubblett! {prize} igen.", loaded.Bot.Rule(BotFlow.SpinDuplicate).Template);
     }
 
+    [Fact]
+    public void TheDuplicateLineLearnsTheReleaseCommandOnlyWhereItWasLeftUntouched()
+    {
+        using var folder = new TempFolder();
+        string untouched = Path.Combine(folder.Path, "untouched.json");
+        File.WriteAllText(untouched, """
+            {
+              "SchemaVersion": 3,
+              "Bot": { "Messages": [ { "Flow": "SpinDuplicate", "Enabled": true,
+                "Template": "@{viewer} du vann {prize} ({rarity}) – men den har du redan! Skriv \"{command} namn\" inom {minutes} min för att skänka den till någon, annars är chansen borta." } ] }
+            }
+            """);
+        string written = Path.Combine(folder.Path, "written.json");
+        File.WriteAllText(written, """
+            {"SchemaVersion":3,"Bot":{"Messages":[{"Flow":"SpinDuplicate","Enabled":true,"Template":"@{viewer} dubblett! {prize} igen."}]}}
+            """);
+
+        Assert.Contains("{release}", new SettingsStore(untouched).Load().Bot.Rule(BotFlow.SpinDuplicate).Template);
+        Assert.Equal("@{viewer} dubblett! {prize} igen.", new SettingsStore(written).Load().Bot.Rule(BotFlow.SpinDuplicate).Template);
+    }
+
     // A flow an old file never held at all: the migration has nothing to reword, and normalisation
     // is what has to put this build's wording there instead.
     [Fact]

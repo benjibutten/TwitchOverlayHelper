@@ -108,6 +108,11 @@ public sealed class SpinSettingsTests
         var blank = new SpinSettings { PoolCommand = "   " };
         blank.Normalize();
         Assert.Equal("!alla", blank.PoolCommand);
+        Assert.Equal("!släpp", blank.ReleaseCommand);
+
+        var release = new SpinSettings { GiveCommand = "!släpp", ReleaseCommand = "släpp" };
+        release.Normalize();
+        Assert.NotEqual(release.ReleaseCommand, release.GiveCommand, StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -888,6 +893,33 @@ public sealed class SpinServiceTests : IDisposable
 
         Assert.Contains(harness.Announced, entry => entry.Flow == BotFlow.SpinDuplicate);
         Assert.True(harness.Store.HoldsPending("r1"));
+    }
+
+    [Fact]
+    public void AReleasedDuplicateWalksOnForItsWinnerAndSpendsTheGift()
+    {
+        WriteWinnablePet("drake", "Gyllene Draken");
+        Harness harness = Build();
+        harness.Store.Add(new SpinWin("7", "kajsa", "Kajsa", "drake", DateTimeOffset.UtcNow));
+        harness.Spins.HandleRedemption(Redemption());
+
+        Assert.True(harness.Spins.HandleChatMessage(Message("!släpp")));
+
+        Assert.Equal("drake", Assert.Single(harness.Registry.Snapshot()).Species);
+        Assert.False(harness.Store.HoldsPending("r1"));
+        Assert.Contains(harness.Announced, entry => entry.Flow == BotFlow.SpinReleased && entry.Values["prize"] == "Gyllene Draken");
+        // Released is placed: there is no gift left to hand to anybody.
+        Assert.False(harness.Spins.HandleChatMessage(Message("!ge pelle")));
+    }
+
+    [Fact]
+    public void TheReleaseCommandWithoutAnOpenGiftIsLeftForOthers()
+    {
+        WriteWinnablePet("drake", "Gyllene Draken");
+        Harness harness = Build();
+
+        Assert.False(harness.Spins.HandleChatMessage(Message("!släpp")));
+        Assert.Empty(harness.Registry.Snapshot());
     }
 
     // Somebody with nothing to give may be using a command the streamer defined for something else.

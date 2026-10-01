@@ -89,7 +89,7 @@
                     <StackPanel>
                         <TextBlock Text="Kommandon och dubbletter" FontSize="17" FontWeight="SemiBold" />
                         <TextBlock TextWrapping="Wrap" Foreground="#A8A3B8" FontSize="12.5" LineHeight="18" Margin="0,5,0,12"
-                                   Text="Landar snurren på något vinnaren redan äger får de skänka bort den i stället. Poängen är spenderade som vid vilken vinst som helst – det de får är en chans att placera peten, och den chansen tar slut när tiden går ut eller när de råkar välja någon som också redan har den. Kräver att boten är igång – utan den hoppar dragningen i stället över det de redan har. Vad boten svarar ändrar du under “Vad boten säger”." />
+                                   Text="Landar snurren på något vinnaren redan äger får de välja: skänka bort den till någon annan, eller släppa ut den på skärmen själva så den går omkring som en vanlig pet. Poängen är spenderade som vid vilken vinst som helst – det de får är en chans att placera peten, och den chansen tar slut när tiden går ut eller när de råkar välja någon som också redan har den. Kräver att boten är igång – utan den hoppar dragningen i stället över det de redan har. Vad boten svarar ändrar du under “Vad boten säger”." />
 
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
@@ -106,9 +106,13 @@
                                      LostKeyboardFocus="Number_LostKeyboardFocus" ToolTip="1–120 minuter." />
 
                             <TextBlock Grid.Row="2" Text="Se allt som går att vinna" Foreground="#8F8B9E" FontSize="11.5" Margin="0,12,0,4" />
+                            <TextBlock Grid.Row="2" Grid.Column="2" Text="Släppa ut på skärmen" Foreground="#8F8B9E" FontSize="11.5" Margin="0,12,0,4" />
                             <TextBox x:Name="PoolCommandBox" Grid.Row="3" TextChanged="Setting_Changed" FontFamily="Consolas" FontSize="13" Padding="9,10"
                                      LostKeyboardFocus="Text_LostKeyboardFocus"
                                      ToolTip="Svarar med varje utsatt art och hur sällsynt den är. Ett ord. Saknas ! läggs det till." />
+                            <TextBox x:Name="ReleaseCommandBox" Grid.Row="3" Grid.Column="2" TextChanged="Setting_Changed" FontFamily="Consolas" FontSize="13" Padding="9,10"
+                                     LostKeyboardFocus="Text_LostKeyboardFocus"
+                                     ToolTip="Skrivs i stället för att skänka bort en dubblett: peten går ut på skärmen som en vanlig pet och gåvan är förbrukad. Har vinnaren redan en pet ute byts den mot vinsten. Ett ord." />
                         </Grid>
                     </StackPanel>
                 </Border>

@@ -123,6 +123,9 @@ public enum BotFlow
     /// <summary>A duplicate was never given away in time, so its chance ran out.</summary>
     SpinGiftExpired,
 
+    /// <summary>The winner of a duplicate put it on the lawn themselves instead of giving it away.</summary>
+    SpinReleased,
+
     /// <summary>The answer to the list command: what this viewer has won.</summary>
     SpinList,
 
@@ -445,11 +448,12 @@ public sealed class BotSettings
         // The spin flows are on by default, unlike the celebratory ones: every line here is an
         // answer somebody is waiting on – what they won, what to type next, where their gift went.
         Rule(BotFlow.SpinWin, true, "🎉 @{viewer} vann {prize} ({rarity}) i lyckosnurren!"),
-        Rule(BotFlow.SpinDuplicate, true, "@{viewer} du vann {prize} ({rarity}) – men den har du redan! Skriv \"{command} namn\" inom {minutes} min för att skänka den till någon, annars är chansen borta."),
+        Rule(BotFlow.SpinDuplicate, true, "@{viewer} du vann {prize} ({rarity}) – men den har du redan! Skriv \"{command} namn\" inom {minutes} min för att skänka den till någon, eller \"{release}\" för att släppa ut den på skärmen."),
         Rule(BotFlow.SpinGifted, true, "🎁 @{viewer} skänkte {prize} till @{target}!"),
         Rule(BotFlow.SpinGiftUnknown, true, "@{viewer} hittade ingen som heter \"{target}\" – testa igen."),
         Rule(BotFlow.SpinGiftOwned, true, "@{viewer} @{target} hade redan {prize} – chansen är borta."),
         Rule(BotFlow.SpinGiftExpired, true, "@{viewer} hann inte skänka {prize} – den är borta nu."),
+        Rule(BotFlow.SpinReleased, true, "🐾 @{viewer} släppte ut sin {prize} på skärmen!"),
         Rule(BotFlow.SpinList, true, "@{viewer} din samling: {list}.", cooldown: 15),
         Rule(BotFlow.SpinListEmpty, true, "@{viewer} du har inte vunnit någon {pet} än – lyckosnurren väntar!", cooldown: 15),
         // The one answer here that is the same for everybody who asks, so it keeps quiet for longer:

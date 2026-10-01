@@ -50,10 +50,11 @@ public sealed record SpinVerdict(string RedemptionId, string RewardId, string Vi
 ///
 /// <para><b>Duplicates become gifts.</b> The draw runs over every winnable pet, rarity-weighted, so
 /// a full-pocketed viewer can absolutely win something they already own – and then the bot asks them
-/// to name someone to give it to. A duplicate is a win like any other, points and all: the
-/// redemption is answered as delivered the moment it is drawn, and what it bought is one chance to
-/// place the pet. Nobody named before the timeout, or a name that turns out to own it too, and that
-/// chance is spent – there is no path back to the points from here. With no bot to run the
+/// to name someone to give it to, or to release it onto the lawn themselves. A duplicate is a win
+/// like any other, points and all: the redemption is answered as delivered the moment it is drawn,
+/// and what it bought is one chance to place the pet. Nobody named before the timeout, or a name
+/// that turns out to own it too, and that chance is spent – there is no path back to the points
+/// from here. With no bot to run the
 /// conversation the draw simply skips what they own instead, and only somebody who owns everything
 /// is paid back outright.</para>
 /// </summary>
@@ -298,6 +299,26 @@ public sealed class SpinService(
             }
 
             _ = GiveAsync(pending, message.DisplayName, target);
+            return true;
+        }
+
+        if (Matches(text, spin.ReleaseCommand))
+        {
+            SpinPendingGift? pending = store.PendingFor(id);
+            // Same as the give command: nothing open is somebody else's command. With the pets off,
+            // or the species gone from the folder, there is nothing to release onto the lawn, so the
+            // gift stays open for "!ge" instead.
+            if (pending is null || !settings.Pets.Enabled || catalog.Find(pending.PetId) is null) return false;
+
+            store.Touch(id, message.UserLogin, message.DisplayName);
+            // Closing the gift is what decides who acted on it: a "!ge" still waiting on Twitch for
+            // the recipient's name may have closed it a moment ago, and then it has nothing to release.
+            if (!store.RemovePending(pending.RedemptionId)) return true;
+
+            string prize = PrizeName(pending.PetId);
+            pets.SpawnDirect(id, message.DisplayName, pending.PetId);
+            AppLog.Info($"Lyckosnurren: {message.DisplayName} släppte ut sin dubblett av {prize} på skärmen.");
+            Announced?.Invoke(BotFlow.SpinReleased, Values(("viewer", message.DisplayName), ("prize", prize)), true);
             return true;
         }
 
@@ -643,6 +664,7 @@ public sealed class SpinService(
         ("prize", prize),
         ("rarity", rarity),
         ("command", spin.GiveCommand),
+        ("release", spin.ReleaseCommand),
         ("minutes", spin.GiftTimeoutMinutes.ToString()));
 
     private static Dictionary<string, string> Values(params (string Key, string Value)[] pairs)
