@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Som på streamen</title>
+<!-- The overlay's own stylesheet and script, so the pet here is the pet OBS draws. Only the
+     backdrop and the bar on top belong to this page. -->
+<link rel="stylesheet" href="pets.css" />
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+  * { box-sizing: border-box; }
+  body {
+    background: #141A2E;
+    color: #EDEBF2;
+    font: 13px/1.5 "Segoe UI", Verdana, sans-serif;
+  }
+  body.checker { background: repeating-conic-gradient(#2A2E3D 0% 25%, #1B1F2C 0% 50%) 0 0 / 24px 24px; }
+
+  #stage { position: fixed; inset: 0; user-select: none; }
+
+  .bar {
+    position: fixed; top: 12px; left: 12px; right: 12px; z-index: 10;
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    pointer-events: none;
+  }
+  .bar > * { pointer-events: auto; }
+  .pill {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    background: rgba(20, 22, 31, 0.86);
+    border: 1px solid #2C3247;
+    border-radius: 10px;
+    padding: 7px 10px;
+  }
+  .eyebrow { color: #7EF0FF; font-size: 11px; font-weight: 700; letter-spacing: 0.6px; }
+  #previewName { font-size: 15px; font-weight: 600; }
+  .hint { color: #8F8B9E; font-size: 12px; }
+  #previewStatus { color: #F0A85C; font-size: 12px; }
+  .pill:has(#previewStatus:empty) { display: none; }
+
+  button {
+    font: inherit; color: #EDEBF2; background: #343B50;
+    border: 1px solid #3D4560; border-radius: 8px; padding: 5px 11px; cursor: pointer;
+  }
+  button:hover { background: #3D4560; }
+  .swatch { width: 24px; height: 24px; padding: 0; border-radius: 6px; }
+  .swatch.on { outline: 2px solid #7EF0FF; outline-offset: 1px; }
+</style>
+</head>
+<body>
+  <div id="stage"></div>
+
+  <div class="bar">
+    <div class="pill">
+      <span class="eyebrow">SOM PÅ STREAMEN</span>
+      <span id="previewName"></span>
+      <button id="respawnBtn" title="Låter peten gå hem och komma in igen.">↻ Spawna igen</button>
+      <button id="buddyBtn" title="Släpper in en slumpad annan pet så du ser hur de gör saker tillsammans. Klicka igen för en ny kompis.">🐾 Spawna en kompis</button>
+    </div>
+    <div class="pill">
+      <span class="hint">Bakgrund</span>
+      <span id="swatches" style="display:flex;gap:6px"></span>
+    </div>
+    <div class="pill">
+      <span class="hint">Storlek, fart och namnskylt är appens. Ändrar du dem – ladda om sidan.</span>
+    </div>
+    <div class="pill"><span id="previewStatus"></span></div>
+  </div>
+
+  <script src="pet-shared.js"></script>
+  <script src="pets.js"></script>
+  <script>
+    "use strict";
+    const BACKGROUNDS = [
+      { label: "Mörk spelbild", color: "#141A2E" },
+      { label: "Ljus spelbild", color: "#C9B49A" },
+      { label: "Greenscreen", color: "#00B140" },
+      { label: "Svart", color: "#000000" },
+      { label: "Rutmönster – genomskinligt", color: "" },
+    ];
+
+    const swatches = document.getElementById("swatches");
+    for (const entry of BACKGROUNDS) {
+      const button = document.createElement("button");
+      button.className = "swatch";
+      button.title = entry.label;
+      button.style.background = entry.color || "repeating-conic-gradient(#2A2E3D 0% 25%, #1B1F2C 0% 50%) 0 0 / 12px 12px";
+      button.addEventListener("click", () => {
+        document.body.classList.toggle("checker", entry.color === "");
+        document.body.style.backgroundColor = entry.color;
+        for (const other of swatches.children) other.classList.toggle("on", other === button);
+      });
+      swatches.appendChild(button);
+    }
+    swatches.firstElementChild.classList.add("on");
+
+    document.getElementById("respawnBtn").addEventListener("click", respawnPreview);
+    document.getElementById("buddyBtn").addEventListener("click", spawnBuddy);
+  </script>
+</body>
+</html>

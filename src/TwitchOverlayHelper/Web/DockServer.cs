@@ -68,6 +68,13 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
     public string InspectUrl(string petId) =>
         $"http://127.0.0.1:{Port}/pet-inspect.html?key={context.Settings.DockAccessKey}&pet={Uri.EscapeDataString(petId)}";
 
+    /// <summary>
+    /// One pet alone, drawn by the overlay's own page so it looks exactly as it will on stream. Like
+    /// the inspector it never touches the real lawn: no socket, nothing the viewers can see.
+    /// </summary>
+    public string PreviewUrl(string petId) =>
+        $"http://127.0.0.1:{Port}/pet-preview.html?key={context.Settings.DockAccessKey}&preview={Uri.EscapeDataString(petId)}";
+
     public async Task<bool> StartAsync()
     {
         if (_app is not null) return true;
