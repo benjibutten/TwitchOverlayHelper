@@ -175,6 +175,7 @@ public partial class MainWindow : Window
     private TtsWidgetWindow? _ttsWidgetWindow;
     private BotSettingsWindow? _botSettingsWindow;
     private SpinSettingsWindow? _spinSettingsWindow;
+    private PetsWindow? _petsWindow;
     private string? _lastBadgeRoom;
     private string? _lastSeenRewardId;
     private string? _lastSeenRewardName;
@@ -925,30 +926,66 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ReloadPets_Click(object sender, RoutedEventArgs e)
+    private void ReloadPets_Click(object sender, RoutedEventArgs e) => ReloadPets();
+
+    private void ReloadPets()
     {
         _petCatalog.Reload();
-        RefreshPetCatalogUi();
-        // Overlays that are open right now should learn the new species without a reload in OBS.
-        _hub.PublishPetCatalog();
+        OnPetsEdited(source: null);
     }
 
-    /// <summary>Rebuilds the species list and the default-pet picker from the catalog.</summary>
+    /// <summary>
+    /// Everything that has to follow a rewritten pet.json or a reloaded folder: the settings saved
+    /// (a rename can move the default pet), the overlays told, and every pet list in the app read
+    /// again – except the one in <paramref name="source"/>, which made the change and already shows it.
+    /// </summary>
+    private void OnPetsEdited(Window? source)
+    {
+        SaveSettings();
+        // Overlays that are open right now learn the change without a reload in OBS.
+        _hub.PublishPetCatalog();
+        RefreshPetCatalogUi();
+        if (_petsWindow is not null && _petsWindow != source) _petsWindow.RefreshPets();
+        if (_spinSettingsWindow is not null && _spinSettingsWindow != source) _spinSettingsWindow.RefreshPets();
+    }
+
+    private void OpenPetsWindow_Click(object sender, RoutedEventArgs e) => OpenPetsWindow();
+
+    private void OpenPetsWindow()
+    {
+        if (_petsWindow is { IsLoaded: true })
+        {
+            _petsWindow.Activate();
+            return;
+        }
+
+        _petsWindow = new PetsWindow(
+            _settings,
+            _petCatalog,
+            _spinWins,
+            () => OnPetsEdited(_petsWindow),
+            ReloadPets,
+            // Null while the server is down: both pages are served by it, and an address to a port
+            // nobody is listening on is worse than being told why the button did nothing.
+            petId => _dockServer.IsRunning ? _dockServer.InspectUrl(petId) : null,
+            petId => _dockServer.IsRunning ? _dockServer.PreviewUrl(petId) : null) { Owner = this };
+        _petsWindow.Closed += (_, _) => _petsWindow = null;
+        _petsWindow.Show();
+    }
+
+    /// <summary>Rebuilds the species summary and the default-pet picker from the catalog.</summary>
     private void RefreshPetCatalogUi()
     {
         _refreshingPetCatalog = true;
         try
         {
-            var lines = _petCatalog.Pets.Select(pet =>
-            {
-                string names = string.Join(", ", new[] { pet.Id }.Concat(pet.Aliases));
-                // A win-only pet is not something a viewer can simply ask for, so listing it the
-                // same way as the rest would be an invitation nobody can accept.
-                string origin = pet.WinOnly ? " 🏆 vinst" : pet.IsDefault ? "" : " (egen)";
-                return $"• {pet.Name}{origin} – tittare skriver: {names}";
-            });
+            IReadOnlyList<PetDefinition> all = _petCatalog.Pets;
+            int winOnly = all.Count(pet => pet.WinOnly);
+            string summary = winOnly == 0
+                ? $"{all.Count} pets i mappen."
+                : $"{all.Count} pets i mappen, varav {winOnly} bara går att vinna i lyckosnurren.";
             IEnumerable<string> warnings = _petCatalog.Warnings.Select(w => $"⚠ {w}");
-            PetListText.Text = string.Join("\n", lines.Concat(warnings));
+            PetListText.Text = string.Join("\n", warnings.Prepend(summary));
 
             PetDefaultBox.Items.Clear();
             PetDefaultBox.Items.Add(new ComboBoxItem { Content = "Slumpad – låt texten avgöra", Tag = "" });
@@ -1274,18 +1311,14 @@ public partial class MainWindow : Window
             () =>
             {
                 SaveSettings();
-                // The reel draws from the catalog the overlay holds, so a pet that just became
-                // winnable has to reach it before the next spin rather than at the next reload.
-                _hub.PublishPetCatalog();
-                // Marking a pet winnable rewrites its pet.json and reloads the catalog, so the pets
-                // tab is showing the species list as it was before the change until this runs.
-                RefreshPetCatalogUi();
+                UpdateSpinSummary();
             },
+            // The reel draws from the catalog the overlay holds, so a pet that just became winnable
+            // has to reach it before the next spin rather than at the next reload.
+            () => OnPetsEdited(_spinSettingsWindow),
             _spins.SpinTest,
             CreateSpinRewardAsync,
-            // Null while the server is down: the inspection view is a page it serves, and an address
-            // to a port nobody is listening on is worse than being told why the button did nothing.
-            petId => _dockServer.IsRunning ? _dockServer.InspectUrl(petId) : null) { Owner = this };
+            OpenPetsWindow) { Owner = this };
         _spinSettingsWindow.Closed += (_, _) => _spinSettingsWindow = null;
         _spinSettingsWindow.Show();
     }

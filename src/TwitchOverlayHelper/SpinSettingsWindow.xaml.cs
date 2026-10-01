@@ -1,12 +1,7 @@
 using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.IO;
-using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using TwitchOverlayHelper.Interop;
 using TwitchOverlayHelper.Pets;
 using TwitchOverlayHelper.Settings;
@@ -15,106 +10,9 @@ using TwitchOverlayHelper.Spins;
 namespace TwitchOverlayHelper;
 
 /// <summary>
-/// One pet in the winnable list: its portrait, whether the spin may hand it out, and how rare it is.
-/// A view of the pet's own pet.json rather than of anything in settings.json – the file in the pet's
-/// folder is where these two live, so a pet moved to another machine takes them along.
-/// </summary>
-public sealed class SpinPetRow : INotifyPropertyChanged
-{
-    private bool _isWinnable;
-    private string _rarity;
-    private bool _isEditing;
-    private string _editName;
-    private string _editId;
-
-    public SpinPetRow(PetDefinition pet, ImageSource? portrait, int owners)
-    {
-        Id = pet.Id;
-        Name = pet.Name;
-        Emoji = pet.Emoji.Count > 0 ? pet.Emoji[0] : "🐾";
-        Portrait = portrait;
-        _isWinnable = pet.WinOnly;
-        _rarity = PetRarity.Normalize(pet.Rarity);
-        Owners = owners;
-        _editName = Name;
-        _editId = Id;
-    }
-
-    public string Id { get; }
-    public string Name { get; }
-    public string Emoji { get; }
-    public ImageSource? Portrait { get; }
-    public int Owners { get; }
-
-    public IReadOnlyList<string> Rarities => PetRarity.All;
-
-    /// <summary>Hidden the moment there is a real portrait, so the emoji never shows through it.</summary>
-    public Visibility EmojiVisibility => Portrait is null ? Visibility.Visible : Visibility.Collapsed;
-
-    public string Subtitle => Owners switch
-    {
-        0 => Id,
-        1 => $"{Id} · 1 ägare",
-        _ => $"{Id} · {Owners} ägare"
-    };
-
-    public bool IsWinnable
-    {
-        get => _isWinnable;
-        set { _isWinnable = value; Raise(); }
-    }
-
-    public string Rarity
-    {
-        get => _rarity;
-        set { _rarity = value; Raise(); }
-    }
-
-    /// <summary>
-    /// Whether the row is showing its two name boxes instead of the name. The boxes edit copies
-    /// rather than <see cref="Name"/> and <see cref="Id"/> themselves, so an edit that is escaped –
-    /// or refused because the name is taken – leaves the row saying what the pet is actually called.
-    /// </summary>
-    public bool IsEditing
-    {
-        get => _isEditing;
-        set
-        {
-            if (_isEditing == value) return;
-            _isEditing = value;
-            if (value) (_editName, _editId) = (Name, Id);
-            Raise();
-            Raise(nameof(ReadVisibility));
-            Raise(nameof(EditVisibility));
-            Raise(nameof(EditName));
-            Raise(nameof(EditId));
-        }
-    }
-
-    public Visibility ReadVisibility => _isEditing ? Visibility.Collapsed : Visibility.Visible;
-    public Visibility EditVisibility => _isEditing ? Visibility.Visible : Visibility.Collapsed;
-
-    public string EditName
-    {
-        get => _editName;
-        set { _editName = value; Raise(); }
-    }
-
-    public string EditId
-    {
-        get => _editId;
-        set { _editId = value; Raise(); }
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void Raise([CallerMemberName] string? name = null) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-}
-
-/// <summary>
 /// Everything about the lucky spin in one place: the reward that buys it, how the reel looks, the
-/// two commands, and which pets it can hand out.
+/// commands, and which pets it can hand out. Everything else about a pet lives in
+/// <see cref="PetsWindow"/>.
 ///
 /// <para>Writes straight through rather than collecting an OK. The pet choices land in each pet's
 /// own pet.json and the rest in settings.json, both saved as they are changed – the same as every
@@ -126,37 +24,39 @@ public partial class SpinSettingsWindow : Window
     private readonly PetCatalog _catalog;
     private readonly SpinWinStore _wins;
     private readonly Action _save;
+    private readonly Action _petsChanged;
     private readonly Action _testSpin;
     private readonly Func<string, int, Task<string>> _createReward;
-    private readonly Func<string, string?> _inspectUrl;
-    private readonly ObservableCollection<SpinPetRow> _pets = [];
+    private readonly Action _openPets;
+    private readonly ObservableCollection<PetRow> _pets = [];
     private bool _loading = true;
 
+    /// <param name="save">Saves settings.json after a change to the spin's own settings.</param>
+    /// <param name="petsChanged">Tells the overlay and the main window a pet.json was rewritten.</param>
     /// <param name="createReward">
     /// Creates the reward in Twitch from a title and a cost, answering the new reward's id. Handed
     /// in rather than reached for, because the API client and the broadcaster live in the main
     /// window and this window has no business holding either.
     /// </param>
-    /// <param name="inspectUrl">
-    /// The address of one pet's inspection view, or null while the local server is not running.
-    /// Handed in for the same reason: the server is the main window's, not this one's.
-    /// </param>
+    /// <param name="openPets">Brings up the window where pets are renamed and previewed.</param>
     public SpinSettingsWindow(
         AppSettings settings,
         PetCatalog catalog,
         SpinWinStore wins,
         Action save,
+        Action petsChanged,
         Action testSpin,
         Func<string, int, Task<string>> createReward,
-        Func<string, string?> inspectUrl)
+        Action openPets)
     {
         _settings = settings;
         _catalog = catalog;
         _wins = wins;
         _save = save;
+        _petsChanged = petsChanged;
         _testSpin = testSpin;
         _createReward = createReward;
-        _inspectUrl = inspectUrl;
+        _openPets = openPets;
 
         InitializeComponent();
         DarkTitleBar.Enable(this);
@@ -183,7 +83,7 @@ public partial class SpinSettingsWindow : Window
         GiftMinutesBox.Text = Spin.GiftTimeoutMinutes.ToString();
         SelectSide(Spin.Side);
         UpdateRewardStatus();
-        LoadPets();
+        RefreshPets();
     }
 
     private void SelectSide(string side)
@@ -197,90 +97,17 @@ public partial class SpinSettingsWindow : Window
         SideBox.SelectedIndex = 0;
     }
 
-    private void LoadPets()
+    /// <summary>
+    /// Rebuilds the pet rows from the catalog. Also how the main window hands over a change made
+    /// somewhere else.
+    /// </summary>
+    public void RefreshPets()
     {
         _pets.Clear();
         foreach (PetDefinition pet in _catalog.Pets)
-            _pets.Add(new SpinPetRow(pet, Portrait(pet), _wins.OwnerCount(pet.Id)));
+            _pets.Add(new PetRow(pet, _wins.OwnerCount(pet.Id)));
 
         PetEmptyText.Visibility = _pets.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    /// <summary>
-    /// The pet's first spritesheet cell – the standing still frame – as a picture for the list.
-    ///
-    /// <para>Null for anything that will not decode, which is a real possibility rather than a
-    /// theoretical one: the sheets are WebP, and Windows decodes those through a codec that a
-    /// machine may simply not have. The row then shows the pet's emoji instead, and everything on
-    /// it still works; a missing preview must not be able to stop somebody marking a pet winnable.
-    /// </para>
-    /// </summary>
-    private static ImageSource? Portrait(PetDefinition pet)
-    {
-        if (pet.SpriteFile is not { Length: > 0 } file || !File.Exists(file)) return null;
-
-        try
-        {
-            BitmapFrame frame = BitmapDecoder.Create(
-                new Uri(file), BitmapCreateOptions.None, BitmapCacheOption.OnLoad).Frames[0];
-
-            // Cells are 192×208 and every sheet is 8 wide, so the row count falls out of the
-            // sheet's own proportions – the same reasoning the overlay uses.
-            int rows = (int)Math.Round(frame.PixelHeight * 8 * 192.0 / (frame.PixelWidth * 208.0));
-            if (rows is not (9 or 11)) rows = pet.SpriteVersion >= 2 ? 11 : 9;
-
-            int width = frame.PixelWidth / 8;
-            int height = frame.PixelHeight / rows;
-            if (width <= 0 || height <= 0) return null;
-
-            return Cell(frame, width, height);
-        }
-        catch (Exception ex) when (ex is NotSupportedException or FileFormatException or IOException
-                                       or UnauthorizedAccessException or ArgumentException or OverflowException)
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// The top-left cell of a sheet, lifted out as a picture of its own with the alpha intact.
-    ///
-    /// <para>Copied pixel by pixel rather than wrapped in a <see cref="CroppedBitmap"/>, because of
-    /// what Windows' WebP codec answers with: a frame in <c>Bgr32</c>, a format whose fourth byte
-    /// is defined as meaningless – even though the decoder has filled it with the real alpha. WPF
-    /// takes the format at its word and draws every see-through pixel opaque, which is what put a
-    /// white block behind one pet and an orange one behind another: whatever colour happened to lie
-    /// under the transparent parts of that particular sheet. The bytes are the same bytes; handing
-    /// them back as <c>Bgra32</c> is what makes the alpha count again.</para>
-    /// </summary>
-    private static ImageSource Cell(BitmapSource sheet, int width, int height)
-    {
-        // Anything that is not already four bytes to a pixel – a paletted or 24-bit sheet – is
-        // converted first, so the copy below can assume the one stride it knows how to read.
-        BitmapSource source =
-            sheet.Format == PixelFormats.Bgra32 || sheet.Format == PixelFormats.Pbgra32 || sheet.Format == PixelFormats.Bgr32
-                ? sheet
-                : new FormatConvertedBitmap(sheet, PixelFormats.Bgra32, null, 0);
-
-        int stride = width * 4;
-        byte[] pixels = new byte[stride * height];
-        source.CopyPixels(new Int32Rect(0, 0, width, height), pixels, stride, 0);
-
-        // A sheet that really has no alpha comes back with that byte zero the whole way through,
-        // and reading it as alpha would hand back a cell nobody can see. Opaque is the honest answer
-        // for those, and the only cost is that a sheet whose first cell is genuinely empty shows as
-        // a blank square rather than as nothing at all.
-        bool transparentThroughout = true;
-        for (int at = 3; at < pixels.Length && transparentThroughout; at += 4) transparentThroughout = pixels[at] == 0;
-        if (transparentThroughout)
-            for (int at = 3; at < pixels.Length; at += 4) pixels[at] = 255;
-
-        BitmapSource cell = BitmapSource.Create(
-            width, height, 96, 96,
-            source.Format == PixelFormats.Pbgra32 ? PixelFormats.Pbgra32 : PixelFormats.Bgra32,
-            null, pixels, stride);
-        cell.Freeze();
-        return cell;
     }
 
     private void Setting_Changed(object sender, RoutedEventArgs e)
@@ -331,130 +158,26 @@ public partial class SpinSettingsWindow : Window
         ReleaseCommandBox.Text = Spin.ReleaseCommand;
     }
 
-    /// <summary>
-    /// Writes one pet's choices into its own pet.json. The list is rebuilt afterwards because the
-    /// catalog reloads: a row still holding the old definition would show the pet as it was before
-    /// the edit the moment anything refreshed it.
-    /// </summary>
+    /// <summary>Writes one pet's choices into its own pet.json.</summary>
     private void Pet_Changed(object sender, RoutedEventArgs e)
     {
-        if (_loading || (sender as FrameworkElement)?.DataContext is not SpinPetRow row) return;
+        // The rows' controls raise these as they bind, which DiffersFrom tells apart from an edit.
+        if ((sender as FrameworkElement)?.DataContext is not PetRow row) return;
+        if (!row.DiffersFrom(_catalog.Find(row.Id))) return;
 
         if (_catalog.TrySetWinnable(row.Id, row.IsWinnable, row.Rarity, out string error))
         {
             PetStatusText.Text = string.Empty;
-            _save();
+            _petsChanged();
             return;
         }
 
         PetStatusText.Text = error;
         // The write failed, so the checkbox is showing something that is not true of the pet.
-        Rebuild();
+        RefreshPets();
     }
 
-    /// <summary>Reads the pet list back from the catalog without the change handlers firing on it.</summary>
-    private void Rebuild()
-    {
-        _loading = true;
-        LoadPets();
-        _loading = false;
-    }
-
-    /// <summary>
-    /// Opens one row for renaming, closing whichever was open. One at a time because that is what
-    /// the two boxes are: the row's own name, not a column the whole list has.
-    /// </summary>
-    private void BeginEdit(SpinPetRow row)
-    {
-        foreach (SpinPetRow other in _pets) other.IsEditing = other == row;
-        PetStatusText.Text = string.Empty;
-    }
-
-    private void PetName_DoubleClick(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ClickCount == 2 && (sender as FrameworkElement)?.DataContext is SpinPetRow row) BeginEdit(row);
-    }
-
-    private void PetRename_Click(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.DataContext is SpinPetRow row) BeginEdit(row);
-    }
-
-    private void PetEditCancel_Click(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.DataContext is SpinPetRow row) row.IsEditing = false;
-    }
-
-    private void PetEditSave_Click(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.DataContext is SpinPetRow row) CommitEdit(row);
-    }
-
-    /// <summary>Enter saves, Escape puts the row back the way it was. Neither reaches the window.</summary>
-    private void PetEdit_KeyDown(object sender, KeyEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.DataContext is not SpinPetRow row) return;
-
-        if (e.Key == Key.Enter) CommitEdit(row);
-        else if (e.Key == Key.Escape) row.IsEditing = false;
-        else return;
-        e.Handled = true;
-    }
-
-    /// <summary>
-    /// Puts the cursor in the name box the moment the row opens for editing. Done from the box's
-    /// own visibility rather than from <see cref="BeginEdit"/>, because the template has not built
-    /// the box yet at the point the row is told to open.
-    /// </summary>
-    private void PetEditBox_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
-    {
-        if (e.NewValue is not true || sender is not TextBox box) return;
-        box.Dispatcher.BeginInvoke(() =>
-        {
-            box.Focus();
-            box.SelectAll();
-        });
-    }
-
-    /// <summary>
-    /// Writes a renamed pet to its pet.json, and moves everything that pointed at the old id along
-    /// with it: the wins that are the whole point of the spin, the open gifts still looking for a
-    /// home, and the channel's default pet.
-    ///
-    /// <para>Order matters. The manifest is written first because it is the one step that can be
-    /// refused – a name another pet already answers to – and nothing else may move until the pet
-    /// really has the new id.</para>
-    /// </summary>
-    private void CommitEdit(SpinPetRow row)
-    {
-        string newId = PetCatalog.SanitizeId(row.EditId);
-        string newName = row.EditName.Trim();
-        if (newId == row.Id && newName == row.Name)
-        {
-            row.IsEditing = false;
-            return;
-        }
-
-        if (!_catalog.TryRename(row.Id, newId, newName, out string error))
-        {
-            PetStatusText.Text = error;
-            return;
-        }
-
-        if (newId != row.Id)
-        {
-            int moved = _wins.RenamePet(row.Id, newId);
-            if (string.Equals(_settings.Pets.DefaultPet, row.Id, StringComparison.OrdinalIgnoreCase))
-                _settings.Pets.DefaultPet = newId;
-            PetStatusText.Text = moved > 0
-                ? $"“{newName}” heter nu {newId}. {moved} vinst{(moved == 1 ? "" : "er")} flyttades med."
-                : $"“{newName}” heter nu {newId}.";
-        }
-        else PetStatusText.Text = string.Empty;
-
-        Rebuild();
-        _save();
-    }
+    private void OpenPets_Click(object sender, RoutedEventArgs e) => _openPets();
 
     private async void CreateReward_Click(object sender, RoutedEventArgs e)
     {
@@ -510,34 +233,6 @@ public partial class SpinSettingsWindow : Window
             : Spin.RewardId.Length > 0 || Spin.RewardName.Length > 0
                 ? "— Belöningen är inte skapad av appen, så poängen kan aldrig lämnas tillbaka härifrån."
                 : "Ingen belöning vald än. Skriv ett namn och klicka ⚡ så skapar appen den åt dig.";
-    }
-
-    /// <summary>
-    /// Opens one pet alone in the browser, where a WebP spritesheet can actually be watched: WPF
-    /// draws its first cell and nothing more, so a row that is empty or a frame that jumps is
-    /// invisible from in here. A page for setting a pet up – the app neither needs it nor knows it
-    /// is open, and closing the tab is the whole of putting it away.
-    /// </summary>
-    private void PetInspect_Click(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.DataContext is not SpinPetRow row) return;
-
-        string? url = _inspectUrl(row.Id);
-        if (url is null)
-        {
-            PetStatusText.Text = "Testvyn ritas av appens lokala server – slå på den under Chattdock först.";
-            return;
-        }
-
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
-            PetStatusText.Text = string.Empty;
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            PetStatusText.Text = $"Kunde inte öppna webbläsaren. Adressen är {url}";
-        }
     }
 
     private void TestSpin_Click(object sender, RoutedEventArgs e) => _testSpin();
