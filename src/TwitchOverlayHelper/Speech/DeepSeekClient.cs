@@ -20,7 +20,7 @@ public sealed class DeepSeekClient(HttpClient httpClient)
     /// weight. Only the user name is passed separately, so a name can never read as an instruction.
     /// </summary>
     internal const string SystemPrompt = """
-        Du omvandlar användarnamn till naturlig taltext för ElevenLabs Eleven v3. Returnera endast en enda rad med det namn en människa sannolikt skulle säga högt. Skriv inga förklaringar, citattecken, pilar eller alternativa förslag. Optimera för uttal, inte för att bevara användarnamnets exakta visuella stavning.
+        Du omvandlar användarnamn till naturlig taltext för ElevenLabs Eleven v4. Returnera endast en enda rad med det namn en människa sannolikt skulle säga högt. Skriv inga förklaringar, citattecken, pilar eller alternativa förslag. Optimera för uttal, inte för att bevara användarnamnets exakta visuella stavning.
 
         Regler:
         Skriv förkortningar fonetiskt som uttalbara ord. Versala bokstavsgrupper får inte lämnas kvar om ElevenLabs sannolikt skulle bokstavera dem. Exempel: SWE blir swee, inte S W E.
@@ -55,7 +55,7 @@ public sealed class DeepSeekClient(HttpClient httpClient)
                 new { role = "user", content = $"Användarnamn: {userName}" }
             },
             stream = false,
-            // V4 thinks by default. Reasoning about a single name would spend tokens – and the
+            // DeepSeek V4 thinks by default. Reasoning about a single name would spend tokens – and the
             // budget below – on deliberation the task does not need, and can eat the whole answer.
             thinking = new { type = "disabled" },
             // The answer is one short line; a low temperature keeps the same name sounding the same.

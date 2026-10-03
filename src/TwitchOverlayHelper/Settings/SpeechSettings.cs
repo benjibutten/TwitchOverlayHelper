@@ -16,8 +16,8 @@ public sealed class SpeechSettings
     /// <summary>Turns the written user name into something a voice model can say.</summary>
     public string DeepSeekModel { get; set; } = "deepseek-v4-flash";
 
-    /// <summary>Eleven v3 is the expressive model; older ids still work if the account lacks it.</summary>
-    public string ElevenLabsModel { get; set; } = "eleven_v3";
+    /// <summary>Eleven v4 is the expressive model; older ids still work if the account lacks it.</summary>
+    public string ElevenLabsModel { get; set; } = "eleven_v4";
 
     public string VoiceId { get; set; } = string.Empty;
     /// <summary>Only for showing which voice is picked; the id is what the API needs.</summary>
@@ -28,7 +28,7 @@ public sealed class SpeechSettings
     public void Normalize()
     {
         DeepSeekModel = Fallback(DeepSeekModel, "deepseek-v4-flash");
-        ElevenLabsModel = Fallback(ElevenLabsModel, "eleven_v3");
+        ElevenLabsModel = Fallback(ElevenLabsModel, "eleven_v4");
         VoiceId = VoiceId?.Trim() ?? string.Empty;
         VoiceName = VoiceName?.Trim() ?? string.Empty;
         Volume = Math.Clamp(double.IsFinite(Volume) ? Volume : 0.9, 0, 1);

@@ -56,7 +56,7 @@
                         <TextBox x:Name="VoiceIdBox" FontFamily="Consolas" TextChanged="Setting_Changed" />
 
                         <TextBlock Text="ElevenLabs-modell" Foreground="{StaticResource MutedTextBrush}" Margin="0,14,0,6" />
-                        <TextBox x:Name="ElevenModelBox" FontFamily="Consolas" TextChanged="Setting_Changed" ToolTip="eleven_v3 är den senaste och mest uttrycksfulla modellen" />
+                        <TextBox x:Name="ElevenModelBox" FontFamily="Consolas" TextChanged="Setting_Changed" ToolTip="eleven_v4 är den senaste och mest uttrycksfulla modellen" />
 
                         <TextBlock Text="DeepSeek-modell" Foreground="{StaticResource MutedTextBrush}" Margin="0,14,0,6" />
                         <TextBox x:Name="DeepSeekModelBox" FontFamily="Consolas" TextChanged="Setting_Changed" ToolTip="deepseek-v4-flash är den snabba och billiga modellen" />

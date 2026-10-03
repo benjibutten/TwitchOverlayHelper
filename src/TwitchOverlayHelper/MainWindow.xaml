@@ -725,7 +725,7 @@
                                         <TextBlock x:Name="TtsVoiceHint" Style="{StaticResource Hint}" Margin="0,8,0,0" TextWrapping="Wrap" />
 
                                         <TextBlock Text="Modell" Style="{StaticResource FieldLabel}" Margin="0,14,0,5" />
-                                        <TextBox x:Name="TtsModelBox" TextChanged="TtsSetting_Changed" ToolTip="t.ex. eleven_v3" />
+                                        <TextBox x:Name="TtsModelBox" TextChanged="TtsSetting_Changed" ToolTip="t.ex. eleven_v4" />
 
                                         <DockPanel Margin="0,14,0,0"><TextBlock Text="Volym" /><TextBlock x:Name="TtsVolumeValue" Text="90 %" Style="{StaticResource ValueBadge}" /></DockPanel>
                                         <Slider x:Name="TtsVolumeSlider" Minimum="0" Maximum="1" TickFrequency="0.05" IsSnapToTickEnabled="True" Margin="0,4,0,0" ValueChanged="TtsSetting_Changed" />

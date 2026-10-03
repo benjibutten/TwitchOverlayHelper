@@ -131,7 +131,7 @@ public sealed class SpeechSettingsTests
         settings.Normalize();
 
         Assert.Equal("deepseek-v4-flash", settings.DeepSeekModel);
-        Assert.Equal("eleven_v3", settings.ElevenLabsModel);
+        Assert.Equal("eleven_v4", settings.ElevenLabsModel);
         Assert.Equal(1, settings.Volume);
     }
 

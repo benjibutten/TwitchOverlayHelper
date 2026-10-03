@@ -105,7 +105,7 @@ public sealed class TtsSettings
     /// <summary>Only for showing which voice is picked; the id is what the API needs.</summary>
     public string VoiceName { get; set; } = string.Empty;
 
-    public string ElevenLabsModel { get; set; } = "eleven_v3";
+    public string ElevenLabsModel { get; set; } = "eleven_v4";
 
     public TtsOutput Output { get; set; } = TtsOutput.Browser;
 
@@ -180,7 +180,7 @@ public sealed class TtsSettings
         RewardTitle = RewardTitle?.Trim() ?? string.Empty;
         VoiceId = VoiceId?.Trim() ?? string.Empty;
         VoiceName = VoiceName?.Trim() ?? string.Empty;
-        ElevenLabsModel = string.IsNullOrWhiteSpace(ElevenLabsModel) ? "eleven_v3" : ElevenLabsModel.Trim();
+        ElevenLabsModel = string.IsNullOrWhiteSpace(ElevenLabsModel) ? "eleven_v4" : ElevenLabsModel.Trim();
         Volume = Math.Clamp(double.IsFinite(Volume) ? Volume : 0.9, 0, 1);
         MaxCharacters = Math.Clamp(MaxCharacters, 20, 1000);
         ApprovalTimeoutSeconds = Math.Clamp(ApprovalTimeoutSeconds, 30, 7200);
