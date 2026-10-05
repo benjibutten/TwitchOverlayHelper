@@ -1,0 +1,8 @@
+{
+  "name": "fight-assets",
+  "private": true,
+  "description": "Turns chroma-green images from an image model into fighters and arenas for the wait screen.",
+  "dependencies": {
+    "sharp": "^0.32.6"
+  }
+}

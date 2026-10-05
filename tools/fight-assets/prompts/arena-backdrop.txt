@@ -1,0 +1,10 @@
+Use your image generation tool to create a background image for a 2D side-view fighting game, using the art style of the attached reference images (semi-realistic comic / graphic-novel illustration, bold black ink outlines, soft cel shading, moody palette with soft glows).
+
+Scene: {SCENE}
+
+Requirements:
+- Wide 16:9 landscape, side view, camera at chest height like Street Fighter.
+- The flat walkable floor occupies the bottom ~25% of the image and is clear and empty in the middle (characters will be drawn on top later).
+- No people in the foreground, no characters in the center, no text, no logos, no UI.
+
+When the image is generated, copy the resulting PNG file to ./out/{ID}.png (create the out folder if needed). Do not do anything else.
