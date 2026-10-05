@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
+using TwitchOverlayHelper.Fight;
 using TwitchOverlayHelper.Models;
 using TwitchOverlayHelper.Nicknames;
 using TwitchOverlayHelper.Pets;
@@ -37,7 +38,13 @@ public enum DockView
     /// their own volume, their own track and their own monitoring – and a streamer who wants no pets
     /// should not have to add a lawn in order to be heard.
     /// </summary>
-    Tts
+    Tts,
+
+    /// <summary>
+    /// The wait screen with the fight. Gets its own setup and the viewers' cheers, never the chat:
+    /// it fills a whole scene on the broadcast, and has no use for a raid's worth of lines.
+    /// </summary>
+    Fight
 }
 
 /// <summary>
@@ -144,6 +151,15 @@ public sealed class ChatHub(
     /// "what is waiting" – the wrong one being the one on screen while the streamer decides.
     /// </summary>
     public Func<IReadOnlyList<TtsEntry>>? TtsPending { get; set; }
+
+    /// <summary>
+    /// Who is in the ring and where, for the wait screen. A callback for the same reason as
+    /// <see cref="TtsPending"/>: the fighters live in their own catalog, read off disk.
+    /// </summary>
+    internal Func<DockFightSetup>? FightSetup { get; set; }
+
+    /// <summary>How many wait screens are open. Zero means a viewer's cheer would land nowhere.</summary>
+    public int FightOverlayCount => CountOf(DockView.Fight);
 
     /// <summary>
     /// Points the dock at another channel. The previous channel's lines are dropped so a dock that
@@ -553,6 +569,18 @@ public sealed class ChatHub(
     public void PublishPetCatalog() =>
         SendEverywhere(DockJson.Serialize(new DockEnvelope<IReadOnlyList<DockPetDefinition>>("petCatalog", BuildPetCatalog())));
 
+    /// <summary>A new fighter, arena or command word, so an open wait screen changes without a reload in OBS.</summary>
+    public void PublishFightSetup()
+    {
+        if (FightSetup is null) return;
+        SendTo(DockView.Fight, DockJson.Serialize(new DockEnvelope<DockFightSetup>("fightSetup", FightSetup())));
+    }
+
+    /// <summary>A viewer took a side. Only the wait screen is told – it is the only page that fights.</summary>
+    public void PublishFightAssist(FightAssist assist) =>
+        SendTo(DockView.Fight, DockJson.Serialize(new DockEnvelope<DockFightAssist>("fightAssist", new DockFightAssist(
+            assist.Player, assist.Kind == FightAssistKind.Heal ? "heal" : "cheer", assist.Viewer, assist.Color))));
+
     /// <summary>
     /// What the overlay looks like. Also what the pet inspector reads over HTTP: the animation speed
     /// is a setting, not a property of the sheet, and an inspector that ignored it would show a pace
@@ -710,7 +738,7 @@ public sealed class ChatHub(
 
     /// <summary>
     /// The chat and everything that happens in it, to the pages that read chat. The pet lawn is
-    /// deliberately not one of them.
+    /// deliberately not one of them, and neither is the wait screen, for the same reason.
     ///
     /// <para><b>Why the lawn is left out.</b> Its socket carries a bounded queue like every other,
     /// and a client that fills it is dropped rather than allowed to stall the fan-out. The lawn
@@ -719,7 +747,7 @@ public sealed class ChatHub(
     /// real money: no lawn connected is what refunds the pets currently on it, so a busy minute of
     /// chat could hand back the points for every pet on screen.</para>
     /// </summary>
-    private void Send(string payload) => Fan(payload, client => client.View != DockView.Pets);
+    private void Send(string payload) => Fan(payload, client => client.View is not (DockView.Pets or DockView.Fight));
 
     /// <summary>
     /// Sends to one kind of page only. What the dock alone gets is everything a viewer has no
@@ -787,6 +815,12 @@ public sealed class ChatHub(
                 // restore – a clip that was playing when OBS restarted is over – and it is a browser
                 // source on the broadcast machine, so the less it is ever sent the better.
                 DockView.Tts => DockJson.Serialize(new DockTtsHello("hello", DockTtsWidget.From(settings.Tts))),
+                // The wait screen is told who fights where, and never the chat itself: the only
+                // viewers it names are the ones who cheer. (It does get the few pet frames every
+                // page gets, and ignores them.)
+                DockView.Fight => FightSetup is null
+                    ? DockJson.Serialize(new DockEnvelope<object?>("hello", null))
+                    : DockJson.Serialize(new DockEnvelope<DockFightSetup>("hello", FightSetup())),
                 _ => BuildHello(canSend)
             };
             await SendFrameAsync(socket, hello, cancellationToken).ConfigureAwait(false);

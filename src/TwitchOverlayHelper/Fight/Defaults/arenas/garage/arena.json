@@ -1,0 +1,9 @@
+{
+  "id": "garage",
+  "displayName": "Garaget",
+  "description": "Ett underjordiskt fightclub-garage med publik och neonljus. Täcker hela bilden.",
+  "imagePath": "arena.webp",
+  "floor": 0.80,
+  "left": 0.1,
+  "right": 0.9
+}

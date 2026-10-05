@@ -1,0 +1,23 @@
+Use your image generation tool to create a 2D fighting-game sprite sheet of the character in the attached reference image {REFERENCE_FILE} ({LOOK}).
+
+STYLE: match the attached reference image exactly - semi-realistic comic / graphic-novel illustration, bold clean black ink outlines, soft cel shading, same face, hair, body proportions and accessories as the reference character sheet. {OUTFIT} Same character in every frame, consistent size and scale.
+
+LAYOUT (critical, it will be cut up by a program):
+- One single image, landscape, exactly 4 columns x 2 rows = 8 equal cells in a perfect invisible grid.
+- Background of the ENTIRE image is flat solid pure chroma green #00FF00. No floor, no shadows, no gradients, no text, no labels, no grid lines, no borders.
+- Exactly one full-body pose per cell, centered horizontally in its cell, feet (or body when lying) resting on the same baseline near the bottom of the cell, with generous empty green margin on all sides. Nothing may cross into a neighbouring cell. Head to shoes fully visible.
+- Character faces to the RIGHT (side / three-quarter view, fighting-game style) in every frame.
+- Clean ink outline around the whole silhouette so it separates well from the green.
+- Do not use any green colour on the character itself (no green clothes, hair, tattoos or jewellery) - green is reserved for the background.
+
+FRAMES, left-to-right, top row then bottom row:
+1. Fighting stance idle, fists up, knees slightly bent.
+2. Same fighting stance, body bobbed slightly lower (breathing frame for idle loop).
+3. Stepping forward mid-walk, fists up.
+4. Straight punch: front arm fully extended to the right.
+5. High kick: leg extended high toward the right.
+6. Getting hit: recoiling backwards to the left, head snapped back, pained face.
+7. Knocked out: lying flat on the back on the ground, dizzy, eyes as swirls (body horizontal, fully inside the cell).
+8. Victory pose: one fist raised to the sky, confident smirk, still roughly facing right.
+
+When the image is generated, copy the resulting PNG file to ./out/{ID}_sheet.png (create the out folder if needed). Do not do anything else.

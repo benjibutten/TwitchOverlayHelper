@@ -34,6 +34,7 @@ internal static class StaticAssets
             ".css" => "text/css; charset=utf-8",
             ".js" => "text/javascript; charset=utf-8",
             ".svg" => "image/svg+xml",
+            ".webp" => "image/webp",
             ".woff2" => "font/woff2",
             _ => "application/octet-stream"
         };

@@ -40,6 +40,24 @@ Det är avsiktligt inte docken med bakgrunden bortskruvad. De två läses av oli
 
 Sidan delar renderare med docken, så en emote, en länkknapp eller en förstorad emote ser likadan ut på båda ställena. Under en raid ritas nya rader några stycken per bildruta i stället för allihop på en gång, och det som ändå aldrig hade hunnit synas kastas – rutan håller ett dussin rader, och en kö tre gånger så djup är redan historia.
 
+## Väntskärm med fajt
+
+När streamen står still – karaktären ligger medvetslös, du är AFK, något krånglar – finns en väntskärm där två karaktärer gör upp med varandra, runda efter runda. Den sköter sig själv: de går fram, slår, sparkar, väjer, åker i backen, och vinnaren tar segerposen innan nästa runda. Rundorna hålls jämna – den som ligger under slår lite hårdare – så ingen vinner varje gång, och en stjärna per vunnen runda räknas upp under namnet.
+
+Allt ställs in under fliken **Fajt**. Lägg adressen som en Browser Source på 1920 × 1080 i en egen scen. Det du ändrar i fliken – karaktärer, arena, texten och kommandona – syns direkt i OBS, så adressen behöver aldrig bytas.
+
+- **Texten längst ned** skriver du själv i två fält, en rubrik och en rad under. Förslagen i listan (Strax tillbaka, AFK, medvetslös, tekniskt strul …) fyller bara i fälten, och sedan går det att skriva om dem fritt. Tomma fält visar ingen text. **💾 Spara text** lägger det du skrivit överst i listan, markerat med ★, så det går att välja igen med ett klick. **Ta bort sparad** tar bort den valda.
+- **Matchen**: vem som står i hörnet för spelare 1 (vänster) och spelare 2 (höger), och var de slåss. *Transparent – ingen bakgrund* visar bara fajten, med streamen bakom. *Svävande ringen* är en jetdriven ring mitt i bild, med strålkastare i hörnen och publik som kikar upp underifrån. Resten är genomskinligt. *Garaget* täcker hela bilden.
+- **Chattens kommandon**: `!heja 1` / `!heja 2` fyller hörnets supermätare. Efter fyra hejarop blir nästa spark en super som alltid träffar och tar ungefär en tredjedel av livet. `!hela 1` / `!hela 2` ger 10 HP tillbaka. Det går också att skriva `p1`/`p2` eller karaktärens namn. Siffran är hörnet, inte karaktären, så kommandona är desamma vem du än sätter i ringen. P1/P2 syns vid livsmätarna. Tittarens namn syns på skärmen i chattfärgen. Orden och väntetiden per tittare går att ändra. Kommandon som skrivs när ingen väntskärm är öppen ignoreras.
+
+### Egna karaktärer och arenor
+
+Karaktärer och arenor är mappar på disken, som pets: `%LOCALAPPDATA%\TwitchOverlayHelper\fight\fighters\<id>` med `fighter.json` och `sprite.webp`, och `...\arenas\<id>` med `arena.json` och en bild. Det som följer med appen (Silver, Ink, Garaget och Svävande ringen) skrivs dit vid första start och är sedan ditt att ändra. Lägg till en mapp, klicka **Ladda om**, och den går att välja. `LÄS MIG.txt` i mappen beskriver formatet.
+
+En figurremsa har åtta rutor i samma ordning – stå, stå (andning), gå, slag, spark, träffad, knockad, seger – 640 × 560 px per ruta, alla vända åt höger med fötterna på samma linje. En arena är vilken 16:9-bild som helst. `floor`, `left` och `right` i `arena.json` säger var fötterna står och hur långt karaktärerna får gå. Genomskinliga delar släpper igenom streamen.
+
+Nya karaktärer, outfits och arenor tas fram med Codex bildgenerering och verktygen i `tools/fight-assets`. Skripten där gör om en bild på grön bakgrund till rätt format. I Claude Code finns skillen `fight-assets` som går igenom hela vägen, från referensbild till färdig mapp.
+
 ## Händelser i chatten
 
 Subs, raids, meddelanden från streamern och annat som händer i chatten visas som egna kort bland meddelandena – i både docken och overlayen. Ett hypetåg är ingen enskild rad utan ett tillstånd som lever i minuter, så det får en remsa överst i docken med nivå, mätare och toppbidrag; overlayen visar i stället två kort, ett när tåget startar och ett när det tar slut.

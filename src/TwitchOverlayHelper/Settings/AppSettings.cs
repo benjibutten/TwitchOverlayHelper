@@ -108,6 +108,9 @@ public sealed class AppSettings
     /// <summary>Lyckosnurren – the spin that wins a viewer a pet of their own for good.</summary>
     public SpinSettings Spin { get; set; } = new();
 
+    /// <summary>The wait screen where the streamer's characters fight it out.</summary>
+    public FightSettings Fight { get; set; } = new();
+
     /// <summary>The edge glow that catches the streamer's eye – mod call and new chatters.</summary>
     public EdgeAlertSettings EdgeAlerts { get; set; } = new();
 
@@ -134,6 +137,8 @@ public sealed class AppSettings
         Pets.Normalize();
         Spin ??= new SpinSettings();
         Spin.Normalize();
+        Fight ??= new FightSettings();
+        Fight.Normalize();
         EdgeAlerts ??= new EdgeAlertSettings();
         EdgeAlerts.Normalize();
         Bot ??= new BotSettings();

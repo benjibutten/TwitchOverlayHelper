@@ -1,0 +1,9 @@
+{
+  "id": "sky",
+  "displayName": "Svävande ringen",
+  "description": "En jetdriven ring som svävar mitt i bild, strålkastare i hörnen och publik som kikar upp underifrån. Allt annat är genomskinligt – streamen syns bakom.",
+  "imagePath": "arena.webp",
+  "floor": 0.67,
+  "left": 0.2,
+  "right": 0.8
+}

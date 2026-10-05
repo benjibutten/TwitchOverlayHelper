@@ -1,0 +1,14 @@
+Use your image generation tool to create a background layer for a 2D side-view fighting game, in the art style of the attached reference images (semi-realistic comic / graphic-novel illustration, bold clean black ink outlines, soft cel shading).
+
+This layer will be placed OVER a live video stream, so most of it must be empty. Everything that is not part of an object below must be flat, solid, pure chroma green #00FF00 - no sky, no gradient, no haze, no glow, no light beams, no cast shadows on the green, no smoke, no text.
+
+Objects (each with a clean black ink outline so it separates from the green):
+1. CENTER BOTTOM: {STAGE} - seen from the side at chest height, about 70% of the image width, its flat top surface at about 70-80% of the image height. The top surface must be flat, empty and clear (characters will be drawn standing on it later).
+{EXTRAS}
+
+Requirements:
+- Wide 16:9 landscape.
+- Do NOT use any green colour anywhere in the artwork itself (no green clothes, no plants, no green lights) - green is reserved for the empty background.
+- The whole area between the objects (the middle and upper part of the image) is plain #00FF00.
+
+When the image is generated, copy the resulting PNG file to ./out/{ID}.png (create the out folder if needed). Do not do anything else.
