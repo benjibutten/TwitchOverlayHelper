@@ -596,6 +596,133 @@
                 </ScrollViewer>
             </TabItem>
 
+            <!-- ============================== Fajt ============================== -->
+            <TabItem Header="Fajt" Tag="🥊">
+                <ScrollViewer Style="{StaticResource Page}">
+                    <StackPanel>
+                        <TextBlock Text="En väntskärm för när streamen står still – karaktären är medvetslös, du är AFK, något krånglar. Två karaktärer gör upp med varandra, runda efter runda, och chatten kan heja fram den ena eller den andra. Lägg adressen som en Browser Source i en egen scen."
+                                   Style="{StaticResource Lead}" Margin="0,0,0,16" />
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="22" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+
+                            <StackPanel Style="{StaticResource Column}">
+                                <Border Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Adress till OBS" Style="{StaticResource SubTitle}" />
+                                        <Border Style="{StaticResource Sunken}" Padding="11,9" Margin="0,10,0,0">
+                                            <TextBox x:Name="FightUrlBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                                     Foreground="{StaticResource AccentTextBrush}" FontFamily="Consolas" Padding="0" />
+                                        </Border>
+                                        <Grid Margin="0,10,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                            <Button x:Name="CopyFightUrlButton" Content="Kopiera adress" IsEnabled="False" Click="CopyFightUrl_Click" />
+                                            <Button x:Name="OpenFightButton" Grid.Column="2" Content="Förhandsgranska" Background="#343B50" IsEnabled="False" Click="OpenFight_Click" />
+                                        </Grid>
+                                        <TextBlock Text="Gör källan 1920 × 1080 px. Allt du ändrar här syns direkt i OBS – adressen behöver aldrig bytas. Den innehåller en hemlig nyckel, så dela den inte."
+                                                   Style="{StaticResource Hint}" Margin="0,10,0,0" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource StackedCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="Texten längst ned" Style="{StaticResource SubTitle}" />
+                                        <TextBlock Text="Förslag" Style="{StaticResource FieldLabel}" Margin="0,12,0,5" />
+                                        <!-- Fylls från koden: dina sparade texter först, sedan förslagen som följer med appen. -->
+                                        <ComboBox x:Name="FightPresetBox" SelectionChanged="FightPreset_Changed"
+                                                  ToolTip="Fyller i båda fälten nedan. Sedan kan du skriva om texten precis som du vill." />
+                                        <TextBlock Text="Rubrik" Style="{StaticResource FieldLabel}" Margin="0,12,0,5" />
+                                        <TextBox x:Name="FightHeadlineBox" TextChanged="FightText_Changed" MaxLength="80"
+                                                 ToolTip="Den stora gula skylten. Lämna tom för att dölja den." />
+                                        <TextBlock Text="Rad under" Style="{StaticResource FieldLabel}" Margin="0,12,0,5" />
+                                        <TextBox x:Name="FightSublineBox" TextChanged="FightText_Changed" MaxLength="140"
+                                                 ToolTip="Den mindre raden under skylten. Lämna tom för att dölja den." />
+                                        <Grid Margin="0,12,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                            <Button x:Name="FightSaveTextButton" Content="💾 Spara text" Background="#343B50" Click="FightSaveText_Click"
+                                                    ToolTip="Lägger rubriken och raden under i listan ovan, så du kan välja dem igen med ett klick." />
+                                            <Button x:Name="FightDeleteTextButton" Grid.Column="2" Content="Ta bort sparad" Background="#343B50" IsEnabled="False" Click="FightDeleteText_Click"
+                                                    ToolTip="Tar bort den sparade text som är vald i listan. Förslagen som följer med appen går inte att ta bort." />
+                                        </Grid>
+                                        <TextBlock x:Name="FightTextStatus" Text="Lämna båda tomma så syns ingen text alls."
+                                                   Style="{StaticResource Hint}" Margin="0,10,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" Style="{StaticResource Column}">
+                                <Border Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <TextBlock Text="Matchen" Style="{StaticResource SubTitle}" />
+                                        <Grid Margin="0,12,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="Spelare 1 (vänster)" Style="{StaticResource FieldLabel}" />
+                                                <ComboBox x:Name="FightP1Box" SelectionChanged="FightMatch_Changed" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="Spelare 2 (höger)" Style="{StaticResource FieldLabel}" />
+                                                <ComboBox x:Name="FightP2Box" SelectionChanged="FightMatch_Changed" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Button Content="⇄ Byt sida" Background="#343B50" Margin="0,10,0,0" Click="FightSwap_Click"
+                                                ToolTip="Spelare 1 och 2 byter karaktär. Kommandona följer hörnet, inte karaktären." />
+                                        <TextBlock Text="Arena" Style="{StaticResource FieldLabel}" Margin="0,14,0,5" />
+                                        <ComboBox x:Name="FightArenaBox" SelectionChanged="FightMatch_Changed"
+                                                  ToolTip="Transparent visar bara fajten – det som ligger under i OBS syns bakom." />
+                                        <TextBlock x:Name="FightArenaHint" Text="" Style="{StaticResource Hint}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource StackedCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="Chattens kommandon" Style="{StaticResource SubTitle}" />
+                                        <CheckBox x:Name="FightCommandsCheck" Content="Låt chatten ta parti" Margin="0,12,0,0" Checked="FightCommand_Changed" Unchecked="FightCommand_Changed" />
+                                        <StackPanel IsEnabled="{Binding IsChecked, ElementName=FightCommandsCheck}">
+                                            <Grid Margin="0,10,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition Width="96" /></Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock Text="Heja" Style="{StaticResource FieldLabel}" />
+                                                    <TextBox x:Name="FightCheerBox" TextChanged="FightCommand_Changed" LostKeyboardFocus="FightCommand_LostFocus"
+                                                             ToolTip="Fyller hörnets supermätare en fjärdedel. Full mätare: nästa spark blir en super som alltid träffar." />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Hela" Style="{StaticResource FieldLabel}" />
+                                                    <TextBox x:Name="FightHealBox" TextChanged="FightCommand_Changed" LostKeyboardFocus="FightCommand_LostFocus"
+                                                             ToolTip="Ger hörnet 10 HP tillbaka." />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="4">
+                                                    <TextBlock Text="Väntetid (s)" Style="{StaticResource FieldLabel}" />
+                                                    <TextBox x:Name="FightCooldownBox" Style="{StaticResource NumberField}" TextChanged="FightCommand_Changed" LostKeyboardFocus="FightCommand_LostFocus"
+                                                             ToolTip="0–600 sekunder. Hur länge en tittare väntar innan samma kommando fungerar igen." />
+                                                </StackPanel>
+                                            </Grid>
+                                            <CheckBox x:Name="FightHintCheck" Content="Visa kommandona under namnen på skärmen" Margin="0,12,0,0" Checked="FightCommand_Changed" Unchecked="FightCommand_Changed" />
+                                        </StackPanel>
+                                        <TextBlock x:Name="FightCommandHint" Text="" Style="{StaticResource Hint}" Margin="0,10,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource StackedCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="Karaktärer och arenor" Style="{StaticResource SubTitle}" />
+                                        <TextBlock x:Name="FightListText" Text="" Style="{StaticResource Hint}" Margin="0,8,0,0" LineHeight="19" TextWrapping="Wrap" />
+                                        <Grid Margin="0,12,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                            <Button Content="Öppna fajtmappen" Background="#343B50" Click="OpenFightFolder_Click"
+                                                    ToolTip="En mapp per karaktär under fighters och en per arena under arenas" />
+                                            <Button Grid.Column="2" Content="Ladda om" Background="#343B50" Click="ReloadFight_Click"
+                                                    ToolTip="Läser in mappen igen – nya karaktärer och arenor dyker upp direkt" />
+                                        </Grid>
+                                        <TextBlock Text="En ny karaktär är en mapp under fighters med fighter.json och sprite.webp (8 rutor à 640 × 560 px: stå, andas, gå, slag, spark, träffad, knockad, seger). En arena är en mapp under arenas med arena.json och en bild – genomskinliga delar släpper igenom streamen. Mer i LÄS MIG.txt i mappen."
+                                                   Style="{StaticResource Hint}" Margin="0,10,0,0" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <!-- ============================== Uppläsning ============================== -->
             <TabItem Header="Uppläsning" Tag="🗣">
                 <ScrollViewer Style="{StaticResource Page}">

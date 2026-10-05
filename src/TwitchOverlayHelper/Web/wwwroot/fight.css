@@ -1,0 +1,15 @@
+/* Transparent: an arena with see-through parts, or none at all, shows the stream beneath it. */
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+/* The scene is drawn at 1920 × 1080 and scaled to whatever size the OBS source has. */
+#stage {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  object-fit: contain;
+}

@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using TwitchOverlayHelper.Fight;
 using TwitchOverlayHelper.Nicknames;
 using TwitchOverlayHelper.Pets;
 using TwitchOverlayHelper.Settings;
@@ -30,6 +31,9 @@ public sealed class DockServerContext
     public required PetCatalog Pets { get; init; }
     public required NicknameBook Nicknames { get; init; }
     public required UsableEmoteCatalog Emotes { get; init; }
+
+    /// <summary>The wait screen's fighters and arenas. Null serves no fight pictures at all.</summary>
+    public FightCatalog? Fight { get; init; }
 }
 
 /// <summary>
@@ -58,6 +62,13 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
     /// own – and so a scene without pets or overlay chat can still have readings.
     /// </summary>
     public string TtsUrl => $"http://127.0.0.1:{Port}/tts.html?key={context.Settings.DockAccessKey}";
+
+    /// <summary>
+    /// The wait screen: the streamer's two characters fighting on their own while the stream waits.
+    /// Keyed like the other browser sources, because it listens to the app – who is in the ring,
+    /// what the banner says, and the viewers who take a side.
+    /// </summary>
+    public string FightUrl => $"http://127.0.0.1:{Port}/fight.html?key={context.Settings.DockAccessKey}";
 
     /// <summary>
     /// One pet alone in a browser tab, with the controls to try every animation it has. A page for
@@ -187,6 +198,7 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
                 "stream" => DockView.Stream,
                 "pets" => DockView.Pets,
                 "tts" => DockView.Tts,
+                "fight" => DockView.Fight,
                 _ => DockView.Dock
             };
             using WebSocket socket = await http.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
@@ -372,6 +384,14 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
             return Results.File(path, type);
         });
 
+        // The wait screen's pictures, from the user's fight folder. Like the pet sprites, only ids the
+        // catalog itself resolved are served, so the URL can never name an arbitrary file.
+        app.MapGet("/fight/fighter/{id}", (string id) =>
+            context.Fight?.TryGetFighterSprite(id, out string path) == true ? Results.File(path, ImageType(path)) : Results.NotFound());
+
+        app.MapGet("/fight/arena/{id}", (string id) =>
+            context.Fight?.TryGetArenaImage(id, out string path) == true ? Results.File(path, ImageType(path)) : Results.NotFound());
+
         // An explicit catch-all: the default fallback pattern skips paths that look like files,
         // which would leave app.js and styles.css unreachable.
         app.MapFallback("/{**path}", async (HttpContext http) =>
@@ -385,6 +405,14 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
             await http.Response.Body.WriteAsync(content).ConfigureAwait(false);
         });
     }
+
+    private static string ImageType(string path) => Path.GetExtension(path).ToLowerInvariant() switch
+    {
+        ".webp" => "image/webp",
+        ".png" => "image/png",
+        ".jpg" or ".jpeg" => "image/jpeg",
+        _ => "application/octet-stream"
+    };
 
     /// <summary>The channel being moderated. Works in any channel where you hold the mod role.</summary>
     private string RequireBroadcaster() => context.Hub.BroadcasterId.Length > 0

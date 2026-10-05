@@ -477,3 +477,22 @@ internal static class DockMapper
         moderation.TargetLogin,
         moderation.DurationSeconds);
 }
+
+/// <summary>One corner of the ring, as the wait screen draws it.</summary>
+internal sealed record DockFighter(string Id, string Name, string Sprite, double Scale);
+
+/// <summary>Where the fight happens. A null image is the transparent arena.</summary>
+internal sealed record DockArena(string Id, string? Image, double Floor, double Left, double Right);
+
+/// <summary>The words the chat can use, so the screen can show them and say what they did.</summary>
+internal sealed record DockFightCommands(bool Enabled, string Cheer, string Heal, bool ShowHint);
+
+/// <summary>
+/// Everything the wait screen needs from the app: both corners, the arena, the commands and the two
+/// lines of the banner, worded by the streamer.
+/// </summary>
+internal sealed record DockFightSetup(DockFighter? P1, DockFighter? P2, DockArena Arena, DockFightCommands Commands,
+    string Headline, string Subline);
+
+/// <summary>A viewer taking a side. <c>Kind</c> is "cheer" or "heal".</summary>
+internal sealed record DockFightAssist(int Player, string Kind, string Viewer, string? Color);

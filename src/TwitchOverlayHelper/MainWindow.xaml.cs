@@ -9,6 +9,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using TwitchOverlayHelper.Bot;
 using TwitchOverlayHelper.Diagnostics;
+using TwitchOverlayHelper.Fight;
 using TwitchOverlayHelper.History;
 using TwitchOverlayHelper.Interop;
 using TwitchOverlayHelper.Models;
@@ -108,6 +109,8 @@ public partial class MainWindow : Window
     /// contained files the previous version had never seen.
     /// </summary>
     private readonly PetCatalog _petCatalog;
+    private readonly FightCatalog _fightCatalog;
+    private readonly FightService _fight;
     private readonly PetService _petService;
 
     /// <summary>
@@ -196,6 +199,7 @@ public partial class MainWindow : Window
         // Only now: reading the catalogue seeds this version's pets into the profile folder, and
         // the snapshot above has to be of what was there before that happened.
         _petCatalog = new PetCatalog();
+        _fightCatalog = new FightCatalog();
         _nicknames = _nicknameStore.Load();
         _nicknames.Changed += OnNicknameChanged;
         SyncStartWithWindows();
@@ -213,6 +217,9 @@ public partial class MainWindow : Window
         _browserTts = new BrowserTtsOutput(_hub, _ttsAudio, () => _settings.DockAccessKey);
         _tts = new TtsService(_speechHttpClient, _settings, _speechSecrets, PlayReadingAsync);
         _petService = new PetService(_settings, _petCatalog, _petRegistry, _hub);
+        _hub.FightSetup = BuildFightSetup;
+        // A cheer with no wait screen open would only start the viewer's cooldown for nothing.
+        _fight = new FightService(_settings, _fightCatalog, _hub.PublishFightAssist) { IsShowing = () => _hub.FightOverlayCount > 0 };
         _spinWins = new SpinWinStore();
         // What makes a win-only pet usable by exactly its winner, wherever pets are asked for.
         _petService.OwnsWonPet = _spinWins.Owns;
@@ -256,7 +263,8 @@ public partial class MainWindow : Window
             TtsAudio = _ttsAudio,
             Pets = _petCatalog,
             Nicknames = _nicknames,
-            Emotes = _emotes
+            Emotes = _emotes,
+            Fight = _fightCatalog
         };
         _dockServer = new DockServer(_dockContext);
         _overlay = new OverlayWindow(_settings, _badgeCatalog, _nicknames);
@@ -591,6 +599,9 @@ public partial class MainWindow : Window
         OpenStreamButton.IsEnabled = started;
         TtsUrlBox.Text = started ? _dockServer.TtsUrl : string.Empty;
         CopyTtsUrlButton.IsEnabled = started;
+        FightUrlBox.Text = started ? _dockServer.FightUrl : string.Empty;
+        CopyFightUrlButton.IsEnabled = started;
+        OpenFightButton.IsEnabled = started;
         SetDockStatus(started ? "Servern kör – klistra in adressen i OBS." : _dockServer.LastError ?? "Servern kunde inte starta.", started ? "live" : "error");
     }
 
@@ -1848,6 +1859,7 @@ public partial class MainWindow : Window
         if (own) return;
 
         _petService.HandleMessage(message);
+        _fight.HandleMessage(message);
         TrackLastReward(message);
         // The welcome and the two commands. Ahead of the edge alerts because it answers rather than
         // lights up, and the two have nothing to do with each other.
@@ -2238,6 +2250,7 @@ public partial class MainWindow : Window
     private void PopulateControls()
     {
         PopulateBotControls();
+        PopulateFightControls();
         ChannelBox.Text = _settings.Channel;
         RecentMessagesCheck.IsChecked = _settings.FetchRecentMessages;
         ClientIdBox.Text = _settings.ClientId;
