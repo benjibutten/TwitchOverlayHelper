@@ -23,6 +23,8 @@
     <EmbeddedResource Include="Web\wwwroot\**\*" />
     <!-- The pets that ship with the app, ready to be written to the user's pets folder. -->
     <EmbeddedResource Include="Pets\Defaults\**\*" />
+    <!-- The fighters and arenas that ship with the app, written to the user's fight folder. -->
+    <EmbeddedResource Include="Fight\Defaults\**\*" />
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
