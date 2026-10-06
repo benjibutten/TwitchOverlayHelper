@@ -140,10 +140,12 @@ class Fighter {
     this.outfit = outfit.code;
     this.name = (params.get("p" + this.player) || def.name || "").toUpperCase();
     this.scale = def.scale || 1;
-    // The special's own poses are drawn in the ordinary outfit; in another outfit they would show the
-    // wrong clothes for a moment, so that outfit swings with its kick instead.
-    this.special = def.special || null;
-    this.specialSprite = this.special && this.special.sprite && outfit.code === 1 ? cachedImage(this.special.sprite) : null;
+    // An outfit can have a special of its own, drawn in its clothes. The fighter's special is drawn in
+    // the ordinary outfit; in another one its poses would show the wrong clothes for a moment, so that
+    // outfit swings with its kick instead.
+    const own = outfit.special || null;
+    this.special = own || def.special || null;
+    this.specialSprite = this.special && this.special.sprite && (own || outfit.code === 1) ? cachedImage(this.special.sprite) : null;
     this.prop = this.special && this.special.prop ? cachedImage(this.special.prop) : null;
   }
 
