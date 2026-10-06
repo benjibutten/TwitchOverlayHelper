@@ -39,16 +39,22 @@ public partial class MainWindow
         static DockFighter? ToDock(FighterDefinition? f, int outfit)
         {
             if (f is null) return null;
-            DockOutfit[] outfits = f.Outfits.Select(o => new DockOutfit(o.Code, OutfitName(o), SpriteUrl(f, o))).ToArray();
+            DockOutfit[] outfits = f.Outfits
+                .Select(o => new DockOutfit(o.Code, OutfitName(o), SpriteUrl(f, o), ToDockSpecial(f, o.Special, o.Code)))
+                .ToArray();
             FighterOutfit chosen = f.Outfit(outfit);
-            return new DockFighter(f.Id, f.Name, SpriteUrl(f, chosen), f.Scale, chosen.Code, outfits, ToDockSpecial(f));
+            return new DockFighter(f.Id, f.Name, SpriteUrl(f, chosen), f.Scale, chosen.Code, outfits, ToDockSpecial(f, f.Special, 1));
         }
 
-        static DockSpecial? ToDockSpecial(FighterDefinition f) => f.Special is not { } s ? null : new DockSpecial(
-            s.Name, s.Style,
-            s.SpriteFile is null ? null : $"/fight/fighter/{Uri.EscapeDataString(f.Id)}/special?v={Stamp(s.SpriteFile)}",
-            s.PropFile is null ? null : $"/fight/fighter/{Uri.EscapeDataString(f.Id)}/prop?v={Stamp(s.PropFile)}",
-            s.Color);
+        static DockSpecial? ToDockSpecial(FighterDefinition f, FighterSpecial? s, int outfit)
+        {
+            if (s is null) return null;
+            string root = outfit == 1 ? $"/fight/fighter/{Uri.EscapeDataString(f.Id)}" : $"/fight/fighter/{Uri.EscapeDataString(f.Id)}/{outfit}";
+            return new DockSpecial(s.Name, s.Style,
+                s.SpriteFile is null ? null : $"{root}/special?v={Stamp(s.SpriteFile)}",
+                s.PropFile is null ? null : $"{root}/prop?v={Stamp(s.PropFile)}",
+                s.Color);
+        }
 
         static string SpriteUrl(FighterDefinition f, FighterOutfit o) => o.Code == 1
             ? $"/fight/fighter/{Uri.EscapeDataString(f.Id)}?v={Stamp(o.SpriteFile)}"

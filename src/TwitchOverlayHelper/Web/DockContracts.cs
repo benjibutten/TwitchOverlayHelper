@@ -478,8 +478,11 @@ internal static class DockMapper
         moderation.DurationSeconds);
 }
 
-/// <summary>One look of a fighter: its code, what the streamer called it, and its strip.</summary>
-internal sealed record DockOutfit(int Code, string Name, string Sprite);
+/// <summary>
+/// One look of a fighter: its code, what the streamer called it, and its strip. <c>Special</c> is
+/// set only when the outfit has a special of its own; otherwise it fights with the fighter's.
+/// </summary>
+internal sealed record DockOutfit(int Code, string Name, string Sprite, DockSpecial? Special = null);
 
 /// <summary>
 /// One fighter as the wait screen knows it. <c>Outfit</c> is the look in use when this stands in a

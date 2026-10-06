@@ -433,6 +433,28 @@ public sealed class FightOutfitAndPickTests : IDisposable
     }
 
     [Fact]
+    public void AnOutfitCanHaveASpecialOfItsOwn()
+    {
+        AddFighter("zelda", """
+            { "id": "zelda", "special": { "name": "Klubban" },
+              "outfits": [ { "code": 2, "name": "Rutig", "special": { "name": "Bitchslap", "color": "#ff4fc3" } } ] }
+            """, "special.webp", "sprite2.webp", "special2.webp", "sprite3.webp");
+
+        _catalog.Reload();
+
+        FighterDefinition zelda = _catalog.FindFighter("zelda")!;
+        Assert.Equal("Bitchslap", zelda.SpecialFor(2)!.Name);
+        Assert.EndsWith("special2.webp", zelda.SpecialFor(2)!.SpriteFile);
+        Assert.Equal("Klubban", zelda.SpecialFor(3)!.Name);
+        Assert.Equal("Klubban", zelda.SpecialFor(1)!.Name);
+        Assert.True(_catalog.TryGetFighterSpecialFile("zelda", 2, "special", out string own));
+        Assert.EndsWith("special2.webp", own);
+        Assert.True(_catalog.TryGetFighterSpecialFile("zelda", 3, "special", out string shared));
+        Assert.EndsWith("special.webp", shared);
+        Assert.False(_catalog.TryGetFighterSpecialFile("zelda", 7, "special", out _));
+    }
+
+    [Fact]
     public void AThrowWithNothingToThrowBecomesASwing()
     {
         AddFighter("nova", """

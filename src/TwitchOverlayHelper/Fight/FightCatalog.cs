@@ -11,7 +11,11 @@ namespace TwitchOverlayHelper.Fight;
 /// jacket to the hair. Code 1 is the fighter's ordinary look; the others are what the chat asks for
 /// with a digit after the name – "my2".
 /// </summary>
-public sealed record FighterOutfit(int Code, string Name, string SpriteFile);
+public sealed record FighterOutfit(int Code, string Name, string SpriteFile)
+{
+    /// <summary>A special of this outfit's own, drawn in its clothes; null fights with the fighter's.</summary>
+    public FighterSpecial? Special { get; init; }
+}
 
 /// <summary>
 /// A fighter's own super move – what a full meter, or a last stand, turns into. <see cref="Style"/>
@@ -42,6 +46,9 @@ public sealed record FighterDefinition(
 
     /// <summary>This fighter's special attack, or null for the ordinary super kick.</summary>
     public FighterSpecial? Special { get; init; }
+
+    /// <summary>The special an outfit fights with: its own when it has one, else the fighter's.</summary>
+    public FighterSpecial? SpecialFor(int outfit) => Outfit(outfit).Special ?? Special;
 }
 
 /// <summary>
@@ -157,9 +164,13 @@ public sealed class FightCatalog
     public bool TryGetFighterSprite(string id, out string path) => TryGetFighterSprite(id, 1, out path);
 
     /// <summary>The special attack's poses or its thrown prop. "special" or "prop"; anything else is not found.</summary>
-    public bool TryGetFighterSpecialFile(string id, string part, out string path)
+    public bool TryGetFighterSpecialFile(string id, string part, out string path) => TryGetFighterSpecialFile(id, 1, part, out path);
+
+    /// <summary>The special one outfit fights with: its own, or the fighter's when it has none.</summary>
+    public bool TryGetFighterSpecialFile(string id, int outfit, string part, out string path)
     {
-        FighterSpecial? special = FindFighter(id)?.Special;
+        FighterDefinition? fighter = FindFighter(id);
+        FighterSpecial? special = fighter?.Outfits.Any(o => o.Code == outfit) == true ? fighter.SpecialFor(outfit) : null;
         path = part switch
         {
             "special" => special?.SpriteFile,
@@ -254,17 +265,23 @@ public sealed class FightCatalog
     /// <summary>The ways a special can play out. Anything else in fighter.json is read as a swing.</summary>
     public static IReadOnlyList<string> SpecialStyles { get; } = ["swing", "throw", "saw"];
 
-    private static FighterSpecial? LoadSpecial(string folder, string folderName, SpecialManifest? manifest, List<string> warnings)
+    /// <summary>
+    /// A special from fighter.json. <paramref name="suffix"/> is empty for the fighter's own and the
+    /// outfit's code for an outfit's, so an outfit's files default to special2.webp and prop2.webp.
+    /// </summary>
+    private static FighterSpecial? LoadSpecial(string folder, string folderName, SpecialManifest? manifest, List<string> warnings,
+        string suffix = "")
     {
         if (manifest is null) return null;
+        string field = suffix.Length == 0 ? "special" : $"outfits[{suffix}].special";
         string style = SpecialStyles.Contains(manifest.Style?.Trim().ToLowerInvariant()) ? manifest.Style!.Trim().ToLowerInvariant() : "swing";
-        string? sprite = Resolve(folder, manifest.SpritePath ?? "special.webp", folderName, "special.spritePath", warnings);
+        string? sprite = Resolve(folder, manifest.SpritePath ?? $"special{suffix}.webp", folderName, $"{field}.spritePath", warnings);
         string? prop = manifest.PropPath is { Length: > 0 } || style == "throw"
-            ? Resolve(folder, manifest.PropPath ?? "prop.webp", folderName, "special.propPath", warnings)
+            ? Resolve(folder, manifest.PropPath ?? $"prop{suffix}.webp", folderName, $"{field}.propPath", warnings)
             : null;
         if (style == "throw" && prop is null)
         {
-            warnings.Add($"{folderName}: specialen kastar något men hittar ingen bild på det (prop.webp).");
+            warnings.Add($"{folderName}: specialen kastar något men hittar ingen bild på det ({manifest.PropPath ?? $"prop{suffix}.webp"}).");
             style = "swing";
         }
         string color = manifest.Color is { Length: 7 } c && c[0] == '#' && c[1..].All(char.IsAsciiHexDigit) ? c : "#ffd43b";
@@ -305,7 +322,10 @@ public sealed class FightCatalog
                 warnings.Add($"{folderName}: klädsel {code} har ingen bild.");
                 continue;
             }
-            outfits[code] = new FighterOutfit(code, name, file);
+            outfits[code] = new FighterOutfit(code, name, file)
+            {
+                Special = LoadSpecial(folder, folderName, entry.Special, warnings, code == 1 ? "" : code.ToString())
+            };
         }
         return outfits.Values.ToArray();
     }
@@ -437,7 +457,8 @@ public sealed class FightCatalog
     private sealed record OutfitManifest(
         int? Code,
         string? Name,
-        [property: JsonPropertyName("spritePath")] string? SpritePath);
+        [property: JsonPropertyName("spritePath")] string? SpritePath,
+        SpecialManifest? Special);
 
     private sealed record ArenaManifest(
         string? Id,

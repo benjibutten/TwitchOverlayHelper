@@ -70,6 +70,16 @@ får vara större än i sprite.webp (till exempel 1024 × 760) så att vapnet f�
 plats – figuren ska vara lika stor och stå på samma linje 10 px ovanför
 rutans underkant. Saknas special.webp används den vanliga sparken som pose.
 
+En klädsel kan ha en egen special, ritad i sina egna kläder. Lägg den i
+klädselns rad i "outfits". Bilderna heter då special2.webp och prop2.webp
+(med klädselns kod) om inget annat anges:
+
+  "outfits": [
+    { "code": 2, "name": "Rutig", "special": { "name": "Bitchslap", "style": "swing", "color": "#ff4fc3" } }
+  ]
+
+En klädsel utan egen special använder karaktärens.
+
 En arena
 --------
 
