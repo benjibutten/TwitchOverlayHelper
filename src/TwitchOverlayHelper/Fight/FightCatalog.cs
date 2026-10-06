@@ -166,11 +166,15 @@ public sealed class FightCatalog
     /// <summary>The special attack's poses or its thrown prop. "special" or "prop"; anything else is not found.</summary>
     public bool TryGetFighterSpecialFile(string id, string part, out string path) => TryGetFighterSpecialFile(id, 1, part, out path);
 
-    /// <summary>The special one outfit fights with: its own, or the fighter's when it has none.</summary>
+    /// <summary>
+    /// The special one outfit fights with: its own, or the fighter's when it has none. Outfit 0 is
+    /// the fighter's own special, whatever outfit 1 has.
+    /// </summary>
     public bool TryGetFighterSpecialFile(string id, int outfit, string part, out string path)
     {
         FighterDefinition? fighter = FindFighter(id);
-        FighterSpecial? special = fighter?.Outfits.Any(o => o.Code == outfit) == true ? fighter.SpecialFor(outfit) : null;
+        FighterSpecial? special = outfit == 0 ? fighter?.Special
+            : fighter?.Outfits.Any(o => o.Code == outfit) == true ? fighter.SpecialFor(outfit) : null;
         path = part switch
         {
             "special" => special?.SpriteFile,

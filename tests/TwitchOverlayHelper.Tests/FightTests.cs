@@ -455,6 +455,22 @@ public sealed class FightOutfitAndPickTests : IDisposable
     }
 
     [Fact]
+    public void TheFightersOwnSpecialIsServedApartFromOutfitOnes()
+    {
+        AddFighter("zelda", """
+            { "id": "zelda", "special": { "name": "Klubban" },
+              "outfits": [ { "code": 1, "special": { "name": "Bitchslap", "spritePath": "special1.webp" } } ] }
+            """, "special.webp", "special1.webp");
+
+        _catalog.Reload();
+
+        Assert.True(_catalog.TryGetFighterSpecialFile("zelda", 0, "special", out string fighters));
+        Assert.EndsWith("special.webp", fighters);
+        Assert.True(_catalog.TryGetFighterSpecialFile("zelda", 1, "special", out string own));
+        Assert.EndsWith("special1.webp", own);
+    }
+
+    [Fact]
     public void AThrowWithNothingToThrowBecomesASwing()
     {
         AddFighter("nova", """

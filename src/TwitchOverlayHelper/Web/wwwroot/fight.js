@@ -522,7 +522,8 @@ function throwProp(f) {
       const sp = f.special;
       for (let i = 0; i < 40; i++) flame(target.x + rand(-110, 110), stage.ground - rand(20, 320) * target.size, sp.color);
       sparks(target.x, stage.ground - 300 * target.size, 0, 30, [sp.color, "#ffffff", "#ffb340"]);
-      if (!target.down && inRounds()) {
+      // A thrower knocked out while the prop was in the air has lost the round; it lands harmlessly.
+      if (!target.down && !f.down && phase === "fight") {
         target.burn = 1.8;
         target.burnColor = sp.color;
         specialHit(f, target, rand(24, 30), true);

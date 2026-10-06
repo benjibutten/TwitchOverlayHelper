@@ -43,9 +43,11 @@ public partial class MainWindow
                 .Select(o => new DockOutfit(o.Code, OutfitName(o), SpriteUrl(f, o), ToDockSpecial(f, o.Special, o.Code)))
                 .ToArray();
             FighterOutfit chosen = f.Outfit(outfit);
-            return new DockFighter(f.Id, f.Name, SpriteUrl(f, chosen), f.Scale, chosen.Code, outfits, ToDockSpecial(f, f.Special, 1));
+            return new DockFighter(f.Id, f.Name, SpriteUrl(f, chosen), f.Scale, chosen.Code, outfits, ToDockSpecial(f, f.Special, 0));
         }
 
+        // Outfit 0 is the fighter's own special. It needs an address apart from outfit 1's, which
+        // may be a special of its own.
         static DockSpecial? ToDockSpecial(FighterDefinition f, FighterSpecial? s, int outfit)
         {
             if (s is null) return null;
