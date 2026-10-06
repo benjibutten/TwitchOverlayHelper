@@ -20,8 +20,9 @@ public sealed record FighterOutfit(int Code, string Name, string SpriteFile)
 /// <summary>
 /// A fighter's own super move – what a full meter, or a last stand, turns into. <see cref="Style"/>
 /// is how it plays out: "throw" sends <see cref="PropFile"/> flying in an arc, "swing" is one huge
-/// blow, "saw" a burst of quick hits. <see cref="SpriteFile"/> is a strip of three poses (stance,
-/// wind-up, strike) in the same cell format as the fighter; without it the kick is used.
+/// blow, "saw" a burst of quick hits, "confuse" a spell that hurts and then leaves the other fighter
+/// stumbling about under circling question marks. <see cref="SpriteFile"/> is a strip of three
+/// poses (stance, wind-up, strike) in the same cell format as the fighter; without it the kick is used.
 /// </summary>
 public sealed record FighterSpecial(string Name, string Style, string? SpriteFile, string? PropFile, string Color);
 
@@ -267,7 +268,7 @@ public sealed class FightCatalog
     }
 
     /// <summary>The ways a special can play out. Anything else in fighter.json is read as a swing.</summary>
-    public static IReadOnlyList<string> SpecialStyles { get; } = ["swing", "throw", "saw"];
+    public static IReadOnlyList<string> SpecialStyles { get; } = ["swing", "throw", "saw", "confuse"];
 
     /// <summary>
     /// A special from fighter.json. <paramref name="suffix"/> is empty for the fighter's own and the

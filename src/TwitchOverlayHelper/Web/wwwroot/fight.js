@@ -166,6 +166,7 @@ class Fighter {
     this.flash = 0;
     this.glow = 0; // the green shimmer of a heal
     this.burn = 0; // flames left on a fighter hit by something burning
+    this.confused = 0; // seconds left of a confusion: question marks round the head, no idea where the foe is
     this.hasHit = false;
     this.lastStandUsed = false; // the special without a meter, once a round
     // A temperament per round, so two rounds in a row never play out the same.
@@ -173,7 +174,8 @@ class Fighter {
     this.reach = rand(300, 330) * Math.min(1.3, Math.max(0.8, this.scale));
   }
 
-  get facing() { return this.foe.x > this.x ? 1 : -1; }
+  /* A confused fighter faces wherever the confusion turned them. */
+  get facing() { return this.confused > 0 ? this.dazedFacing : this.foe.x > this.x ? 1 : -1; }
   get distance() { return Math.abs(this.foe.x - this.x); }
   get down() { return this.state === "down"; }
   get charged() { return this.meter >= 100; }
@@ -191,6 +193,7 @@ class Fighter {
       this.burn = Math.max(0, this.burn - dt);
       if (Math.random() < dt * 40) flame(this.x + rand(-70, 70) * this.scale, stage.ground - this.y - rand(60, 420) * this.size, this.burnColor);
     }
+    if (this.confused > 0) this.confused = this.down ? 0 : Math.max(0, this.confused - dt);
     // The trail waits a moment and then drains slowly, so a blow can be read on the bar.
     this.shownHp += (this.hp - this.shownHp) * Math.min(1, dt * (this.shownHp > this.hp + 1 ? 2.2 : 10));
 
@@ -214,6 +217,7 @@ class Fighter {
       case "idle": this.think(dt, fighting); break;
       case "walk": this.walk(dt, fighting); break;
       case "back": this.backstep(); break;
+      case "stagger": this.stagger(); break;
       case "attack": this.attack(); break;
       case "special": this.specialMove(); break;
       case "hit": if (this.t > 0.38) this.set("idle"); break;
@@ -225,6 +229,7 @@ class Fighter {
     if (!fighting || this.foe.down) return;
     this.wait -= dt;
     if (this.wait > 0) return;
+    if (this.confused > 0) { this.dazed(); return; }
 
     // The special: what a full meter buys – or, once a round, a last stand when the round is slipping.
     const lastStand = this.special && !this.lastStandUsed && this.hp <= 30 && this.foe.hp > this.hp + 10 && Math.random() < 0.4;
@@ -261,6 +266,30 @@ class Fighter {
     }
   }
 
+  /* What a confused fighter does instead of fighting: stumbles off in some direction, turns round,
+     or throws a punch at nobody. */
+  dazed() {
+    const roll = Math.random();
+    this.dazedFacing = Math.random() < 0.5 ? 1 : -1;
+    if (roll < 0.5) {
+      this.set("stagger");
+    } else if (roll < 0.8) {
+      this.move = Math.random() < 0.5 ? "kick" : "punch";
+      this.hasHit = false;
+      this.set("attack");
+    } else {
+      this.wait = rand(0.3, 0.6);
+    }
+  }
+
+  stagger() {
+    this.vx = this.facing * 170;
+    if (this.t > 0.6) {
+      this.wait = rand(0.1, 0.4);
+      this.set("idle");
+    }
+  }
+
   backstep() {
     this.vx = -this.facing * 260;
     if (this.t > 0.32) {
@@ -271,10 +300,11 @@ class Fighter {
 
   get windup() { return this.move === "kick" ? (this.charged ? 0.32 : 0.2) : 0.13; }
 
-  /* How close the special has to be. A throw goes the length of the ring; a swing lunges in. */
+  /* How close the special has to be. A throw goes the length of the ring, a confusion half of it; a
+     swing lunges in. */
   get specialReach() {
     const style = this.special ? this.special.style : "swing";
-    return style === "throw" ? 4000 : this.reach + 260;
+    return style === "throw" ? 4000 : style === "confuse" ? this.reach + 480 : this.reach + 260;
   }
 
   /* Wind-up and how long the whole move lasts, per style. */
@@ -282,6 +312,7 @@ class Fighter {
     switch (this.special && this.special.style) {
       case "throw": return { windup: 0.5, total: 1.05 };
       case "saw": return { windup: 0.45, total: 1.3 };
+      case "confuse": return { windup: 0.6, total: 1.45 };
       default: return { windup: 0.55, total: 1.05 };
     }
   }
@@ -291,14 +322,14 @@ class Fighter {
     const style = this.special.style;
     const close = () => this.distance <= this.reach + 160 && !this.foe.down;
     // Swings and saws lunge in at the end of the wind-up, so the blow lands from where they stood.
-    if (style !== "throw" && !this.lunged && this.t >= windup - 0.12) {
+    if (style !== "throw" && style !== "confuse" && !this.lunged && this.t >= windup - 0.12) {
       this.lunged = true;
       this.vx = this.facing * Math.min(1400, Math.max(300, (this.distance - this.reach + 120) * 5));
     }
-    if (style === "throw") {
+    if (style === "throw" || style === "confuse") {
       if (this.t >= windup && !this.hasHit) {
         this.hasHit = true;
-        throwProp(this);
+        if (style === "throw") throwProp(this); else castConfusion(this);
       }
     } else if (style === "saw") {
       // A burst of quick cuts while the blade is in, the last one the big one.
@@ -326,7 +357,7 @@ class Fighter {
         return { img: sp, frame: strike ? 2 : 1, cw: sp.naturalWidth / 3, ch: sp.naturalHeight };
       }
       const style = this.special.style;
-      return { img: this.sprite, frame: strike ? (style === "throw" ? FRAME.punch : FRAME.kick) : FRAME.walk };
+      return { img: this.sprite, frame: strike ? (style === "throw" || style === "confuse" ? FRAME.punch : FRAME.kick) : FRAME.walk };
     }
     return { img: this.sprite, frame: this.frame() };
   }
@@ -336,7 +367,10 @@ class Fighter {
     if (this.t >= this.windup && !this.hasHit) {
       this.hasHit = true;
       const reach = this.reach + (this.move === "kick" ? 60 : 40);
-      if (this.distance <= reach && !this.foe.down) {
+      if (this.confused > 0) {
+        // Swinging at thin air.
+        popText(pick(["???", "HÄ?", "VA?"]), this.x + this.facing * 120, stage.ground - 480 * this.size, "#d6dbe4", 46, 0.7);
+      } else if (this.distance <= reach && !this.foe.down) {
         // A super never misses – the chat paid for it.
         if (!this.charged && (this.foe.state === "back" || Math.random() < 0.12)) {
           popText("MISS", this.foe.x, stage.ground - 520, "#d6dbe4");
@@ -355,6 +389,7 @@ class Fighter {
     switch (this.state) {
       case "walk": return Math.floor(this.t / 0.16) % 2 ? FRAME.walk : FRAME.idle;
       case "back": return FRAME.walk;
+      case "stagger": return Math.floor(this.t / 0.2) % 2 ? FRAME.hit : FRAME.walk;
       case "attack": return this.t < this.windup ? FRAME.walk : FRAME[this.move];
       case "hit": return FRAME.hit;
       case "down": return this.y > 30 || this.t < 0.2 ? FRAME.hit : FRAME.down;
@@ -375,6 +410,8 @@ class Fighter {
     const facing = this.down || this.state === "win" ? this.lastFacing : this.facing;
     this.lastFacing = facing;
 
+    // The question marks of a confusion go round the head, the far half behind it.
+    if (this.confused > 0) this.drawConfusion(alpha, time, false);
     ctx.save();
     ctx.globalAlpha = alpha;
 
@@ -406,6 +443,26 @@ class Fighter {
     }
     ctx.drawImage(layer, -cw / 2, -base);
     ctx.restore();
+    if (this.confused > 0) this.drawConfusion(alpha, time, true);
+  }
+
+  /* Question marks circling the head: a flattened ring seen from the side, the near ones bigger. */
+  drawConfusion(alpha, time, front) {
+    const fade = Math.min(1, this.confused / 0.4, (CONFUSE_TIME - this.confused) / 0.25);
+    const cx = this.x, cy = stage.ground - this.y - 440 * this.size;
+    const n = 8;
+    for (let i = 0; i < n; i++) {
+      const a = time * 3.6 + (i / n) * Math.PI * 2;
+      const depth = Math.sin(a);
+      if (depth >= 0 !== front) continue;
+      const s = (0.72 + depth * 0.28) * this.size;
+      ctx.save();
+      ctx.globalAlpha = alpha * fade * (0.65 + depth * 0.35);
+      ctx.translate(cx + Math.cos(a) * 135 * this.size, cy + depth * 30 * this.size + Math.sin(time * 7 + i) * 8);
+      ctx.rotate(Math.sin(time * 5 + i * 1.7) * 0.35);
+      inkText("?", 0, 0, 64 * s, i % 2 ? this.confuseColor : "#ffffff", "#111", 64 * s * 0.18);
+      ctx.restore();
+    }
   }
 }
 
@@ -532,6 +589,39 @@ function throwProp(f) {
   });
 }
 
+/* How long a confusion lasts. */
+const CONFUSE_TIME = 3.2;
+
+/* A confusion: a stream of question marks spirals from the hand to the other fighter, and when it
+   lands it hurts, and they circle the head for a while – the fighter under them stumbles about and
+   swings at nobody, which leaves them wide open. */
+function castConfusion(f) {
+  const target = f.foe;
+  const x0 = f.x + f.facing * 150 * f.size;
+  const y0 = stage.ground - 440 * f.size;
+  const count = 9;
+  for (let i = 0; i < count; i++) {
+    effects.push({
+      kind: "qmark", target, color: i % 2 ? f.special.color : "#ffffff",
+      x0, y0, x: x0, y: y0, t: -i * 0.045, life: 0.42, phase: i * 0.7, angle: 0,
+      onEnd: i < count - 1 ? null : () => {
+        const sp = f.special;
+        for (let j = 0; j < 10; j++)
+          popText("?", target.x + rand(-160, 160), stage.ground - rand(220, 520) * target.size, pick([sp.color, "#ffffff"]), rand(44, 80), rand(0.6, 1));
+        // A caster knocked out while the spell was on its way has lost the round; it fizzles out.
+        if (!target.down && !f.down && phase === "fight") {
+          specialHit(f, target, rand(18, 24), true);
+          if (!target.down) {
+            target.confused = CONFUSE_TIME;
+            target.confuseColor = sp.color;
+            target.dazedFacing = -target.facing;
+          }
+        }
+      }
+    });
+  }
+}
+
 /* One lick of fire: a soft blob that rises, swells and fades, added rather than painted over. */
 function flame(x, y, color) {
   effects.push({ kind: "flame", x, y, vx: rand(-40, 40), vy: rand(-260, -120), r: rand(14, 32), t: 0, life: rand(0.35, 0.7), color: color || "#ff8a1a" });
@@ -567,6 +657,14 @@ function updateEffects(dt) {
       e.y = e.y0 + (ty - e.y0) * k - 130 * 4 * k * (1 - k);
       e.angle += e.spin * dt;
       if (Math.random() < dt * 30) flame(e.x, e.y, "#ff9a2a");
+    } else if (e.kind === "qmark") {
+      // Homing, like a throw, but wound round the straight line in a spiral.
+      const k = clamp(e.t / e.life, 0, 1);
+      const tx = e.target.x, ty = stage.ground - 420 * e.target.size;
+      const swirl = Math.sin(k * Math.PI) * 70;
+      e.x = e.x0 + (tx - e.x0) * k + Math.cos(k * 14 + e.phase) * swirl * 0.4;
+      e.y = e.y0 + (ty - e.y0) * k + Math.sin(k * 14 + e.phase) * swirl;
+      e.angle += dt * 8;
     } else if (e.kind === "flame") {
       e.x += e.vx * dt;
       e.y += e.vy * dt;
@@ -629,6 +727,12 @@ function drawEffects() {
       ctx.beginPath();
       ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
       ctx.fill();
+    } else if (e.kind === "qmark") {
+      if (e.t >= 0) {
+        ctx.translate(e.x, e.y);
+        ctx.rotate(Math.sin(e.angle) * 0.5);
+        inkText("?", 0, 0, 70, e.color, "#111", 12);
+      }
     } else if (e.kind === "projectile") {
       ctx.translate(e.x, e.y);
       ctx.rotate(e.angle);
