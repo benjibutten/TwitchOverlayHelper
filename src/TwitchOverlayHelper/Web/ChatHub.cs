@@ -131,6 +131,12 @@ public sealed class ChatHub(
     public event Action<int>? TtsOverlayCountChanged;
 
     /// <summary>
+    /// The wait screen saying who is in the ring – player 1's fighter id, then player 2's. Only the
+    /// names are taken from it, and only to find the corner a cheer by name is meant for.
+    /// </summary>
+    public event Action<string, string>? FightLineupReported;
+
+    /// <summary>
     /// How many reading pages are connected. Zero means a reading would be synthesised, paid for and
     /// heard by nobody – which is the difference between a redemption delivered and one to refund.
     /// </summary>
@@ -576,6 +582,18 @@ public sealed class ChatHub(
         SendTo(DockView.Fight, DockJson.Serialize(new DockEnvelope<DockFightSetup>("fightSetup", FightSetup())));
     }
 
+    /// <summary>
+    /// A vote in the character select. The voter travels as a key the page can count by but not read
+    /// a Twitch id out of: the wait screen is on the broadcast, and has no business holding one.
+    /// </summary>
+    public void PublishFightPick(FightPick pick)
+    {
+        string voter = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            Encoding.UTF8.GetBytes(pick.UserKey ?? pick.Viewer)))[..16];
+        SendTo(DockView.Fight, DockJson.Serialize(new DockEnvelope<DockFightPick>("fightPick",
+            new DockFightPick(pick.Player, pick.Fighter, pick.Outfit, pick.Viewer, voter, pick.Color))));
+    }
+
     /// <summary>A viewer took a side. Only the wait screen is told – it is the only page that fights.</summary>
     public void PublishFightAssist(FightAssist assist) =>
         SendTo(DockView.Fight, DockJson.Serialize(new DockEnvelope<DockFightAssist>("fightAssist", new DockFightAssist(
@@ -871,7 +889,7 @@ public sealed class ChatHub(
             {
                 WebSocketReceiveResult result = await socket.ReceiveAsync(buffer, cancellationToken).ConfigureAwait(false);
                 if (result.MessageType == WebSocketMessageType.Close) break;
-                if (view is not (DockView.Pets or DockView.Tts) || result.MessageType != WebSocketMessageType.Text) continue;
+                if (view is not (DockView.Pets or DockView.Tts or DockView.Fight) || result.MessageType != WebSocketMessageType.Text) continue;
 
                 // A frame longer than an id is not one of ours; the rest of it is dropped so a page
                 // cannot grow this buffer without limit.
@@ -922,6 +940,9 @@ public sealed class ChatHub(
                     return;
                 case "ttsFailed" when view == DockView.Tts:
                     TtsPlaybackFinished?.Invoke(id, false);
+                    return;
+                case "fightLineup" when view == DockView.Fight:
+                    if (Text(frame, "p2") is { Length: > 0 and <= 64 } p2 && id.Length <= 64) FightLineupReported?.Invoke(id, p2);
                     return;
             }
         }

@@ -7,7 +7,22 @@ using TwitchOverlayHelper.Storage;
 namespace TwitchOverlayHelper.Fight;
 
 /// <summary>
-/// One fighter for the wait screen. The sprite is a strip of eight frames in a fixed order and a
+/// One look a fighter can wear: a whole strip of its own, so an outfit can change anything from a
+/// jacket to the hair. Code 1 is the fighter's ordinary look; the others are what the chat asks for
+/// with a digit after the name – "my2".
+/// </summary>
+public sealed record FighterOutfit(int Code, string Name, string SpriteFile);
+
+/// <summary>
+/// A fighter's own super move – what a full meter, or a last stand, turns into. <see cref="Style"/>
+/// is how it plays out: "throw" sends <see cref="PropFile"/> flying in an arc, "swing" is one huge
+/// blow, "saw" a burst of quick hits. <see cref="SpriteFile"/> is a strip of three poses (stance,
+/// wind-up, strike) in the same cell format as the fighter; without it the kick is used.
+/// </summary>
+public sealed record FighterSpecial(string Name, string Style, string? SpriteFile, string? PropFile, string Color);
+
+/// <summary>
+/// One fighter for the wait screen. Every sprite is a strip of eight frames in a fixed order and a
 /// fixed cell size – see <see cref="FightCatalog"/> – so placing a fighter is one point whatever
 /// the pose, and any two fighters can face each other.
 /// </summary>
@@ -17,7 +32,17 @@ public sealed record FighterDefinition(
     string Description,
     string SpriteFile,
     double Scale,
-    bool IsDefault);
+    bool IsDefault)
+{
+    /// <summary>Every look this fighter has, by code. Never empty: code 1 is <see cref="SpriteFile"/>.</summary>
+    public IReadOnlyList<FighterOutfit> Outfits { get; init; } = [new(1, string.Empty, SpriteFile)];
+
+    /// <summary>The outfit with this code, or the ordinary look when there is no such outfit.</summary>
+    public FighterOutfit Outfit(int code) => Outfits.FirstOrDefault(o => o.Code == code) ?? Outfits[0];
+
+    /// <summary>This fighter's special attack, or null for the ordinary super kick.</summary>
+    public FighterSpecial? Special { get; init; }
+}
 
 /// <summary>
 /// One place to fight in. The picture is drawn to cover the whole scene; <see cref="Floor"/> is
@@ -129,9 +154,25 @@ public sealed class FightCatalog
     public ArenaDefinition ArenaOrFallback(string? id) => FindArena(id) ?? Arenas.FirstOrDefault(a => a.ImageFile is not null) ?? Transparent;
 
     /// <summary>Only files the catalog itself resolved are served, so a URL cannot name any other.</summary>
-    public bool TryGetFighterSprite(string id, out string path)
+    public bool TryGetFighterSprite(string id, out string path) => TryGetFighterSprite(id, 1, out path);
+
+    /// <summary>The special attack's poses or its thrown prop. "special" or "prop"; anything else is not found.</summary>
+    public bool TryGetFighterSpecialFile(string id, string part, out string path)
     {
-        path = FindFighter(id)?.SpriteFile ?? string.Empty;
+        FighterSpecial? special = FindFighter(id)?.Special;
+        path = part switch
+        {
+            "special" => special?.SpriteFile,
+            "prop" => special?.PropFile,
+            _ => null
+        } ?? string.Empty;
+        return path.Length > 0 && File.Exists(path);
+    }
+
+    /// <summary>One outfit's strip. An outfit the fighter does not have is not found, rather than swapped.</summary>
+    public bool TryGetFighterSprite(string id, int outfit, out string path)
+    {
+        path = FindFighter(id)?.Outfits.FirstOrDefault(o => o.Code == outfit)?.SpriteFile ?? string.Empty;
         return path.Length > 0 && File.Exists(path);
     }
 
@@ -203,7 +244,70 @@ public sealed class FightCatalog
             manifest.Description?.Trim() ?? string.Empty,
             sprite,
             manifest.Scale is >= 0.3 and <= 3 ? manifest.Scale.Value : 1,
-            FightDefaults.IsDefault("fighters", id));
+            FightDefaults.IsDefault("fighters", id))
+        {
+            Outfits = LoadOutfits(folder, folderName, sprite, manifest.Outfits, warnings),
+            Special = LoadSpecial(folder, folderName, manifest.Special, warnings)
+        };
+    }
+
+    /// <summary>The ways a special can play out. Anything else in fighter.json is read as a swing.</summary>
+    public static IReadOnlyList<string> SpecialStyles { get; } = ["swing", "throw", "saw"];
+
+    private static FighterSpecial? LoadSpecial(string folder, string folderName, SpecialManifest? manifest, List<string> warnings)
+    {
+        if (manifest is null) return null;
+        string style = SpecialStyles.Contains(manifest.Style?.Trim().ToLowerInvariant()) ? manifest.Style!.Trim().ToLowerInvariant() : "swing";
+        string? sprite = Resolve(folder, manifest.SpritePath ?? "special.webp", folderName, "special.spritePath", warnings);
+        string? prop = manifest.PropPath is { Length: > 0 } || style == "throw"
+            ? Resolve(folder, manifest.PropPath ?? "prop.webp", folderName, "special.propPath", warnings)
+            : null;
+        if (style == "throw" && prop is null)
+        {
+            warnings.Add($"{folderName}: specialen kastar något men hittar ingen bild på det (prop.webp).");
+            style = "swing";
+        }
+        string color = manifest.Color is { Length: 7 } c && c[0] == '#' && c[1..].All(char.IsAsciiHexDigit) ? c : "#ffd43b";
+        string name = manifest.Name?.Trim() is { Length: > 0 } n ? (n.Length > 24 ? n[..24] : n) : "Special";
+        return new FighterSpecial(name, style, sprite, prop, color);
+    }
+
+    /// <summary>The most outfits a fighter can have: the chat picks one with a single digit or two.</summary>
+    public const int MaxOutfitCode = 99;
+
+    /// <summary>
+    /// A fighter's looks. Dropping <c>sprite2.webp</c>, <c>sprite3.webp</c> … next to the ordinary
+    /// <c>sprite.webp</c> is all it takes; an <c>outfits</c> list in fighter.json can name them, or
+    /// point a code at a file called something else.
+    /// </summary>
+    private static IReadOnlyList<FighterOutfit> LoadOutfits(string folder, string folderName, string mainSprite,
+        OutfitManifest[]? listed, List<string> warnings)
+    {
+        var outfits = new SortedDictionary<int, FighterOutfit> { [1] = new(1, string.Empty, mainSprite) };
+
+        for (int code = 2; code <= 9; code++)
+            foreach (string ext in new[] { ".webp", ".png" })
+            {
+                string file = Path.Combine(folder, $"sprite{code}{ext}");
+                if (File.Exists(file) && !outfits.ContainsKey(code))
+                    outfits[code] = new FighterOutfit(code, string.Empty, Path.GetFullPath(file));
+            }
+
+        foreach (OutfitManifest? entry in listed ?? [])
+        {
+            if (entry?.Code is not { } code || code is < 1 or > MaxOutfitCode) continue;
+            string name = entry.Name?.Trim() ?? string.Empty;
+            string? file = entry.SpritePath is { Length: > 0 } path
+                ? Resolve(folder, path, folderName, $"outfits[{code}].spritePath", warnings)
+                : outfits.GetValueOrDefault(code)?.SpriteFile;
+            if (file is null)
+            {
+                warnings.Add($"{folderName}: klädsel {code} har ingen bild.");
+                continue;
+            }
+            outfits[code] = new FighterOutfit(code, name, file);
+        }
+        return outfits.Values.ToArray();
     }
 
     private static ArenaDefinition? LoadArena(string folder, string folderName, string json, List<string> warnings)
@@ -319,7 +423,21 @@ public sealed class FightCatalog
         string? DisplayName,
         string? Description,
         [property: JsonPropertyName("spritePath")] string? SpritePath,
-        double? Scale);
+        double? Scale,
+        OutfitManifest[]? Outfits,
+        SpecialManifest? Special);
+
+    private sealed record SpecialManifest(
+        string? Name,
+        string? Style,
+        [property: JsonPropertyName("spritePath")] string? SpritePath,
+        [property: JsonPropertyName("propPath")] string? PropPath,
+        string? Color);
+
+    private sealed record OutfitManifest(
+        int? Code,
+        string? Name,
+        [property: JsonPropertyName("spritePath")] string? SpritePath);
 
     private sealed record ArenaManifest(
         string? Id,

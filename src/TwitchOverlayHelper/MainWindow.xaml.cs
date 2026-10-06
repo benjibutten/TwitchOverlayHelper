@@ -219,7 +219,8 @@ public partial class MainWindow : Window
         _petService = new PetService(_settings, _petCatalog, _petRegistry, _hub);
         _hub.FightSetup = BuildFightSetup;
         // A cheer with no wait screen open would only start the viewer's cooldown for nothing.
-        _fight = new FightService(_settings, _fightCatalog, _hub.PublishFightAssist) { IsShowing = () => _hub.FightOverlayCount > 0 };
+        _fight = new FightService(_settings, _fightCatalog, _hub.PublishFightAssist, _hub.PublishFightPick) { IsShowing = () => _hub.FightOverlayCount > 0 };
+        _hub.FightLineupReported += _fight.SetLineup;
         _spinWins = new SpinWinStore();
         // What makes a win-only pet usable by exactly its winner, wherever pets are asked for.
         _petService.OwnsWonPet = _spinWins.Owns;

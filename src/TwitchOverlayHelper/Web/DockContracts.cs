@@ -478,21 +478,45 @@ internal static class DockMapper
         moderation.DurationSeconds);
 }
 
-/// <summary>One corner of the ring, as the wait screen draws it.</summary>
-internal sealed record DockFighter(string Id, string Name, string Sprite, double Scale);
+/// <summary>One look of a fighter: its code, what the streamer called it, and its strip.</summary>
+internal sealed record DockOutfit(int Code, string Name, string Sprite);
+
+/// <summary>
+/// One fighter as the wait screen knows it. <c>Outfit</c> is the look in use when this stands in a
+/// corner; in the roster it is 1.
+/// </summary>
+internal sealed record DockFighter(string Id, string Name, string Sprite, double Scale, int Outfit,
+    IReadOnlyList<DockOutfit> Outfits, DockSpecial? Special = null);
+
+/// <summary>A fighter's special attack: what it is called, how it plays out, its poses and its prop.</summary>
+internal sealed record DockSpecial(string Name, string Style, string? Sprite, string? Prop, string Color);
 
 /// <summary>Where the fight happens. A null image is the transparent arena.</summary>
 internal sealed record DockArena(string Id, string? Image, double Floor, double Left, double Right);
 
-/// <summary>The words the chat can use, so the screen can show them and say what they did.</summary>
-internal sealed record DockFightCommands(bool Enabled, string Cheer, string Heal, bool ShowHint);
+/// <summary>
+/// The words the chat can use, so the screen can show them, say what they did, and count down
+/// each viewer's cooldown the same way the app does.
+/// </summary>
+internal sealed record DockFightCommands(bool Enabled, string Cheer, string Heal, bool ShowHint,
+    int Cooldown, string Pick1, string Pick2);
+
+/// <summary>How a match is played: a character select first or not, and how many rounds win it.</summary>
+internal sealed record DockFightMatch(bool CharacterSelect, int SelectSeconds, int WinsToWin, bool ShowSupporters);
 
 /// <summary>
-/// Everything the wait screen needs from the app: both corners, the arena, the commands and the two
-/// lines of the banner, worded by the streamer.
+/// Everything the wait screen needs from the app: the streamer's two fighters (what a match starts
+/// with, and what a corner nobody voted for falls back to), every fighter the chat can vote for, the
+/// arena, the commands, the match rules and the two lines of the banner.
 /// </summary>
-internal sealed record DockFightSetup(DockFighter? P1, DockFighter? P2, DockArena Arena, DockFightCommands Commands,
-    string Headline, string Subline);
+internal sealed record DockFightSetup(DockFighter? P1, DockFighter? P2, IReadOnlyList<DockFighter> Roster,
+    DockArena Arena, DockFightCommands Commands, DockFightMatch Match, string Headline, string Subline);
 
 /// <summary>A viewer taking a side. <c>Kind</c> is "cheer" or "heal".</summary>
 internal sealed record DockFightAssist(int Player, string Kind, string Viewer, string? Color);
+
+/// <summary>
+/// A vote in the character select. <c>Voter</c> is an opaque key per viewer, so a second vote
+/// replaces the first instead of counting twice; it is not the viewer's Twitch id.
+/// </summary>
+internal sealed record DockFightPick(int Player, string Fighter, int Outfit, string Viewer, string Voter, string? Color);

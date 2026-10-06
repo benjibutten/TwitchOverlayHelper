@@ -15,24 +15,49 @@ public partial class MainWindow
 {
     private bool _populatingFight;
 
-    /// <summary>What the wait screen is told: both corners, the arena, the banner and the commands.</summary>
+    /// <summary>
+    /// What the wait screen is told: the streamer's two fighters, every fighter the chat can vote
+    /// for, the arena, the commands, the match rules and the banner.
+    /// </summary>
     private DockFightSetup BuildFightSetup()
     {
         FightSettings fight = _settings.Fight;
         ArenaDefinition arena = _fightCatalog.ArenaOrFallback(fight.Arena);
         return new DockFightSetup(
-            ToDock(_fightCatalog.FighterOrFallback(fight.Player1, 0)),
-            ToDock(_fightCatalog.FighterOrFallback(fight.Player2, 1)),
+            ToDock(_fightCatalog.FighterOrFallback(fight.Player1, 0), fight.Player1Outfit),
+            ToDock(_fightCatalog.FighterOrFallback(fight.Player2, 1), fight.Player2Outfit),
+            _fightCatalog.Fighters.Select(f => ToDock(f, 1)!).ToArray(),
             new DockArena(arena.Id,
                 arena.ImageFile is null ? null : $"/fight/arena/{Uri.EscapeDataString(arena.Id)}?v={Stamp(arena.ImageFile)}",
                 arena.Floor, arena.Left, arena.Right),
-            new DockFightCommands(fight.CommandsEnabled, fight.CheerCommand, fight.HealCommand, fight.ShowCommandHint),
+            new DockFightCommands(fight.CommandsEnabled, fight.CheerCommand, fight.HealCommand, fight.ShowCommandHint,
+                fight.CooldownSeconds, fight.Pick1Command, fight.Pick2Command),
+            new DockFightMatch(fight.CharacterSelect, fight.SelectSeconds, fight.WinsToWin, fight.ShowSupporters),
             fight.Headline,
             fight.Subline);
 
-        static DockFighter? ToDock(FighterDefinition? f) => f is null ? null
-            : new DockFighter(f.Id, f.Name, $"/fight/fighter/{Uri.EscapeDataString(f.Id)}?v={Stamp(f.SpriteFile)}", f.Scale);
+        static DockFighter? ToDock(FighterDefinition? f, int outfit)
+        {
+            if (f is null) return null;
+            DockOutfit[] outfits = f.Outfits.Select(o => new DockOutfit(o.Code, OutfitName(o), SpriteUrl(f, o))).ToArray();
+            FighterOutfit chosen = f.Outfit(outfit);
+            return new DockFighter(f.Id, f.Name, SpriteUrl(f, chosen), f.Scale, chosen.Code, outfits, ToDockSpecial(f));
+        }
+
+        static DockSpecial? ToDockSpecial(FighterDefinition f) => f.Special is not { } s ? null : new DockSpecial(
+            s.Name, s.Style,
+            s.SpriteFile is null ? null : $"/fight/fighter/{Uri.EscapeDataString(f.Id)}/special?v={Stamp(s.SpriteFile)}",
+            s.PropFile is null ? null : $"/fight/fighter/{Uri.EscapeDataString(f.Id)}/prop?v={Stamp(s.PropFile)}",
+            s.Color);
+
+        static string SpriteUrl(FighterDefinition f, FighterOutfit o) => o.Code == 1
+            ? $"/fight/fighter/{Uri.EscapeDataString(f.Id)}?v={Stamp(o.SpriteFile)}"
+            : $"/fight/fighter/{Uri.EscapeDataString(f.Id)}/{o.Code}?v={Stamp(o.SpriteFile)}";
     }
+
+    /// <summary>What an outfit is called on screen and in the app: its own name, or its number.</summary>
+    private static string OutfitName(FighterOutfit outfit) =>
+        outfit.Name.Length > 0 ? outfit.Name : outfit.Code == 1 ? "Standard" : $"Klädsel {outfit.Code}";
 
     /// <summary>
     /// Changes with the file, so a sprite redrawn under the same id is fetched again rather than
@@ -57,11 +82,34 @@ public partial class MainWindow
             FightHealBox.Text = fight.HealCommand;
             FightCooldownBox.Text = fight.CooldownSeconds.ToString();
             FightHintCheck.IsChecked = fight.ShowCommandHint;
+            FightSupportersCheck.IsChecked = fight.ShowSupporters;
+            FightSelectCheck.IsChecked = fight.CharacterSelect;
+            FightSelectSecondsBox.Text = fight.SelectSeconds.ToString();
+            FightPick1Box.Text = fight.Pick1Command;
+            FightPick2Box.Text = fight.Pick2Command;
+            FightWinsBox.SelectedItem = FightWinsBox.Items.Cast<ComboBoxItem>()
+                .FirstOrDefault(item => item.Tag as string == fight.WinsToWin.ToString())
+                ?? FightWinsBox.Items.Cast<ComboBoxItem>().First(item => item.Tag as string == "3");
         }
         finally { _populatingFight = false; }
         RefreshFightTexts(selected: null);
         RefreshFightCatalogUi();
         ShowFightCommandHint();
+        ShowFightRulesHint();
+    }
+
+    private void ShowFightRulesHint()
+    {
+        FightSettings fight = _settings.Fight;
+        string length = fight.WinsToWin > 0 ? $"först till {fight.WinsToWin} vunna ronder" : "utan slut";
+        FightRulesHint.Text = fight.CharacterSelect
+            ? $"Varje match börjar med karaktärsvalet: alla karaktärer visas och chatten har {fight.SelectSeconds} sekunder på sig. " +
+              $"{fight.Pick1Command} my röstar på My till spelare 1, {fight.Pick2Command} zelda2 på Zelda i klädsel 2 till spelare 2 – en siffra efter namnet är klädseln. " +
+              $"En röst per tittare och hörn; röstar man igen flyttas rösten. Flest röster vinner, och ett hörn ingen röstar på behåller den som stod där. Matchen spelas {length}" +
+              (fight.WinsToWin > 0 ? ", sedan är det dags att välja igen." : ".")
+            : $"Av – de två ovan möts, {length}" + (fight.WinsToWin > 0 ? ", och sedan börjar en ny match med samma karaktärer." : ".");
+        FightP1Label.Text = fight.CharacterSelect ? "Spelare 1 – tills chatten valt" : "Spelare 1 (vänster)";
+        FightP2Label.Text = fight.CharacterSelect ? "Spelare 2 – tills chatten valt" : "Spelare 2 (höger)";
     }
 
     /// <summary>
@@ -99,8 +147,12 @@ public partial class MainWindow
         _populatingFight = true;
         try
         {
-            Fill(FightP1Box, _fightCatalog.Fighters.Select(f => (f.Name, f.Id)), _fightCatalog.FighterOrFallback(fight.Player1, 0)?.Id);
-            Fill(FightP2Box, _fightCatalog.Fighters.Select(f => (f.Name, f.Id)), _fightCatalog.FighterOrFallback(fight.Player2, 1)?.Id);
+            // One row per fighter and outfit, so the outfit is chosen in the same place as the fighter.
+            (string Name, string Id)[] looks = _fightCatalog.Fighters
+                .SelectMany(f => f.Outfits.Select(o => (o.Code == 1 ? f.Name : $"{f.Name} – {OutfitName(o)}", $"{f.Id}|{o.Code}")))
+                .ToArray();
+            Fill(FightP1Box, looks, Look(_fightCatalog.FighterOrFallback(fight.Player1, 0), fight.Player1Outfit));
+            Fill(FightP2Box, looks, Look(_fightCatalog.FighterOrFallback(fight.Player2, 1), fight.Player2Outfit));
             Fill(FightArenaBox, _fightCatalog.Arenas.Select(a => (a.Name, a.Id)), _fightCatalog.ArenaOrFallback(fight.Arena).Id);
         }
         finally { _populatingFight = false; }
@@ -113,6 +165,8 @@ public partial class MainWindow
         };
         lines.AddRange(_fightCatalog.Warnings.Select(w => "⚠ " + w));
         FightListText.Text = string.Join("\n", lines);
+
+        static string? Look(FighterDefinition? f, int outfit) => f is null ? null : $"{f.Id}|{f.Outfit(outfit).Code}";
 
         static void Fill(ComboBox box, IEnumerable<(string Name, string Id)> items, string? selected)
         {
@@ -132,6 +186,13 @@ public partial class MainWindow
         FightCommandHint.Text = fight.CommandsEnabled
             ? $"Chatten skriver {fight.CheerCommand} 1 eller {fight.CheerCommand} 2 för att fylla en supermätare – fyra hejarop och nästa spark blir en super som alltid träffar. {fight.HealCommand} 1 eller {fight.HealCommand} 2 ger 10 HP. Det går också att skriva p1/p2 eller karaktärens namn. Siffran är hörnet, så kommandona är desamma vem som än står där. Tittarens namn syns på skärmen."
             : "Av – fajten sköter sig själv.";
+    }
+
+    /// <summary>A fighter row's tag, "id|outfit", as the two settings it stands for.</summary>
+    private static (string Id, int Outfit) ParseLook(string tag)
+    {
+        string[] parts = tag.Split('|', 2);
+        return (parts[0], parts.Length > 1 && int.TryParse(parts[1], out int code) ? code : 1);
     }
 
     /// <summary>Saved, and told to every open wait screen.</summary>
@@ -208,8 +269,8 @@ public partial class MainWindow
     {
         if (_loading || _populatingFight) return;
         FightSettings fight = _settings.Fight;
-        if (FightP1Box.SelectedItem is ComboBoxItem { Tag: string p1 }) fight.Player1 = p1;
-        if (FightP2Box.SelectedItem is ComboBoxItem { Tag: string p2 }) fight.Player2 = p2;
+        if (FightP1Box.SelectedItem is ComboBoxItem { Tag: string p1 }) (fight.Player1, fight.Player1Outfit) = ParseLook(p1);
+        if (FightP2Box.SelectedItem is ComboBoxItem { Tag: string p2 }) (fight.Player2, fight.Player2Outfit) = ParseLook(p2);
         if (FightArenaBox.SelectedItem is ComboBoxItem { Tag: string arena }) fight.Arena = arena;
         FightArenaHint.Text = _fightCatalog.ArenaOrFallback(fight.Arena).Description;
         FightChanged();
@@ -221,6 +282,7 @@ public partial class MainWindow
         string p1 = _fightCatalog.FighterOrFallback(fight.Player1, 0)?.Id ?? fight.Player1;
         string p2 = _fightCatalog.FighterOrFallback(fight.Player2, 1)?.Id ?? fight.Player2;
         (fight.Player1, fight.Player2) = (p2, p1);
+        (fight.Player1Outfit, fight.Player2Outfit) = (fight.Player2Outfit, fight.Player1Outfit);
         RefreshFightCatalogUi();
         FightChanged();
     }
@@ -231,6 +293,7 @@ public partial class MainWindow
         FightSettings fight = _settings.Fight;
         fight.CommandsEnabled = FightCommandsCheck.IsChecked == true;
         fight.ShowCommandHint = FightHintCheck.IsChecked == true;
+        fight.ShowSupporters = FightSupportersCheck.IsChecked == true;
         // The command words are taken when their box loses focus, not per keystroke: half-typed, a
         // word passes through states – "!" alone, the other command's word – that would be cleaned
         // into something the streamer never meant.
@@ -240,13 +303,23 @@ public partial class MainWindow
         FightChanged();
     }
 
-    private void FightCommand_LostFocus(object sender, System.Windows.Input.KeyboardFocusChangedEventArgs e)
+    private void FightCommand_LostFocus(object sender, System.Windows.Input.KeyboardFocusChangedEventArgs e) => CommitFightWords();
+
+    /// <summary>
+    /// Takes every command word and number from its box, cleaned, and writes the clean versions
+    /// back – a cheer renamed to "!p1" pushes the vote word aside, and both boxes have to show it.
+    /// </summary>
+    private void CommitFightWords()
     {
         FightSettings fight = _settings.Fight;
         fight.CheerCommand = FightCheerBox.Text;
         fight.HealCommand = FightHealBox.Text;
+        fight.Pick1Command = FightPick1Box.Text;
+        fight.Pick2Command = FightPick2Box.Text;
+        if (int.TryParse(FightSelectSecondsBox.Text.Trim(), out int seconds)) fight.SelectSeconds = seconds;
         fight.Normalize();
         ShowFightCommandHint();
+        ShowFightRulesHint();
         FightChanged();
         _populatingFight = true;
         try
@@ -254,8 +327,32 @@ public partial class MainWindow
             FightCheerBox.Text = fight.CheerCommand;
             FightHealBox.Text = fight.HealCommand;
             FightCooldownBox.Text = fight.CooldownSeconds.ToString();
+            FightPick1Box.Text = fight.Pick1Command;
+            FightPick2Box.Text = fight.Pick2Command;
+            FightSelectSecondsBox.Text = fight.SelectSeconds.ToString();
         }
         finally { _populatingFight = false; }
+    }
+
+    private void FightRules_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading || _populatingFight) return;
+        // Like the command words, the seconds and the vote words wait for their box to lose focus;
+        // only the switch takes effect at once.
+        _settings.Fight.CharacterSelect = FightSelectCheck.IsChecked == true;
+        ShowFightRulesHint();
+        FightChanged();
+    }
+
+    private void FightRules_LostFocus(object sender, System.Windows.Input.KeyboardFocusChangedEventArgs e) => CommitFightWords();
+
+    private void FightWins_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || _populatingFight) return;
+        if (FightWinsBox.SelectedItem is ComboBoxItem { Tag: string tag } && int.TryParse(tag, out int wins))
+            _settings.Fight.WinsToWin = wins;
+        ShowFightRulesHint();
+        FightChanged();
     }
 
     private void OpenFightFolder_Click(object sender, RoutedEventArgs e)
