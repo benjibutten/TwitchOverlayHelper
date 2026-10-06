@@ -2,27 +2,22 @@
 // keyed alpha, each pose found as its own connected figure (so a raised fist poking into the row
 // above never leaks into another frame), every pose scaled alike, standing on one baseline and
 // anchored on the torso.
-// usage: node process-fighter.js sheet.png sprite.webp [frames]
+// usage: node process-fighter.js sheet.png sprite.webp [frames] [--magenta]
+// The first figure sets the scale, so a sheet of extra poses (a special attack) starts with the
+// ordinary stance and comes out the same size as the fighter's own strip.
 // Writes sprite.webp (the strip the app reads) and sprite.preview.png (the strip over grey, to judge by eye).
 const sharp = require('sharp');
+const { key, keyColorFrom } = require('./chroma');
 
-const [, , input, output, framesArg] = process.argv;
+const [, , input, output, ...rest] = process.argv;
+const framesArg = rest.find(arg => /^\d+$/.test(arg));
+const keyColor = keyColorFrom(rest);
 const FRAMES = Number(framesArg || 8);
-const CW = 640, CH = 560, BASE = CH - 10, STAND_H = 470;
-
-function key(data, w, h) {
-  const a = new Uint8Array(w * h);
-  for (let i = 0; i < w * h; i++) {
-    const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
-    const spill = g - Math.max(r, b);
-    let alpha = spill <= 30 ? 255 : spill >= 90 ? 0 : Math.round(255 * (90 - spill) / 60);
-    if (g < 90) alpha = 255;
-    a[i] = alpha;
-    if (spill > 0) data[i * 4 + 1] = Math.max(r, b); // despill the green fringe
-    data[i * 4 + 3] = alpha;
-  }
-  return a;
-}
+// The fighter's own strip is always 640 × 560. A special's poses swing weapons far past the body,
+// so "--cell 1024x760" gives them room; the figure keeps the same size and the same baseline gap.
+const cellArg = rest[rest.indexOf('--cell') + 1];
+const [CW, CH] = rest.includes('--cell') && /^\d+x\d+$/.test(cellArg) ? cellArg.split('x').map(Number) : [640, 560];
+const BASE = CH - 10, STAND_H = 470;
 
 function components(alpha, w, h) {
   const label = new Int32Array(w * h).fill(-1);
@@ -64,7 +59,7 @@ function torsoX(owned, w, b) {
 (async () => {
   const { data, info } = await sharp(input).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width: w, height: h } = info;
-  const alpha = key(data, w, h);
+  const alpha = key(data, w, h, keyColor);
   const { label, comps } = components(alpha, w, h);
 
   const sorted = [...comps].sort((a, b) => b.area - a.area);
@@ -72,9 +67,14 @@ function torsoX(owned, w, b) {
   if (bodies.length < FRAMES || bodies[FRAMES - 1].area < sorted[0].area * 0.1)
     throw new Error(`expected ${FRAMES} figures, sizes: ${sorted.slice(0, FRAMES + 2).map(c => c.area).join(',')}`);
 
-  // Reading order: rows by vertical centre, then left to right.
-  const rowSplit = (Math.min(...bodies.map(b => b.cy)) + Math.max(...bodies.map(b => b.cy))) / 2;
-  bodies.sort((a, b) => ((a.cy > rowSplit) - (b.cy > rowSplit)) || a.cx - b.cx);
+  // Reading order: rows by vertical centre, then left to right. The fighter's own sheet is 4 × 2; a
+  // sheet of four poses or fewer is one row, where a raised weapon must not read as a second row.
+  if (FRAMES <= 4) {
+    bodies.sort((a, b) => a.cx - b.cx);
+  } else {
+    const rowSplit = (Math.min(...bodies.map(b => b.cy)) + Math.max(...bodies.map(b => b.cy))) / 2;
+    bodies.sort((a, b) => ((a.cy > rowSplit) - (b.cy > rowSplit)) || a.cx - b.cx);
+  }
 
   // Stray specks (a loose strand of hair, a shoelace) join the nearest figure that encloses them.
   const owner = new Int32Array(comps.length).fill(-1);

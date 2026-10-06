@@ -346,3 +346,254 @@ public sealed class FightTextTests
         Assert.Equal("Hämtar pizza", Assert.Single(back.Fight.SavedTexts).Headline);
     }
 }
+
+public sealed class FightOutfitAndPickTests : IDisposable
+{
+    private readonly string _folder = Path.Combine(Path.GetTempPath(), "fight-" + Guid.NewGuid().ToString("N"));
+    private readonly AppSettings _settings = new();
+    private readonly List<FightPick> _picks = [];
+    private readonly List<FightAssist> _assists = [];
+    private readonly FightCatalog _catalog;
+    private readonly FightService _service;
+    private static readonly DateTimeOffset Now = new(2026, 10, 6, 20, 0, 0, TimeSpan.Zero);
+
+    public FightOutfitAndPickTests()
+    {
+        _catalog = new FightCatalog(_folder);
+        AddFighter("My", """{ "id": "my", "displayName": "My" }""", "sprite2.webp");
+        AddFighter("dj_jenni", """{ "id": "dj_jenni", "displayName": "DJ Jenni" }""");
+        AddFighter("r2d2", """{ "id": "r2d2", "displayName": "R2D2" }""");
+        _catalog.Reload();
+        _settings.Normalize();
+        _service = new FightService(_settings, _catalog, _assists.Add, _picks.Add);
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_folder, recursive: true); } catch (IOException) { }
+    }
+
+    private string AddFighter(string folderName, string manifest, params string[] extraFiles)
+    {
+        string folder = Path.Combine(_folder, "fighters", folderName);
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "fighter.json"), manifest);
+        File.WriteAllBytes(Path.Combine(folder, "sprite.webp"), [1]);
+        foreach (string file in extraFiles) File.WriteAllBytes(Path.Combine(folder, file), [2]);
+        return folder;
+    }
+
+    private static ChatMessage Line(string text, string user = "42") =>
+        new("m", "Kajsa", text, "#FF00AA", [], false, false, Now) { UserId = user, UserLogin = "kajsa" };
+
+    [Fact]
+    public void ASecondSpriteFileIsASecondOutfit()
+    {
+        FighterDefinition my = _catalog.FindFighter("my")!;
+
+        Assert.Equal([1, 2], my.Outfits.Select(o => o.Code));
+        Assert.True(_catalog.TryGetFighterSprite("my", 2, out string path));
+        Assert.EndsWith("sprite2.webp", path);
+        Assert.False(_catalog.TryGetFighterSprite("my", 3, out _));
+        Assert.Equal(1, my.Outfit(7).Code);
+    }
+
+    [Fact]
+    public void TheManifestCanNameOutfitsAndPointThemAtOtherFiles()
+    {
+        AddFighter("zelda", """
+            { "id": "zelda", "outfits": [
+                { "code": 1, "name": "Vardag" },
+                { "code": 3, "name": "Läder", "spritePath": "leather.webp" },
+                { "code": 4, "spritePath": "../my/sprite.webp" } ] }
+            """, "leather.webp");
+
+        _catalog.Reload();
+
+        FighterDefinition zelda = _catalog.FindFighter("zelda")!;
+        Assert.Equal(["1:Vardag", "3:Läder"], zelda.Outfits.Select(o => $"{o.Code}:{o.Name}"));
+        Assert.Contains(_catalog.Warnings, w => w.Contains("zelda"));
+    }
+
+    [Fact]
+    public void ReadsASpecialWithItsPosesAndProp()
+    {
+        AddFighter("zelda", """
+            { "id": "zelda", "special": { "name": "Molotov", "style": "throw", "color": "#4dff6a" } }
+            """, "special.webp", "prop.webp");
+
+        _catalog.Reload();
+
+        FighterSpecial special = _catalog.FindFighter("zelda")!.Special!;
+        Assert.Equal(("Molotov", "throw", "#4dff6a"), (special.Name, special.Style, special.Color));
+        Assert.EndsWith("special.webp", special.SpriteFile);
+        Assert.True(_catalog.TryGetFighterSpecialFile("zelda", "prop", out string prop));
+        Assert.EndsWith("prop.webp", prop);
+        Assert.False(_catalog.TryGetFighterSpecialFile("zelda", "fighter.json", out _));
+    }
+
+    [Fact]
+    public void AnOutfitCanHaveASpecialOfItsOwn()
+    {
+        AddFighter("zelda", """
+            { "id": "zelda", "special": { "name": "Klubban" },
+              "outfits": [ { "code": 2, "name": "Rutig", "special": { "name": "Bitchslap", "color": "#ff4fc3" } } ] }
+            """, "special.webp", "sprite2.webp", "special2.webp", "sprite3.webp");
+
+        _catalog.Reload();
+
+        FighterDefinition zelda = _catalog.FindFighter("zelda")!;
+        Assert.Equal("Bitchslap", zelda.SpecialFor(2)!.Name);
+        Assert.EndsWith("special2.webp", zelda.SpecialFor(2)!.SpriteFile);
+        Assert.Equal("Klubban", zelda.SpecialFor(3)!.Name);
+        Assert.Equal("Klubban", zelda.SpecialFor(1)!.Name);
+        Assert.True(_catalog.TryGetFighterSpecialFile("zelda", 2, "special", out string own));
+        Assert.EndsWith("special2.webp", own);
+        Assert.True(_catalog.TryGetFighterSpecialFile("zelda", 3, "special", out string shared));
+        Assert.EndsWith("special.webp", shared);
+        Assert.False(_catalog.TryGetFighterSpecialFile("zelda", 7, "special", out _));
+    }
+
+    [Fact]
+    public void TheFightersOwnSpecialIsServedApartFromOutfitOnes()
+    {
+        AddFighter("zelda", """
+            { "id": "zelda", "special": { "name": "Klubban" },
+              "outfits": [ { "code": 1, "special": { "name": "Bitchslap", "spritePath": "special1.webp" } } ] }
+            """, "special.webp", "special1.webp");
+
+        _catalog.Reload();
+
+        Assert.True(_catalog.TryGetFighterSpecialFile("zelda", 0, "special", out string fighters));
+        Assert.EndsWith("special.webp", fighters);
+        Assert.True(_catalog.TryGetFighterSpecialFile("zelda", 1, "special", out string own));
+        Assert.EndsWith("special1.webp", own);
+    }
+
+    [Fact]
+    public void AThrowWithNothingToThrowBecomesASwing()
+    {
+        AddFighter("nova", """
+            { "id": "nova", "special": { "name": "Ett mycket långt namn på en special", "style": "throw", "color": "röd" } }
+            """);
+
+        _catalog.Reload();
+
+        FighterSpecial special = _catalog.FindFighter("nova")!.Special!;
+        Assert.Equal("swing", special.Style);
+        Assert.Null(special.SpriteFile);
+        Assert.Equal("#ffd43b", special.Color);
+        Assert.Equal(24, special.Name.Length);
+        Assert.Contains(_catalog.Warnings, w => w.Contains("nova"));
+    }
+
+    [Fact]
+    public void AnUnknownStyleIsASwingAndNoSpecialIsNull()
+    {
+        AddFighter("odd", """{ "id": "odd", "special": { "style": "laser" } }""");
+
+        _catalog.Reload();
+
+        Assert.Equal("swing", _catalog.FindFighter("odd")!.Special!.Style);
+        Assert.Null(_catalog.FindFighter("dj_jenni")!.Special);
+    }
+
+    [Theory]
+    [InlineData("!p1 my2", 1, "my", 2)]
+    [InlineData("!p1 my", 1, "my", 1)]
+    [InlineData("!P2 MY 2", 2, "my", 2)]
+    [InlineData("!p2 dj jenni", 2, "dj_jenni", 1)]
+    [InlineData("!p1 djjenni", 1, "dj_jenni", 1)]
+    [InlineData("!p1 my7", 1, "my", 1)]
+    [InlineData("!p1 r2d2", 1, "r2d2", 1)]
+    [InlineData("!p1 silver", 1, "silver", 1)]
+    public void ReadsCornerFighterAndOutfit(string text, int player, string fighter, int outfit)
+    {
+        Assert.True(_service.HandleMessage(Line(text), Now));
+
+        FightPick pick = Assert.Single(_picks);
+        Assert.Equal(player, pick.Player);
+        Assert.Equal(fighter, pick.Fighter);
+        Assert.Equal(outfit, pick.Outfit);
+        Assert.Equal("42", pick.UserKey);
+    }
+
+    [Theory]
+    [InlineData("!p1")]
+    [InlineData("!p1 nobody")]
+    [InlineData("!p3 my")]
+    [InlineData("p1 my")]
+    public void IgnoresWhatIsNotAVote(string text)
+    {
+        _service.HandleMessage(Line(text), Now);
+
+        Assert.Empty(_picks);
+    }
+
+    [Fact]
+    public void NoVotesWhenTheCharacterSelectIsOff()
+    {
+        _settings.Fight.CharacterSelect = false;
+
+        Assert.False(_service.HandleMessage(Line("!p1 my"), Now));
+        Assert.Empty(_picks);
+    }
+
+    [Fact]
+    public void VotesHaveNoCooldown()
+    {
+        _service.HandleMessage(Line("!p1 my"), Now);
+        _service.HandleMessage(Line("!p1 r2d2"), Now.AddSeconds(1));
+
+        Assert.Equal(["my", "r2d2"], _picks.Select(p => p.Fighter));
+    }
+
+    [Fact]
+    public void ACheerByNameFindsTheFighterTheScreenReported()
+    {
+        _service.SetLineup("dj_jenni", "my");
+
+        _service.HandleMessage(Line("!heja my"), Now);
+        _service.HandleMessage(Line("!heja dj jenni", "43"), Now);
+
+        Assert.Equal([2, 1], _assists.Select(a => a.Player));
+    }
+}
+
+public sealed class FightMatchSettingsTests
+{
+    [Fact]
+    public void VoteWordsYieldToTheCheerAndHeal()
+    {
+        var fight = new FightSettings { CheerCommand = "!p1", Pick1Command = "!p1", Pick2Command = "!p1" };
+
+        fight.Normalize();
+
+        string[] words = [fight.CheerCommand, fight.HealCommand, fight.Pick1Command, fight.Pick2Command];
+        Assert.Equal(words.Length, words.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.Equal("!p1", fight.CheerCommand);
+    }
+
+    [Fact]
+    public void ClampsTheMatchRules()
+    {
+        var fight = new FightSettings { WinsToWin = 42, SelectSeconds = 1, Player1Outfit = 0, Player2Outfit = 500 };
+
+        fight.Normalize();
+
+        Assert.Equal(9, fight.WinsToWin);
+        Assert.Equal(10, fight.SelectSeconds);
+        Assert.Equal(1, fight.Player1Outfit);
+        Assert.Equal(FightCatalog.MaxOutfitCode, fight.Player2Outfit);
+    }
+
+    [Fact]
+    public void ZeroWinsIsAMatchWithoutEnd()
+    {
+        var fight = new FightSettings { WinsToWin = 0 };
+
+        fight.Normalize();
+
+        Assert.Equal(0, fight.WinsToWin);
+    }
+}

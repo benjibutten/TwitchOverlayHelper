@@ -18,6 +18,36 @@ public sealed class FightSettings
     /// <summary>Fighter id in player 2's corner, on the right.</summary>
     public string Player2 { get; set; } = "ink";
 
+    /// <summary>Which of player 1's outfits, by code. 1 is the ordinary look.</summary>
+    public int Player1Outfit { get; set; } = 1;
+
+    /// <summary>Which of player 2's outfits, by code.</summary>
+    public int Player2Outfit { get; set; } = 1;
+
+    /// <summary>
+    /// Whether every match starts with a character select the chat votes in. Off, the two fighters
+    /// above simply go again. On, they are what a corner nobody voted for falls back to.
+    /// </summary>
+    public bool CharacterSelect { get; set; } = true;
+
+    /// <summary>How long the chat has to vote before the match starts, seconds.</summary>
+    public int SelectSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// Rounds a fighter has to win to take the match. 0 is a match that never ends, which is how the
+    /// wait screen worked before there were matches.
+    /// </summary>
+    public int WinsToWin { get; set; } = 3;
+
+    /// <summary>What the chat types, with a fighter and an outfit digit, to vote for player 1 – "!p1 my2".</summary>
+    public string Pick1Command { get; set; } = "!p1";
+
+    /// <summary>The same for player 2.</summary>
+    public string Pick2Command { get; set; } = "!p2";
+
+    /// <summary>The two side panels listing who is cheering for whom, with their cooldowns.</summary>
+    public bool ShowSupporters { get; set; } = true;
+
     /// <summary>Arena id, or <c>none</c> for no background at all.</summary>
     public string Arena { get; set; } = "garage";
 
@@ -95,6 +125,26 @@ public sealed class FightSettings
         if (string.Equals(CheerCommand, HealCommand, StringComparison.OrdinalIgnoreCase))
             HealCommand = string.Equals(CheerCommand, "!hela", StringComparison.OrdinalIgnoreCase) ? "!plåster" : "!hela";
         CooldownSeconds = Math.Clamp(CooldownSeconds, 0, 600);
+        Player1Outfit = Math.Clamp(Player1Outfit, 1, Fight.FightCatalog.MaxOutfitCode);
+        Player2Outfit = Math.Clamp(Player2Outfit, 1, Fight.FightCatalog.MaxOutfitCode);
+        SelectSeconds = Math.Clamp(SelectSeconds, 10, 300);
+        WinsToWin = Math.Clamp(WinsToWin, 0, 9);
+        Pick1Command = Command(Pick1Command, "!p1");
+        Pick2Command = Command(Pick2Command, "!p2");
+        // The vote words yield to the cheer and the heal, which the chat met first, and to each other.
+        string[] taken = [CheerCommand, HealCommand];
+        if (taken.Contains(Pick1Command, StringComparer.OrdinalIgnoreCase))
+            Pick1Command = FreeWord(["!p1", "!välj1", "!spelare1"], taken);
+        if (taken.Append(Pick1Command).Contains(Pick2Command, StringComparer.OrdinalIgnoreCase))
+            Pick2Command = FreeWord(["!p2", "!välj2", "!spelare2"], [.. taken, Pick1Command]);
+    }
+
+    /// <summary>The first of these words nothing else has claimed. The last is the fallback.</summary>
+    private static string FreeWord(IReadOnlyList<string> candidates, IEnumerable<string> taken)
+    {
+        foreach (string word in candidates)
+            if (!taken.Contains(word, StringComparer.OrdinalIgnoreCase)) return word;
+        return candidates[^1];
     }
 
     /// <summary>

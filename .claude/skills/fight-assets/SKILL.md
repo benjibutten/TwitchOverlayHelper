@@ -26,7 +26,9 @@ background, feet on a baseline 10 px above the cell bottom, torso centred, every
 The frame order is: idle, idle (breathing), walk, punch, kick, hit, knocked out (lying), victory.
 `process-fighter.js` produces exactly this from a 4 × 2 sheet on green.
 
-**fighter.json:** `{ "id", "displayName", "description", "spritePath": "sprite.webp", "scale": 1.0 }`.
+**fighter.json:** `{ "id", "displayName", "description", "spritePath": "sprite.webp", "scale": 1.0, "outfits": [...] }`.
+`outfits` is optional: `sprite2.webp` … `sprite9.webp` beside `sprite.webp` are picked up as outfits 2–9 on their own.
+The `displayName` is what the chat types to vote (`!p1 dj jenni`), so keep it short and typeable.
 `scale` (0.3–3) is for a figure that came out too big or too small next to the others.
 
 **Arena:** any 16:9 picture, scaled to cover 1920 × 1080. **arena.json:**
@@ -60,7 +62,11 @@ Fill in the placeholders in `tools/fight-assets/prompts/`:
 - **New character:** set `{OUTFIT}` to `Same outfit as the reference.`
 - **New outfit** for an existing character: describe the new clothes in `{OUTFIT}`, for example
   `Wearing a red leather jacket, ripped jeans and boots INSTEAD of the outfit in the reference - only the face, hair, body and tattoos come from the reference.`
-  Give it its own id, like `silver-leather`. It is a separate fighter that can stand in either corner.
+  An outfit is not a new fighter. Install it as the next free `sprite<N>.webp` (2–9) in the
+  fighter's existing folder, and optionally name it in that fighter.json's `outfits` list:
+  `"outfits": [{ "code": 2, "name": "Läderjacka" }]`. Codes above 9, or files with other names,
+  need an `outfits` entry with `spritePath`. The chat picks it with the digit after the name
+  (`!p1 my2`).
 - **Transparent arena:** keep the opaque parts few and at the edges (a platform, corner props, a crowd
   peeking up from the bottom edge, something hanging from the top). Leave the middle empty. Never use
   light beams, haze or glows. They cannot be keyed out cleanly. Be playful with what the fighters
@@ -100,6 +106,34 @@ node process-arena.js   <gen>/out/<id>.png       <gen>/out/<id>/arena.webp --opa
   guess as the starting value for `floor`. Then look at the preview and adjust so the feet land on
   the walking surface, not on its front rim. Set `left`/`right` so the fighters' centres stay
   over the surface. Fighters stand about 0.24 of the picture width apart at the start.
+
+### Special attacks
+
+A fighter's own super, described under `special` in fighter.json:
+`{ "name": "Molotov", "style": "throw" | "swing" | "saw" | "confuse", "spritePath": "special.webp", "propPath": "prop.webp", "color": "#4dff6a" }`.
+`throw` needs `prop.webp`, the thing thrown, and falls back to `swing` without it. `confuse` is cast
+from mid-range: question marks spiral into the other fighter, then circle their head while they stumble
+about and swing at nothing. It needs no prop. The strike pose is a cast, not a blow.
+
+An outfit can have a special of its own, drawn in its clothes: put `special` inside its `outfits` entry,
+`{ "code": 2, "name": "Rutig", "special": { "name": "Bitchslap", "style": "swing", "color": "#ff4fc3" } }`.
+Its files default to `special<code>.webp` and `prop<code>.webp`. Cut that outfit's reference from its own
+strip (`sprite<code>.webp`). An outfit without one uses the fighter's special (and its kick for the poses).
+
+1. Cut a reference out of the fighter's own strip (its stance and kick side by side on grey) and attach that, so
+   the poses match the game exactly.
+2. Fill `prompts/special.txt`: `{SPECIAL}` is what the weapon is, `{WINDUP}` and `{STRIKE}` the two poses
+   (the first cell is always the ordinary stance – it sets the scale). Use `prompts/prop.txt` for a thrown prop.
+3. If the weapon or anything the fighter wears is green, generate on magenta: set `{BG_NAME}` to
+   `chroma magenta` and `{BG_HEX}` to `#FF00FF`, and pass `--magenta` to the scripts below.
+4. Process with room for the weapon:
+
+```bash
+node process-fighter.js <gen>/out/<id>_special.png <gen>/out/<id>/special.webp 3 --cell 1024x760 [--magenta]
+node process-prop.js    <gen>/out/<id>_prop.png    <gen>/out/<id>/prop.webp [--magenta]
+```
+
+Check `special.preview.png`: stance, wind-up, strike, left to right, nothing clipped.
 
 ### 5. Install
 

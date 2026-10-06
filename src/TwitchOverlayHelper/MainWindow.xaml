@@ -647,6 +647,49 @@
                                                    Style="{StaticResource Hint}" Margin="0,10,0,0" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
+                                <Border Style="{StaticResource StackedCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="Match och karaktärsval" Style="{StaticResource SubTitle}" />
+                                        <CheckBox x:Name="FightSelectCheck" Content="Karaktärsval före varje match – chatten röstar" Margin="0,12,0,0"
+                                                  Checked="FightRules_Changed" Unchecked="FightRules_Changed"
+                                                  ToolTip="Varje match börjar med en skärm där alla karaktärer visas och chatten röstar. Flest röster vinner hörnet. Ett hörn ingen röstar på behåller sin karaktär." />
+                                        <Grid Margin="0,10,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="Matchen vinns av" Style="{StaticResource FieldLabel}" />
+                                                <ComboBox x:Name="FightWinsBox" SelectionChanged="FightWins_Changed"
+                                                          ToolTip="När någon vunnit så många ronder är matchen slut. Med karaktärsval på går det sedan tillbaka till valet.">
+                                                    <ComboBoxItem Content="Först till 1" Tag="1" />
+                                                    <ComboBoxItem Content="Först till 2" Tag="2" />
+                                                    <ComboBoxItem Content="Först till 3" Tag="3" />
+                                                    <ComboBoxItem Content="Först till 4" Tag="4" />
+                                                    <ComboBoxItem Content="Först till 5" Tag="5" />
+                                                    <ComboBoxItem Content="Först till 7" Tag="7" />
+                                                    <ComboBoxItem Content="Ingen – ronderna fortsätter" Tag="0" />
+                                                </ComboBox>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" IsEnabled="{Binding IsChecked, ElementName=FightSelectCheck}">
+                                                <TextBlock Text="Tid att rösta (s)" Style="{StaticResource FieldLabel}" />
+                                                <TextBox x:Name="FightSelectSecondsBox" Style="{StaticResource NumberField}" TextChanged="FightRules_Changed" LostKeyboardFocus="FightRules_LostFocus"
+                                                         ToolTip="10–300 sekunder." />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid Margin="0,10,0,0" IsEnabled="{Binding IsChecked, ElementName=FightSelectCheck}">
+                                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="Rösta på spelare 1" Style="{StaticResource FieldLabel}" />
+                                                <TextBox x:Name="FightPick1Box" TextChanged="FightRules_Changed" LostKeyboardFocus="FightRules_LostFocus"
+                                                         ToolTip="Följs av karaktärens namn, och en siffra för klädsel: !p1 my2" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="Rösta på spelare 2" Style="{StaticResource FieldLabel}" />
+                                                <TextBox x:Name="FightPick2Box" TextChanged="FightRules_Changed" LostKeyboardFocus="FightRules_LostFocus"
+                                                         ToolTip="Följs av karaktärens namn, och en siffra för klädsel: !p2 zelda2" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <TextBlock x:Name="FightRulesHint" Text="" Style="{StaticResource Hint}" Margin="0,10,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
 
                             <StackPanel Grid.Column="2" Style="{StaticResource Column}">
@@ -656,11 +699,11 @@
                                         <Grid Margin="0,12,0,0">
                                             <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
                                             <StackPanel>
-                                                <TextBlock Text="Spelare 1 (vänster)" Style="{StaticResource FieldLabel}" />
+                                                <TextBlock x:Name="FightP1Label" Text="Spelare 1 (vänster)" Style="{StaticResource FieldLabel}" />
                                                 <ComboBox x:Name="FightP1Box" SelectionChanged="FightMatch_Changed" />
                                             </StackPanel>
                                             <StackPanel Grid.Column="2">
-                                                <TextBlock Text="Spelare 2 (höger)" Style="{StaticResource FieldLabel}" />
+                                                <TextBlock x:Name="FightP2Label" Text="Spelare 2 (höger)" Style="{StaticResource FieldLabel}" />
                                                 <ComboBox x:Name="FightP2Box" SelectionChanged="FightMatch_Changed" />
                                             </StackPanel>
                                         </Grid>
@@ -697,6 +740,8 @@
                                                 </StackPanel>
                                             </Grid>
                                             <CheckBox x:Name="FightHintCheck" Content="Visa kommandona under namnen på skärmen" Margin="0,12,0,0" Checked="FightCommand_Changed" Unchecked="FightCommand_Changed" />
+                                            <CheckBox x:Name="FightSupportersCheck" Content="Visa vilka som hejar, med väntetid, på var sida" Checked="FightCommand_Changed" Unchecked="FightCommand_Changed"
+                                                      ToolTip="En lista på var sida av skärmen med chattarna som hjälper det hörnet, och hur länge till varje kommando fungerar för dem igen. Rullar när den blir lång." />
                                         </StackPanel>
                                         <TextBlock x:Name="FightCommandHint" Text="" Style="{StaticResource Hint}" Margin="0,10,0,0" TextWrapping="Wrap" />
                                     </StackPanel>

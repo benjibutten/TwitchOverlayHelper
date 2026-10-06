@@ -389,6 +389,15 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
         app.MapGet("/fight/fighter/{id}", (string id) =>
             context.Fight?.TryGetFighterSprite(id, out string path) == true ? Results.File(path, ImageType(path)) : Results.NotFound());
 
+        // Two literal routes rather than one with a regex: the slim builder has no regex constraint.
+        app.MapGet("/fight/fighter/{id}/special", (string id) => SpecialFile(id, 1, "special"));
+        app.MapGet("/fight/fighter/{id}/prop", (string id) => SpecialFile(id, 1, "prop"));
+        app.MapGet("/fight/fighter/{id}/{outfit:int}/special", (string id, int outfit) => SpecialFile(id, outfit, "special"));
+        app.MapGet("/fight/fighter/{id}/{outfit:int}/prop", (string id, int outfit) => SpecialFile(id, outfit, "prop"));
+
+        app.MapGet("/fight/fighter/{id}/{outfit:int}", (string id, int outfit) =>
+            context.Fight?.TryGetFighterSprite(id, outfit, out string path) == true ? Results.File(path, ImageType(path)) : Results.NotFound());
+
         app.MapGet("/fight/arena/{id}", (string id) =>
             context.Fight?.TryGetArenaImage(id, out string path) == true ? Results.File(path, ImageType(path)) : Results.NotFound());
 
@@ -405,6 +414,9 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
             await http.Response.Body.WriteAsync(content).ConfigureAwait(false);
         });
     }
+
+    private IResult SpecialFile(string id, int outfit, string part) =>
+        context.Fight?.TryGetFighterSpecialFile(id, outfit, part, out string path) == true ? Results.File(path, ImageType(path)) : Results.NotFound();
 
     private static string ImageType(string path) => Path.GetExtension(path).ToLowerInvariant() switch
     {

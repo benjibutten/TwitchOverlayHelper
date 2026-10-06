@@ -6,12 +6,16 @@
 <!-- A full-scene browser source for the moments the stream is waiting on something: the streamer's
      character is knocked out, the streamer is away. The two characters fight it out on their own,
      round after round, so there is something to watch. The app tells the page who fights, where,
-     and what the banner says, and passes on the viewers who cheer a corner on. ?msg= and ?sub= give
-     one scene words of its own; ?p1= and ?p2= rename the fighters. -->
+     and what the banner says, and passes on the viewers who vote in the character select or cheer
+     a corner on. ?msg= and ?sub= give one scene words of its own; ?p1= and ?p2= rename the
+     fighters. -->
 <link rel="stylesheet" href="fight.css">
 </head>
 <body>
 <canvas id="stage" width="1920" height="1080"></canvas>
 <script src="fight.js"></script>
+<script src="fight-crowd.js"></script>
+<script src="fight-select.js"></script>
+<script src="fight-match.js"></script>
 </body>
 </html>

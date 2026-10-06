@@ -1,0 +1,11 @@
+Use your image generation tool to create a single game prop for a 2D fighting game, in the art style of the attached reference image (semi-realistic comic / graphic-novel illustration, bold clean black ink outlines, soft cel shading).
+
+THE PROP: {PROP}
+
+LAYOUT (critical, it will be cut out by a program):
+- One single square image with the prop alone, centered, filling about 70% of the image, seen from the side, lying diagonally.
+- Background of the ENTIRE image is flat solid pure {BG_NAME} {BG_HEX}. No shadow, no floor, no gradient, no text, no glow on the background.
+- Clean black ink outline around the whole prop.
+- Do not use the background colour anywhere on the prop.
+
+When the image is generated, copy the resulting PNG file to ./out/{ID}_prop.png (create the out folder if needed). Do not do anything else.
