@@ -3,32 +3,22 @@
 //   node process-arena.js in.png arena.webp            keys out chroma green (#00FF00) – the parts
 //                                                      that were green show the stream through
 //   node process-arena.js in.png arena.webp --opaque   a full backdrop, only converted and sized
+//   node process-arena.js in.png arena.webp --magenta  keys magenta instead, for art that is green
 //
 // Also writes arena.preview.png (the arena over a checkerboard, so the keying can be judged by eye)
 // and prints a guess at "floor" for arena.json: where, as a fraction of the height, the fighters'
 // feet should go. Check the guess against the preview – it is a starting point, not an answer.
 const sharp = require('sharp');
+const { key, keyColorFrom } = require('./chroma');
 
-const [, , input, output, flag] = process.argv;
+const [, , input, output, ...flags] = process.argv;
 if (!input || !output) {
   console.error('usage: node process-arena.js in.png arena.webp [--opaque]');
   process.exit(1);
 }
-const opaque = flag === '--opaque';
+const opaque = flags.includes('--opaque');
+const keyColor = keyColorFrom(flags);
 const MAX_W = 1920;
-
-// Same key as the fighters: alpha from how much greener than red and blue a pixel is, with the
-// green fringe on the edges pulled back to grey so nothing glows green over the stream.
-function key(data, w, h) {
-  for (let i = 0; i < w * h; i++) {
-    const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
-    const spill = g - Math.max(r, b);
-    let alpha = spill <= 30 ? 255 : spill >= 90 ? 0 : Math.round(255 * (90 - spill) / 60);
-    if (g < 90) alpha = 255;
-    if (spill > 0) data[i * 4 + 1] = Math.max(r, b);
-    data[i * 4 + 3] = alpha;
-  }
-}
 
 // Specks of leftover colour floating in the empty area – a few pixels the model dithered – are
 // dropped, so the stream is not dotted with them.
@@ -75,7 +65,7 @@ function guessFloor(data, w, h) {
   const { width: w, height: h } = info;
 
   if (!opaque) {
-    key(data, w, h);
+    key(data, w, h, keyColor);
     dropSpecks(data, w, h, Math.round(w * h / 20000));
   }
 

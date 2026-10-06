@@ -1,0 +1,20 @@
+Use your image generation tool to create a 2D fighting-game sprite sheet of a SPECIAL ATTACK for the character in the attached reference image {REFERENCE_FILE}. The reference shows the character's fighting stance and kick exactly as they look in the game: same face, hair, outfit, body proportions, colours and accessories.
+
+STYLE: match the reference exactly - semi-realistic comic / graphic-novel illustration, bold clean black ink outlines, soft cel shading. Same character, same size and scale in every frame.
+
+THE SPECIAL: {SPECIAL}
+
+LAYOUT (critical, it will be cut up by a program):
+- One single image, landscape, exactly 3 columns x 1 row = 3 equal cells in a perfect invisible grid.
+- Background of the ENTIRE image is flat solid pure {BG_NAME} {BG_HEX}. No floor, no shadows, no gradients, no text, no labels, no grid lines, no borders, no motion lines, no effects in the background.
+- Exactly one full-body pose per cell, centered horizontally in its cell, feet resting on the same baseline near the bottom of the cell, with generous empty margin on all sides. Nothing may cross into a neighbouring cell. Head to shoes fully visible, including the whole weapon or prop.
+- Character faces to the RIGHT (side / three-quarter view, fighting-game style) in every frame.
+- Clean ink outline around the whole silhouette, weapon included, so it separates well from the background.
+- Do not use the background colour anywhere on the character or the props.
+
+FRAMES, left to right:
+1. The ordinary fighting stance, exactly as in the left half of the reference (used to match the scale).
+2. {WINDUP}
+3. {STRIKE}
+
+When the image is generated, copy the resulting PNG file to ./out/{ID}_special.png (create the out folder if needed). Do not do anything else.
