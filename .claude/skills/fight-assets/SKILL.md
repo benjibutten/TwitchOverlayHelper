@@ -113,6 +113,11 @@ A fighter's own super, described under `special` in fighter.json:
 `{ "name": "Molotov", "style": "throw" | "swing" | "saw", "spritePath": "special.webp", "propPath": "prop.webp", "color": "#4dff6a" }`.
 `throw` needs `prop.webp`, the thing thrown, and falls back to `swing` without it.
 
+An outfit can have a special of its own, drawn in its clothes: put `special` inside its `outfits` entry,
+`{ "code": 2, "name": "Rutig", "special": { "name": "Bitchslap", "style": "swing", "color": "#ff4fc3" } }`.
+Its files default to `special<code>.webp` and `prop<code>.webp`. Cut that outfit's reference from its own
+strip (`sprite<code>.webp`). An outfit without one uses the fighter's special (and its kick for the poses).
+
 1. Cut a reference out of the fighter's own strip (its stance and kick side by side on grey) and attach that, so
    the poses match the game exactly.
 2. Fill `prompts/special.txt`: `{SPECIAL}` is what the weapon is, `{WINDUP}` and `{STRIKE}` the two poses
