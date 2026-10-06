@@ -12,7 +12,11 @@
 
    Every fighter strip holds the same eight frames in the same order, each cell the same size with the
    feet on one baseline and the torso on the cell's centre line – so placing a fighter is one point,
-   whatever the pose. All face right in the strip; whoever stands on the right is drawn mirrored. */
+   whatever the pose. All face right in the strip; whoever stands on the right is drawn mirrored.
+
+   The page is four scripts sharing one scope, loaded in this order: this one (the fighters, their
+   blows and the arena), fight-crowd.js (the side panels of viewers taking part), fight-select.js
+   (the character select) and fight-match.js (how a match runs, the HUD, the app and the loop). */
 
 const params = new URLSearchParams(location.search);
 const KEY = params.get("key") || "";
@@ -35,9 +39,25 @@ const HEAL_HP = 10;
 const setup = {
   headline: "",
   subline: "",
-  commands: { enabled: false, cheer: "!heja", heal: "!hela", showHint: false },
+  commands: { enabled: false, cheer: "!heja", heal: "!hela", showHint: false, cooldown: 20, pick1: "!p1", pick2: "!p2" },
+  match: { characterSelect: false, selectSeconds: 30, winsToWin: 0, showSupporters: false },
+  roster: [],
   arena: null
 };
+
+/* Images are asked for once per address, however many places draw them – the select screen alone
+   can want every fighter on the roster at once. */
+const imageCache = new Map();
+function cachedImage(src) {
+  if (!src) return null;
+  let img = imageCache.get(src);
+  if (!img) {
+    img = loadImage(src);
+    imageCache.set(src, img);
+  }
+  return img;
+}
+const imgReady = img => !!img && img.complete && img.naturalWidth > 0;
 
 function loadImage(src) {
   const img = new Image();
@@ -46,6 +66,8 @@ function loadImage(src) {
 }
 
 const rand = (a, b) => a + Math.random() * (b - a);
+/* A viewer's chat colour, or white – it is drawn on the broadcast, so nothing else gets through. */
+const safeColor = c => /^#[0-9a-f]{6}$/i.test(c || "") ? c : "#ffffff";
 const pick = list => list[Math.floor(Math.random() * list.length)];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -73,14 +95,17 @@ function stageLayout() {
     x = (W - w) / 2;
     y = (H - h) / 2;
   }
+  // The side panels listing the viewers take a strip of each edge; the fighters keep clear of it.
+  const edge = supportersShown() ? CROWD_PANEL_EDGE : 150;
   return {
     x, y, w, h,
     ground: y + a.floor * h,
-    left: Math.max(150, x + a.left * w),
-    right: Math.min(W - 150, x + a.right * w)
+    left: Math.max(edge, x + a.left * w),
+    right: Math.min(W - edge, x + a.right * w)
   };
 }
-let stage = stageLayout();
+// Laid out by fight-match.js once every script has loaded: the panels it reserves room for live in fight-crowd.js.
+let stage = null;
 
 function drawArena() {
   if (arenaImage && arenaImage.complete && arenaImage.naturalWidth)
@@ -102,16 +127,24 @@ class Fighter {
     this.reset();
   }
 
-  /* A new character in this corner. The record of wins stays with the corner. */
-  dress(def) {
+  /* A new character in this corner, in one of its outfits. The record of wins stays with the corner. */
+  dress(def, outfitCode) {
     if (!def) return;
-    if (this.id !== def.id || this.spriteUrl !== def.sprite) {
-      this.sprite = loadImage(def.sprite);
-      this.spriteUrl = def.sprite;
+    const outfits = def.outfits || [];
+    const outfit = outfits.find(o => o.code === (outfitCode ?? def.outfit)) || outfits[0] || { code: 1, sprite: def.sprite };
+    if (this.spriteUrl !== outfit.sprite) {
+      this.sprite = cachedImage(outfit.sprite);
+      this.spriteUrl = outfit.sprite;
     }
     this.id = def.id;
+    this.outfit = outfit.code;
     this.name = (params.get("p" + this.player) || def.name || "").toUpperCase();
     this.scale = def.scale || 1;
+    // The special's own poses are drawn in the ordinary outfit; in another outfit they would show the
+    // wrong clothes for a moment, so that outfit swings with its kick instead.
+    this.special = def.special || null;
+    this.specialSprite = this.special && this.special.sprite && outfit.code === 1 ? cachedImage(this.special.sprite) : null;
+    this.prop = this.special && this.special.prop ? cachedImage(this.special.prop) : null;
   }
 
   get size() { return SPRITE_SCALE * this.scale; }
@@ -130,7 +163,9 @@ class Fighter {
     this.wait = rand(0.2, 0.7);
     this.flash = 0;
     this.glow = 0; // the green shimmer of a heal
+    this.burn = 0; // flames left on a fighter hit by something burning
     this.hasHit = false;
+    this.lastStandUsed = false; // the special without a meter, once a round
     // A temperament per round, so two rounds in a row never play out the same.
     this.aggression = rand(0.45, 0.95);
     this.reach = rand(300, 330) * Math.min(1.3, Math.max(0.8, this.scale));
@@ -150,6 +185,10 @@ class Fighter {
     this.t += dt;
     this.flash = Math.max(0, this.flash - dt * 4);
     this.glow = Math.max(0, this.glow - dt * 1.2);
+    if (this.burn > 0) {
+      this.burn = Math.max(0, this.burn - dt);
+      if (Math.random() < dt * 40) flame(this.x + rand(-70, 70) * this.scale, stage.ground - this.y - rand(60, 420) * this.size, this.burnColor);
+    }
     // The trail waits a moment and then drains slowly, so a blow can be read on the bar.
     this.shownHp += (this.hp - this.shownHp) * Math.min(1, dt * (this.shownHp > this.hp + 1 ? 2.2 : 10));
 
@@ -174,6 +213,7 @@ class Fighter {
       case "walk": this.walk(dt, fighting); break;
       case "back": this.backstep(); break;
       case "attack": this.attack(); break;
+      case "special": this.specialMove(); break;
       case "hit": if (this.t > 0.38) this.set("idle"); break;
       default: break;
     }
@@ -183,6 +223,19 @@ class Fighter {
     if (!fighting || this.foe.down) return;
     this.wait -= dt;
     if (this.wait > 0) return;
+
+    // The special: what a full meter buys – or, once a round, a last stand when the round is slipping.
+    const lastStand = this.special && !this.lastStandUsed && this.hp <= 30 && this.foe.hp > this.hp + 10 && Math.random() < 0.4;
+    if (this.special && (this.charged || lastStand)) {
+      if (this.distance > this.specialReach) { this.set("walk"); return; }
+      if (this.charged) this.meter = 0; else this.lastStandUsed = true;
+      this.hasHit = false;
+      this.hits = 0;
+      this.lunged = false;
+      this.set("special");
+      announceSpecial(this, !lastStand || this.charged);
+      return;
+    }
 
     if (this.distance > this.reach) {
       this.set("walk");
@@ -199,7 +252,8 @@ class Fighter {
   walk(dt, fighting) {
     if (!fighting) { this.set("idle"); return; }
     this.x += this.facing * 300 * dt;
-    if (this.distance <= this.reach - 20) {
+    const stopAt = this.special && this.charged ? Math.min(this.reach, this.specialReach) : this.reach;
+    if (this.distance <= stopAt - 20) {
       this.wait = rand(0.05, 0.45) / this.aggression;
       this.set("idle");
     }
@@ -214,6 +268,66 @@ class Fighter {
   }
 
   get windup() { return this.move === "kick" ? (this.charged ? 0.32 : 0.2) : 0.13; }
+
+  /* How close the special has to be. A throw goes the length of the ring; a swing lunges in. */
+  get specialReach() {
+    const style = this.special ? this.special.style : "swing";
+    return style === "throw" ? 4000 : this.reach + 260;
+  }
+
+  /* Wind-up and how long the whole move lasts, per style. */
+  get specialTimes() {
+    switch (this.special && this.special.style) {
+      case "throw": return { windup: 0.5, total: 1.05 };
+      case "saw": return { windup: 0.45, total: 1.3 };
+      default: return { windup: 0.55, total: 1.05 };
+    }
+  }
+
+  specialMove() {
+    const { windup, total } = this.specialTimes;
+    const style = this.special.style;
+    const close = () => this.distance <= this.reach + 160 && !this.foe.down;
+    // Swings and saws lunge in at the end of the wind-up, so the blow lands from where they stood.
+    if (style !== "throw" && !this.lunged && this.t >= windup - 0.12) {
+      this.lunged = true;
+      this.vx = this.facing * Math.min(1400, Math.max(300, (this.distance - this.reach + 120) * 5));
+    }
+    if (style === "throw") {
+      if (this.t >= windup && !this.hasHit) {
+        this.hasHit = true;
+        throwProp(this);
+      }
+    } else if (style === "saw") {
+      // A burst of quick cuts while the blade is in, the last one the big one.
+      while (this.hits < 5 && this.t >= windup + this.hits * 0.13) {
+        this.hits++;
+        if (close()) specialHit(this, this.foe, this.hits === 5 ? 11 : 5, this.hits === 5);
+      }
+    } else if (this.t >= windup && !this.hasHit) {
+      this.hasHit = true;
+      if (close()) specialHit(this, this.foe, rand(26, 32), true);
+    }
+    if (this.t >= total) {
+      this.wait = rand(0.4, 0.9);
+      this.set("idle");
+    }
+  }
+
+  /* Which picture and which cell to draw: the special has poses of its own when there are any. */
+  pose() {
+    if (this.state === "special") {
+      const strike = this.t >= this.specialTimes.windup;
+      // The special's strip has three cells of its own size – wider and taller, for the weapon.
+      if (imgReady(this.specialSprite)) {
+        const sp = this.specialSprite;
+        return { img: sp, frame: strike ? 2 : 1, cw: sp.naturalWidth / 3, ch: sp.naturalHeight };
+      }
+      const style = this.special.style;
+      return { img: this.sprite, frame: strike ? (style === "throw" ? FRAME.punch : FRAME.kick) : FRAME.walk };
+    }
+    return { img: this.sprite, frame: this.frame() };
+  }
 
   attack() {
     const active = this.move === "kick" ? 0.32 : 0.24;
@@ -248,8 +362,13 @@ class Fighter {
   }
 
   draw(alpha, time) {
-    const img = this.sprite;
-    if (!img || !img.complete || !img.naturalWidth) return;
+    const { img, frame: f, cw = CELL_W, ch = CELL_H } = this.pose();
+    const base = ch - (CELL_H - BASELINE);
+    if (layer.width !== cw || layer.height !== ch) {
+      layer.width = cw;
+      layer.height = ch;
+    }
+    if (!imgReady(img)) return;
     // Lying down or celebrating, a fighter keeps the way they faced when it happened.
     const facing = this.down || this.state === "win" ? this.lastFacing : this.facing;
     this.lastFacing = facing;
@@ -264,13 +383,12 @@ class Fighter {
     ctx.ellipse(this.x, stage.ground + 4, (this.down && this.y === 0 ? 240 : 140) * lift * this.scale, 22 * lift, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    const f = this.frame();
     layerCtx.globalCompositeOperation = "copy";
-    layerCtx.drawImage(img, f * CELL_W, 0, CELL_W, CELL_H, 0, 0, CELL_W, CELL_H);
+    layerCtx.drawImage(img, f * cw, 0, cw, ch, 0, 0, cw, ch);
     if (this.flash > 0) {
       layerCtx.globalCompositeOperation = "source-atop";
       layerCtx.fillStyle = `rgba(255,255,255,${this.flash * 0.8})`;
-      layerCtx.fillRect(0, 0, CELL_W, CELL_H);
+      layerCtx.fillRect(0, 0, cw, ch);
     }
 
     const bob = this.state === "walk" ? -Math.abs(Math.sin(this.t * 19)) * 8 : 0;
@@ -284,7 +402,7 @@ class Fighter {
       ctx.shadowColor = `rgba(90,255,150,${this.glow})`;
       ctx.shadowBlur = 40;
     }
-    ctx.drawImage(layer, -CELL_W / 2, -BASELINE);
+    ctx.drawImage(layer, -cw / 2, -base);
     ctx.restore();
   }
 }
@@ -299,7 +417,8 @@ let slowMo = 1;
 function shake(amount) { shakeAmount = Math.max(shakeAmount, amount); }
 
 function strike(attacker, target, move) {
-  const isSuper = attacker.charged;
+  // A fighter with a special of their own spends a full meter on that instead, never on this kick.
+  const isSuper = attacker.charged && !attacker.special;
   const critical = !isSuper && Math.random() < 0.12;
   let damage = move === "kick" ? rand(11, 16) : rand(7, 11);
   if (critical) damage *= 1.7;
@@ -337,6 +456,84 @@ function strike(attacker, target, move) {
   }
 }
 
+/* ------------------------------------------------------------------ specials */
+
+/* The special's name, big over the fighter, and the screen tinted in its colour for a moment. */
+function announceSpecial(f, viaMeter) {
+  const sp = f.special;
+  // At chest height rather than over the head, where the cheers and "laddad" already float.
+  popText(`${sp.name.toUpperCase()}!`, f.x, Math.max(440, stage.ground - 330 * f.size), sp.color, 86, 1.3);
+  if (!viaMeter) popText("SISTA UTVÄGEN", f.x, Math.max(510, stage.ground - 250 * f.size), "#ffffff", 40, 1.3);
+  effects.push({ kind: "flash", color: sp.color, t: 0, life: 0.35 });
+  shake(8);
+}
+
+/* A special's blow. The final one of a move is the big one: the burst with the special's name, the
+   hit-stop, the screen flash and a fighter sent flying. The small ones are a saw's cuts. */
+function specialHit(attacker, target, damage, final) {
+  const sp = attacker.special;
+  damage *= 1 + Math.max(0, target.hp - attacker.hp) / 150;
+  target.hp = Math.max(0, target.hp - Math.round(damage));
+  target.flash = 1;
+
+  const dir = target.x > attacker.x ? 1 : -1;
+  const hitX = target.x - dir * 40;
+  const hitY = stage.ground - 380 * target.size;
+  sparks(hitX, hitY, dir, final ? 46 : 12, [sp.color, "#ffffff", "#ffd43b"]);
+  if (final) {
+    effects.push({
+      kind: "burst", x: hitX, y: hitY, t: 0, life: 1.1, spin: rand(-0.2, 0.2),
+      text: `${sp.name.toUpperCase()}!`, size: 1.6, colors: ["#ffffff", sp.color],
+      points: Array.from({ length: 16 }, (_, i) => (i % 2 ? rand(0.5, 0.65) : rand(0.92, 1.15)))
+    });
+    effects.push({ kind: "flash", color: sp.color, t: 0, life: 0.3 });
+    hitStop = 0.28;
+    shake(42);
+  } else {
+    popText(pick(["BRRR!", "VRRR!", "ZZZT!", "RRRAH!"]), hitX + rand(-40, 40), hitY - rand(40, 120), sp.color, 46, 0.5);
+    hitStop = 0.04;
+    shake(12);
+  }
+
+  if (target.hp <= 0) {
+    target.set("down");
+    target.vx = dir * 620;
+    target.vy = 1000;
+    target.y = 1;
+    knockOut(attacker);
+  } else {
+    target.set("hit");
+    target.vx = dir * (final ? 820 : 140);
+  }
+}
+
+/* A thrown special: the prop leaves the hand, turns over in an arc and comes down on the other
+   fighter wherever they have got to – then bursts into flames in the special's colour. */
+function throwProp(f) {
+  const target = f.foe;
+  const x0 = f.x + f.facing * 110 * f.size;
+  const y0 = stage.ground - 470 * f.size;
+  effects.push({
+    kind: "projectile", owner: f, target, img: f.prop, color: f.special.color,
+    x0, y0, x: x0, y: y0, t: 0, life: 0.75, spin: f.facing * rand(9, 13), angle: 0,
+    onEnd() {
+      const sp = f.special;
+      for (let i = 0; i < 40; i++) flame(target.x + rand(-110, 110), stage.ground - rand(20, 320) * target.size, sp.color);
+      sparks(target.x, stage.ground - 300 * target.size, 0, 30, [sp.color, "#ffffff", "#ffb340"]);
+      if (!target.down && inRounds()) {
+        target.burn = 1.8;
+        target.burnColor = sp.color;
+        specialHit(f, target, rand(24, 30), true);
+      }
+    }
+  });
+}
+
+/* One lick of fire: a soft blob that rises, swells and fades, added rather than painted over. */
+function flame(x, y, color) {
+  effects.push({ kind: "flame", x, y, vx: rand(-40, 40), vy: rand(-260, -120), r: rand(14, 32), t: 0, life: rand(0.35, 0.7), color: color || "#ff8a1a" });
+}
+
 function popText(text, x, y, color, size = 54, life = 0.8) {
   effects.push({ kind: "text", x, y, text, color, size, t: 0, life });
 }
@@ -359,8 +556,22 @@ function updateEffects(dt) {
       e.vy += 1800 * dt;
     } else if (e.kind === "text") {
       e.y -= 60 * dt;
+    } else if (e.kind === "projectile") {
+      // Homing on purpose: a super never misses, so the arc ends wherever the target now stands.
+      const k = Math.min(1, e.t / e.life);
+      const tx = e.target.x, ty = stage.ground - 330 * e.target.size;
+      e.x = e.x0 + (tx - e.x0) * k;
+      e.y = e.y0 + (ty - e.y0) * k - 130 * 4 * k * (1 - k);
+      e.angle += e.spin * dt;
+      if (Math.random() < dt * 30) flame(e.x, e.y, "#ff9a2a");
+    } else if (e.kind === "flame") {
+      e.x += e.vx * dt;
+      e.y += e.vy * dt;
     }
-    if (e.t >= e.life) effects.splice(i, 1);
+    if (e.t >= e.life) {
+      effects.splice(i, 1);
+      if (e.onEnd) e.onEnd();
+    }
   }
 }
 
@@ -399,6 +610,34 @@ function drawEffects() {
       ctx.moveTo(e.x, e.y);
       ctx.lineTo(e.x - e.vx * 0.03, e.y - e.vy * 0.03);
       ctx.stroke();
+    } else if (e.kind === "flash") {
+      ctx.globalAlpha = 0.32 * (1 - k);
+      ctx.fillStyle = e.color;
+      ctx.fillRect(-60, -60, W + 120, H + 120);
+    } else if (e.kind === "flame") {
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = (1 - k) * 0.8;
+      const r = e.r * (0.6 + k * 0.9);
+      const g = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, r);
+      g.addColorStop(0, "#ffffff");
+      g.addColorStop(0.35, e.color);
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (e.kind === "projectile") {
+      ctx.translate(e.x, e.y);
+      ctx.rotate(e.angle);
+      if (imgReady(e.img)) {
+        const s = 120 / Math.max(e.img.naturalWidth, e.img.naturalHeight);
+        ctx.drawImage(e.img, -e.img.naturalWidth * s / 2, -e.img.naturalHeight * s / 2, e.img.naturalWidth * s, e.img.naturalHeight * s);
+      } else {
+        ctx.fillStyle = e.color;
+        ctx.beginPath();
+        ctx.arc(0, 0, 22, 0, Math.PI * 2);
+        ctx.fill();
+      }
     } else if (e.kind === "burst") {
       // Comic-book burst: a jagged star with an ink outline, a hotter star inside, the sound on top.
       const pop = k < 0.15 ? k / 0.15 * 1.25 : 1.25 - Math.min(0.25, (k - 0.15) * 1.2);
@@ -433,11 +672,15 @@ function assist(a) {
   const f = a.player === 2 ? p2 : a.player === 1 ? p1 : null;
   if (!f) return;
   const who = String(a.viewer || "").slice(0, 25);
-  const color = /^#[0-9a-f]{6}$/i.test(a.color || "") ? a.color : "#ffffff";
+  const color = safeColor(a.color);
+  // The panel counts it whenever it arrives – the app has started the viewer's cooldown either way –
+  // but a fighter can only be cheered on while there is a fight to cheer.
+  crowd.note(a.player, a.kind, who, color);
+  if (!inRounds()) return;
   // Just over the head, but never up among the bars, where a name would be lost.
   // Three rows taken in turn, so a busy chat stacks its names instead of writing them on each other.
   f.popRow = ((f.popRow || 0) + 1) % 3;
-  const headY = Math.max(300, stage.ground - 500 * f.size + f.popRow * 70 - 70);
+  const headY = Math.max(350, stage.ground - 500 * f.size + f.popRow * 70 - 70);
 
   if (a.kind === "heal") {
     // A fighter on the floor is past patching up.
@@ -455,346 +698,8 @@ function assist(a) {
   f.meter = Math.min(100, f.meter + CHEER_METER);
   popText(`${who} hejar!`, f.x, headY - 20, color, 40, 1.6);
   if (f.charged && !wasCharged) {
-    popText("SUPER LADDAD!", f.x, headY - 90, "#ffd43b", 64, 1.8);
+    popText(f.special ? `${f.special.name.toUpperCase()} LADDAD!` : "SUPER LADDAD!", f.x, headY - 90, f.special ? f.special.color : "#ffd43b", 64, 1.8);
     shake(10);
   }
 }
 
-/* ------------------------------------------------------------------ rounds */
-
-const p1 = new Fighter(1, -1);
-const p2 = new Fighter(2, 1);
-p1.foe = p2;
-p2.foe = p1;
-
-let round = 1;
-let phase = "intro"; // intro → fight → ko → win → fade → intro
-let phaseT = 0;
-let winner = null;
-
-function setPhase(next) {
-  phase = next;
-  phaseT = 0;
-}
-
-function knockOut(attacker) {
-  winner = attacker;
-  attacker.wins++;
-  slowMo = 0.3;
-  shake(34);
-  setPhase("ko");
-}
-
-function updateRound(dt) {
-  phaseT += dt;
-  switch (phase) {
-    case "intro":
-      if (phaseT > 2.0) setPhase("fight");
-      break;
-    case "ko":
-      slowMo = Math.min(1, slowMo + dt * 0.9);
-      if (phaseT > 1.6) {
-        winner.set("win");
-        setPhase("win");
-      }
-      break;
-    case "win":
-      if (phaseT > 3.8) setPhase("fade");
-      break;
-    case "fade":
-      if (phaseT > 0.6) {
-        round++;
-        p1.reset();
-        p2.reset();
-        winner = null;
-        setPhase("intro");
-      }
-      break;
-    default: break;
-  }
-}
-
-/* The fighters fade out at the end of a round and back in at the start of the next, rather than the
-   whole screen going black: over a transparent arena a black frame would cover the stream. */
-function fighterAlpha() {
-  if (phase === "fade") return 1 - Math.min(1, phaseT / 0.6);
-  if (phase === "intro") return Math.min(1, phaseT / 0.4);
-  return 1;
-}
-
-/* ------------------------------------------------------------------ HUD */
-
-/* A slanted bar, drawn in the left corner's frame; the right corner is the same bar mirrored. */
-function slantedBar(w, h, slant, draw) {
-  const shape = () => {
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(w, 0);
-    ctx.lineTo(w - slant, h);
-    ctx.lineTo(-slant, h);
-    ctx.closePath();
-  };
-  shape();
-  ctx.fillStyle = "#1b1b20";
-  ctx.fill();
-  ctx.save();
-  shape();
-  ctx.clip();
-  draw();
-  ctx.restore();
-  shape();
-  ctx.lineWidth = 6;
-  ctx.strokeStyle = "#111";
-  ctx.lineJoin = "round";
-  ctx.stroke();
-}
-
-function healthBar(fighter, x, mirrored, time) {
-  const w = 720, h = 46, y = 60, slant = 22;
-  ctx.save();
-  ctx.translate(x, y);
-  if (mirrored) ctx.scale(-1, 1);
-  slantedBar(w, h, slant, () => {
-    // Bars drain toward the middle of the screen, like in every fighting game.
-    const trail = w * fighter.shownHp / 100, now = w * fighter.hp / 100;
-    ctx.fillStyle = "#d8352a";
-    ctx.fillRect(w - trail - slant, 0, trail + slant, h);
-    const g = ctx.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, "#ffe27a");
-    g.addColorStop(0.5, "#ffb21f");
-    g.addColorStop(1, "#e07a00");
-    ctx.fillStyle = fighter.hp > 30 ? g : "#ff5a3d";
-    ctx.fillRect(w - now - slant, 0, now + slant, h);
-    ctx.fillStyle = "rgba(255,255,255,0.28)";
-    ctx.fillRect(-slant, 4, w + slant, 8);
-  });
-
-  // The super meter under the bar, filling from the outside in. Blinks when it is full.
-  const mw = 430, mh = 16, my = h + 8;
-  ctx.save();
-  ctx.translate(w - mw - 14, my);
-  slantedBar(mw, mh, 8, () => {
-    const fill = mw * fighter.meter / 100;
-    const hot = fighter.charged && Math.sin(time * 12) > 0;
-    ctx.fillStyle = hot ? "#fff27a" : fighter.charged ? "#ffb21f" : "#38c6ff";
-    ctx.fillRect(mw - fill - 8, 0, fill + 8, mh);
-  });
-  ctx.restore();
-  ctx.restore();
-
-  // The corner's tag at the outer end of the bar: what the chat types, whoever is standing there.
-  const tagX = mirrored ? x + 52 : x - 52;
-  ctx.beginPath();
-  ctx.arc(tagX, y + 30, 40, 0, Math.PI * 2);
-  ctx.fillStyle = fighter.player === 1 ? "#2f7bff" : "#ff3b5c";
-  ctx.fill();
-  ctx.lineWidth = 6;
-  ctx.strokeStyle = "#111";
-  ctx.stroke();
-  inkText(`P${fighter.player}`, tagX, y + 32, 40, "#fff", "#111", 6);
-
-  // Name under the bars, one star per round won – a number once the stars would crowd the bar.
-  const align = mirrored ? "right" : "left";
-  const nameX = mirrored ? x - 20 : x + 20;
-  const nameY = y + h + mh + 46;
-  inkText(fighter.name, nameX, nameY, 44, "#fff", "#111", 8, align);
-  if (fighter.wins) {
-    const stars = fighter.wins > 5 ? `★ × ${fighter.wins}` : "★".repeat(fighter.wins);
-    ctx.font = `44px ${FONT}`;
-    const offset = ctx.measureText(fighter.name).width + 18;
-    inkText(stars, mirrored ? nameX - offset : nameX + offset, nameY + 2, 34, "#ffd43b", "#111", 7, align);
-  }
-
-  // What to type for this corner, right under its name.
-  const c = setup.commands;
-  if (c.enabled && c.showHint)
-    inkText(`${c.cheer} ${fighter.player}   ${c.heal} ${fighter.player}`, nameX, nameY + 44, 28, "rgba(255,255,255,0.9)", "#111", 6, align);
-}
-
-function drawHud(time) {
-  healthBar(p1, 120, false, time);
-  healthBar(p2, W - 120, true, time);
-
-  // Round badge between the bars.
-  ctx.beginPath();
-  ctx.arc(W / 2, 82, 56, 0, Math.PI * 2);
-  ctx.fillStyle = "#1b1b20";
-  ctx.fill();
-  ctx.lineWidth = 7;
-  ctx.strokeStyle = "#111";
-  ctx.stroke();
-  inkText(String(round), W / 2, 84, 64, "#ffd43b", "#111", 9);
-  inkText("RUNDA", W / 2, 162, 28, "#fff", "#111", 6);
-}
-
-function drawAnnouncer() {
-  let text = null, size = 190, color = "#ffd43b", k = 0;
-  if (phase === "intro") {
-    if (phaseT < 1.2) { text = `RUNDA ${round}`; k = phaseT / 1.2; }
-    else { text = "FIGHT!"; size = 230; color = "#ff5a2a"; k = (phaseT - 1.2) / 0.8; }
-  } else if (phase === "ko") {
-    text = "K.O.!"; size = 300; color = "#ff3b2a"; k = Math.min(phaseT / 1.6, 0.6);
-  } else if (phase === "win" && winner) {
-    text = `${winner.name} VINNER!`; size = 140; k = Math.min(phaseT / 3.8, 0.6);
-  }
-  if (!text) return;
-  const pop = k < 0.12 ? 0.4 + (k / 0.12) * 0.75 : 1.15 - Math.min(0.15, (k - 0.12) * 0.6);
-  ctx.save();
-  ctx.globalAlpha = k > 0.85 ? (1 - k) / 0.15 : 1;
-  ctx.translate(W / 2, 400);
-  ctx.rotate(-0.04);
-  ctx.scale(pop, pop);
-  inkText(text, 8, 10, size, "rgba(0,0,0,0.5)", "rgba(0,0,0,0.5)", size * 0.2);
-  inkText(text, 0, 0, size, color, "#111", size * 0.13);
-  ctx.restore();
-}
-
-function drawBanner(time) {
-  // Why the stream is waiting – the one thing a viewer who just arrived needs to read.
-  const banner = (params.get("msg") ?? setup.headline ?? "").toUpperCase();
-  const subline = params.get("sub") ?? setup.subline ?? "";
-  if (!banner && !subline) return;
-
-  const g = ctx.createLinearGradient(0, H - 210, 0, H);
-  g.addColorStop(0, "rgba(8,8,12,0)");
-  g.addColorStop(1, "rgba(8,8,12,0.85)");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, H - 210, W, 210);
-
-  if (banner) {
-    ctx.save();
-    ctx.translate(W / 2, H - 112);
-    ctx.rotate(-0.015 + Math.sin(time * 2.2) * 0.01);
-    ctx.font = `78px ${FONT}`;
-    const tw = Math.min(ctx.measureText(banner).width + 110, W - 160);
-    // A slanted caption box behind the words, like a comic panel.
-    ctx.beginPath();
-    ctx.moveTo(-tw / 2 + 16, -50);
-    ctx.lineTo(tw / 2 + 16, -50);
-    ctx.lineTo(tw / 2 - 16, 46);
-    ctx.lineTo(-tw / 2 - 16, 46);
-    ctx.closePath();
-    ctx.fillStyle = "#ffd43b";
-    ctx.fill();
-    ctx.lineWidth = 8;
-    ctx.strokeStyle = "#111";
-    ctx.lineJoin = "round";
-    ctx.stroke();
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "#111";
-    ctx.fillText(banner, 0, 0, tw - 70);
-    ctx.restore();
-  }
-
-  if (subline) inkText(subline, W / 2, H - 34, 34, "#fff", "#111", 7);
-}
-
-function drawNotice(text) {
-  ctx.fillStyle = "rgba(8,8,12,0.8)";
-  ctx.fillRect(0, H / 2 - 70, W, 140);
-  inkText(text, W / 2, H / 2, 40, "#fff", "#111", 7);
-}
-
-/* ------------------------------------------------------------------ the app */
-
-function applySetup(s) {
-  if (!s) return;
-  setup.headline = s.headline || "";
-  setup.subline = s.subline || "";
-  setup.commands = s.commands || setup.commands;
-
-  const arena = s.arena || null;
-  if (!setup.arena || !arena || setup.arena.id !== arena.id || setup.arena.image !== arena.image) {
-    arenaImage = arena && arena.image ? loadImage(arena.image) : null;
-    // The floor moves with the new picture once it has loaded. The round goes on – a K.O. on screen
-    // is not undone by a change of scenery – and the walls simply close in on whoever is outside.
-    const img = arenaImage;
-    if (img) img.onload = () => { if (img === arenaImage) stage = stageLayout(); };
-  }
-  setup.arena = arena;
-  stage = stageLayout();
-
-  p1.dress(s.p1);
-  p2.dress(s.p2);
-  if (!hasSetup) { p1.reset(); p2.reset(); }
-  hasSetup = true;
-}
-
-let hasSetup = false;
-let reconnectDelay = 1000;
-
-function connect() {
-  if (!KEY) return;
-  const socket = new WebSocket(`ws://${location.host}/ws?key=${encodeURIComponent(KEY)}&view=fight`);
-  socket.onopen = () => { reconnectDelay = 1000; };
-  socket.onmessage = event => {
-    let frame;
-    try { frame = JSON.parse(event.data); } catch { return; }
-    if (frame.type === "hello" || frame.type === "fightSetup") applySetup(frame.payload);
-    else if (frame.type === "fightAssist") assist(frame.payload || {});
-  };
-  socket.onclose = () => {
-    // The fight goes on with what it has; the app coming back simply picks up from there.
-    setTimeout(connect, reconnectDelay);
-    reconnectDelay = Math.min(15000, reconnectDelay * 1.7);
-  };
-}
-connect();
-
-/* ------------------------------------------------------------------ loop */
-
-let last = performance.now();
-function tick(now) {
-  let dt = Math.min(0.05, (now - last) / 1000);
-  last = now;
-  const time = now / 1000;
-
-  // Hit-stop: a few frames of stillness when a blow lands, so it feels like it connected.
-  if (hitStop > 0) {
-    hitStop -= dt;
-    dt = 0;
-  }
-  const sim = dt * slowMo;
-  const ready = hasSetup && p1.sprite && p2.sprite;
-  if (ready) {
-    updateRound(dt);
-    p1.update(sim, phase === "fight");
-    p2.update(sim, phase === "fight");
-    // Fighters never pass through each other.
-    const gap = p2.x - p1.x;
-    const minGap = p1.down || p2.down ? 150 : 260;
-    if (Math.abs(gap) < minGap) {
-      const push = (minGap - Math.abs(gap)) / 2 * Math.sign(gap || 1);
-      p1.x -= push;
-      p2.x += push;
-    }
-  }
-  updateEffects(sim);
-  shakeAmount *= Math.pow(0.002, Math.max(dt, 0.016));
-
-  // Cleared rather than painted: what the arena leaves transparent shows the stream.
-  ctx.clearRect(0, 0, W, H);
-  ctx.save();
-  ctx.translate(rand(-1, 1) * shakeAmount, rand(-1, 1) * shakeAmount);
-  drawArena();
-  if (ready) {
-    // Whoever attacks is drawn in front, so the blow lands on top of the one taking it.
-    const order = p1.state === "attack" ? [p2, p1] : [p1, p2];
-    const alpha = fighterAlpha();
-    for (const f of order) f.draw(alpha, time);
-  }
-  drawEffects();
-  ctx.restore();
-
-  if (ready) {
-    drawHud(time);
-    drawAnnouncer();
-  }
-  drawBanner(time);
-  if (!KEY) drawNotice("Adressen saknar nyckel – kopiera den på nytt under fliken Fajt i appen.");
-  else if (!hasSetup) drawNotice("Väntar på appen …");
-
-  requestAnimationFrame(tick);
-}
-requestAnimationFrame(tick);

@@ -31,6 +31,45 @@ Alla rutor vänder sig åt höger, med fötterna på samma linje 10 px ovanför
 rutans underkant och överkroppen mitt i rutan. Den som står till höger ritas
 spegelvänd av sig själv.
 
+Klädslar
+--------
+
+En karaktär kan ha flera klädslar. Lägg dem i samma mapp:
+
+  sprite.webp     klädsel 1, den vanliga
+  sprite2.webp    klädsel 2
+  sprite3.webp    klädsel 3 … upp till 9
+
+Chatten väljer klädsel med en siffra direkt efter namnet: !p1 my2. Vill du ge
+klädslarna namn, eller låta en kod peka på en fil som heter något annat:
+
+  "outfits": [
+    { "code": 2, "name": "Läderjacka" },
+    { "code": 12, "name": "Jul", "spritePath": "jul.webp" }
+  ]
+
+Varje klädsel är en hel remsa i samma format som sprite.webp.
+
+Specialattack
+-------------
+
+En karaktär kan ha en egen super. När chatten fyllt mätaren gör den sin special
+i stället för den vanliga supersparken, och en gång per rond kan den ta till
+den som sista utväg.
+
+  "special": {
+    "name": "Molotov",           // står på skärmen när den används
+    "style": "throw",            // throw (kastar), swing (ett jätteslag), saw (många snabba)
+    "spritePath": "special.webp",// valfritt, special.webp används ändå
+    "propPath": "prop.webp",     // det som kastas – bara för throw
+    "color": "#4dff6a"           // färgen på blixten, gnistorna och elden
+  }
+
+special.webp har tre rutor bredvid varandra: vanlig stans, laddning, slag. Rutorna
+får vara större än i sprite.webp (till exempel 1024 × 760) så att vapnet får
+plats – figuren ska vara lika stor och stå på samma linje 10 px ovanför
+rutans underkant. Saknas special.webp används den vanliga sparken som pose.
+
 En arena
 --------
 
