@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -31,7 +32,7 @@ public partial class MainWindow
                 arena.ImageFile is null ? null : $"/fight/arena/{Uri.EscapeDataString(arena.Id)}?v={Stamp(arena.ImageFile)}",
                 arena.Floor, arena.Left, arena.Right),
             new DockFightCommands(fight.CommandsEnabled, fight.CheerCommand, fight.HealCommand, fight.ShowCommandHint,
-                fight.CooldownSeconds, fight.Pick1Command, fight.Pick2Command),
+                fight.CooldownSeconds, fight.Pick1Command, fight.Pick2Command, fight.SoloAssist),
             new DockFightMatch(fight.CharacterSelect, fight.SelectSeconds, fight.WinsToWin, fight.ShowSupporters),
             fight.Headline,
             fight.Subline);
@@ -89,6 +90,7 @@ public partial class MainWindow
             FightCheerBox.Text = fight.CheerCommand;
             FightHealBox.Text = fight.HealCommand;
             FightCooldownBox.Text = fight.CooldownSeconds.ToString();
+            FightSoloAssistBox.Text = SoloAssistText(fight);
             FightHintCheck.IsChecked = fight.ShowCommandHint;
             FightSupportersCheck.IsChecked = fight.ShowSupporters;
             FightSelectCheck.IsChecked = fight.CharacterSelect;
@@ -192,7 +194,7 @@ public partial class MainWindow
     {
         FightSettings fight = _settings.Fight;
         FightCommandHint.Text = fight.CommandsEnabled
-            ? $"Chatten skriver {fight.CheerCommand} 1 eller {fight.CheerCommand} 2 för att fylla en supermätare – fyra hejarop och nästa spark blir en super som alltid träffar. {fight.HealCommand} 1 eller {fight.HealCommand} 2 ger 10 HP. Det går också att skriva p1/p2 eller karaktärens namn. Siffran är hörnet, så kommandona är desamma vem som än står där. Tittarens namn syns på skärmen."
+            ? $"Chatten skriver {fight.CheerCommand} 1 eller {fight.CheerCommand} 2 för att fylla en supermätare – full mätare och nästa spark blir en super som alltid träffar. {fight.HealCommand} 1 eller {fight.HealCommand} 2 ger hälsa tillbaka. Hur mycket ett kommando ger beror på hur många som hjälper hörnet: ensam räknas en tittare {SoloAssistText(fight)} gånger, och ju fler de blir i samma hörn desto mindre betyder var och en. Det går också att skriva p1/p2 eller karaktärens namn. Siffran är hörnet, så kommandona är desamma vem som än står där. Tittarens namn syns på skärmen."
             : "Av – fajten sköter sig själv.";
     }
 
@@ -306,10 +308,17 @@ public partial class MainWindow
         // word passes through states – "!" alone, the other command's word – that would be cleaned
         // into something the streamer never meant.
         if (int.TryParse(FightCooldownBox.Text.Trim(), out int seconds)) fight.CooldownSeconds = seconds;
+        if (ParseSoloAssist(FightSoloAssistBox.Text) is { } solo) fight.SoloAssist = solo;
         fight.Normalize();
         ShowFightCommandHint();
         FightChanged();
     }
+
+    /// <summary>"2,5" or "2.5", whichever the keyboard has, as a number; null when it is neither.</summary>
+    private static double? ParseSoloAssist(string text) =>
+        double.TryParse(text.Trim().Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ? value : null;
+
+    private static string SoloAssistText(FightSettings fight) => fight.SoloAssist.ToString("0.#", CultureInfo.CurrentCulture);
 
     private void FightCommand_LostFocus(object sender, System.Windows.Input.KeyboardFocusChangedEventArgs e) => CommitFightWords();
 
@@ -335,6 +344,7 @@ public partial class MainWindow
             FightCheerBox.Text = fight.CheerCommand;
             FightHealBox.Text = fight.HealCommand;
             FightCooldownBox.Text = fight.CooldownSeconds.ToString();
+            FightSoloAssistBox.Text = SoloAssistText(fight);
             FightPick1Box.Text = fight.Pick1Command;
             FightPick2Box.Text = fight.Pick2Command;
             FightSelectSecondsBox.Text = fight.SelectSeconds.ToString();

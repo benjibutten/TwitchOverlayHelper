@@ -100,6 +100,13 @@ public sealed class FightSettings
     /// <summary>How long one viewer waits between two commands, so one person cannot decide a round.</summary>
     public int CooldownSeconds { get; set; } = 20;
 
+    /// <summary>
+    /// How many times a cheer or a heal is worth when the viewer is alone in a corner, 1–5. Each
+    /// viewer counts for less the more there are in the same corner, falling from here with the
+    /// square root of their number, so a corner with two behind it can stand up to one with twenty.
+    /// </summary>
+    public double SoloAssist { get; set; } = 2.5;
+
     /// <summary>A line on the screen telling the viewers what to type.</summary>
     public bool ShowCommandHint { get; set; } = true;
 
@@ -125,6 +132,7 @@ public sealed class FightSettings
         if (string.Equals(CheerCommand, HealCommand, StringComparison.OrdinalIgnoreCase))
             HealCommand = string.Equals(CheerCommand, "!hela", StringComparison.OrdinalIgnoreCase) ? "!plåster" : "!hela";
         CooldownSeconds = Math.Clamp(CooldownSeconds, 0, 600);
+        SoloAssist = double.IsFinite(SoloAssist) ? Math.Clamp(Math.Round(SoloAssist, 1), 1, 5) : 2.5;
         Player1Outfit = Math.Clamp(Player1Outfit, 1, Fight.FightCatalog.MaxOutfitCode);
         Player2Outfit = Math.Clamp(Player2Outfit, 1, Fight.FightCatalog.MaxOutfitCode);
         SelectSeconds = Math.Clamp(SelectSeconds, 10, 300);

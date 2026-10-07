@@ -499,10 +499,11 @@ internal sealed record DockArena(string Id, string? Image, double Floor, double 
 
 /// <summary>
 /// The words the chat can use, so the screen can show them, say what they did, and count down
-/// each viewer's cooldown the same way the app does.
+/// each viewer's cooldown the same way the app does. <c>SoloAssist</c> is what one viewer alone in a
+/// corner is worth; the screen scales it down by how many are helping there.
 /// </summary>
 internal sealed record DockFightCommands(bool Enabled, string Cheer, string Heal, bool ShowHint,
-    int Cooldown, string Pick1, string Pick2);
+    int Cooldown, string Pick1, string Pick2, double SoloAssist);
 
 /// <summary>How a match is played: a character select first or not, and how many rounds win it.</summary>
 internal sealed record DockFightMatch(bool CharacterSelect, int SelectSeconds, int WinsToWin, bool ShowSupporters);

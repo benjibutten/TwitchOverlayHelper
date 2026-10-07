@@ -62,6 +62,19 @@ const crowd = {
     return list.sort((a, b) => b.last - a.last);
   },
 
+  /* How many are helping a corner right now, for what one viewer's help is worth there. The panel
+     keeps a name for minutes after the last command; this counts only the ones still in it – two
+     cooldowns, and never longer than the panel remembers – so a corner the chat has drifted away
+     from is a small corner again. */
+  helping(player) {
+    const now = performance.now() / 1000;
+    const recent = Math.min(CROWD_FORGET, Math.max(2 * (setup.commands.cooldown || 0), 60));
+    let count = 0;
+    for (const v of this.viewers.values())
+      if (v.side === player && now - Math.max(v.cheerAt, v.healAt) < recent) count++;
+    return count;
+  },
+
   draw(time, dt) {
     if (!supportersShown()) return;
     for (const v of this.viewers.values()) v.flash = Math.max(0, (v.flash || 0) - dt * 2);

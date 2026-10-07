@@ -31,15 +31,16 @@ const FRAME = { idle: 0, idle2: 1, walk: 2, punch: 3, kick: 4, hit: 5, down: 6, 
 const FONT = `Impact, "Arial Black", sans-serif`;
 
 const SOUNDS = ["POW!", "BAM!", "WHAM!", "SMACK!", "KAPOW!", "THWACK!", "BOOM!"];
-const CHEER_METER = 25; // four cheers make a super
-const HEAL_HP = 10;
+const CHEER_METER = 25; // what a cheer is worth at full strength – four of them make a super
+const HEAL_HP = 10;     // and what a patch-up gives back
+const CROWDED_ASSIST = 0.4; // the least a viewer in a corner the whole chat is behind can count for
 
 /* What the app last said. Own words in ?msg= and ?sub= win over the app's banner, for a scene that
    should say something of its own. */
 const setup = {
   headline: "",
   subline: "",
-  commands: { enabled: false, cheer: "!heja", heal: "!hela", showHint: false, cooldown: 20, pick1: "!p1", pick2: "!p2" },
+  commands: { enabled: false, cheer: "!heja", heal: "!hela", showHint: false, cooldown: 20, pick1: "!p1", pick2: "!p2", soloAssist: 2.5 },
   match: { characterSelect: false, selectSeconds: 30, winsToWin: 0, showSupporters: false },
   roster: [],
   arena: null
@@ -773,6 +774,15 @@ function drawEffects() {
 
 /* ------------------------------------------------------------------ the chat */
 
+/* What one viewer's help is worth in a corner, by how many are helping it. Worth the same to
+   everyone, a corner the whole chat is behind patches up faster than the other one can punch, while
+   the two viewers opposite never show on the bar at all – so the fewer there are, the harder each
+   one counts, and a corner's support grows with the square root of its crowd rather than with it.
+   The app sets what a viewer alone is worth. */
+function assistPower(player) {
+  return Math.max(CROWDED_ASSIST, setup.commands.soloAssist / Math.sqrt(Math.max(1, crowd.helping(player))));
+}
+
 /* A viewer took a side. The effect lands on the fighter so the stream sees it happen, and the
    viewer's name rides along – being seen on screen is half the point of typing it. */
 function assist(a) {
@@ -789,20 +799,23 @@ function assist(a) {
   f.popRow = ((f.popRow || 0) + 1) % 3;
   const headY = Math.max(350, stage.ground - 500 * f.size + f.popRow * 70 - 70);
 
+  const power = assistPower(a.player);
+
   if (a.kind === "heal") {
     // A fighter on the floor is past patching up.
     if (f.down || f.hp <= 0) return;
-    f.hp = Math.min(100, f.hp + HEAL_HP);
+    const gain = Math.round(HEAL_HP * power);
+    f.hp = Math.min(100, f.hp + gain);
     f.shownHp = Math.max(f.shownHp, f.hp);
     f.glow = 1;
-    popText(`+${HEAL_HP} HP`, f.x, headY, "#6dff9c", 60, 1.2);
+    popText(`+${gain} HP`, f.x, headY, "#6dff9c", 60, 1.2);
     popText(`${who} plåstrar om!`, f.x, headY - 66, color, 36, 1.6);
     sparks(f.x, stage.ground - 260 * f.size, 0, 14, ["#c6ffd8", "#6dff9c", "#ffffff"]);
     return;
   }
 
   const wasCharged = f.charged;
-  f.meter = Math.min(100, f.meter + CHEER_METER);
+  f.meter = Math.min(100, f.meter + CHEER_METER * power);
   popText(`${who} hejar!`, f.x, headY - 20, color, 40, 1.6);
   if (f.charged && !wasCharged) {
     popText(f.special ? `${f.special.name.toUpperCase()} LADDAD!` : "SUPER LADDAD!", f.x, headY - 90, f.special ? f.special.color : "#ffd43b", 64, 1.8);

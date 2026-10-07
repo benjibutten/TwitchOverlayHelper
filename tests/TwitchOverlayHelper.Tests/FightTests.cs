@@ -264,6 +264,20 @@ public sealed class FightSettingsTests
         Assert.Equal("silver", fight.Player1);
         Assert.Equal("garage", fight.Arena);
     }
+
+    [Theory]
+    [InlineData(0.2, 1)]
+    [InlineData(2.46, 2.5)]
+    [InlineData(9, 5)]
+    [InlineData(double.NaN, 2.5)]
+    public void KeepsTheSoloAssistBetweenOneAndFive(double stored, double expected)
+    {
+        var fight = new FightSettings { SoloAssist = stored };
+
+        fight.Normalize();
+
+        Assert.Equal(expected, fight.SoloAssist);
+    }
 }
 
 public sealed class FightTextTests
