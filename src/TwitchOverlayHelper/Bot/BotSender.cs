@@ -76,6 +76,9 @@ public sealed class BotSender : IAsyncDisposable
     /// </summary>
     private const int MaxQueued = 20;
 
+    /// <summary>The longest message Twitch accepts; a longer one is refused whole.</summary>
+    private const int MaxLength = 500;
+
     private readonly Func<string, CancellationToken, Task> _send;
     private readonly Func<int> _allowedPerWindow;
     private readonly BotRateLimiter _rate = new();
@@ -117,6 +120,7 @@ public sealed class BotSender : IAsyncDisposable
     {
         string line = text.Trim();
         if (line.Length == 0 || _disposed) return;
+        if (line.Length > MaxLength) line = line[..(MaxLength - 1)] + "…";
 
         lock (_gate)
         {

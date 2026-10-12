@@ -959,11 +959,40 @@ public sealed class SpinServiceTests : IDisposable
         harness.Store.Add(new SpinWin("7", "kajsa", "Kajsa", "drake", DateTimeOffset.UtcNow));
         Assert.True(harness.Spins.HandleChatMessage(Message("!mina")));
 
-        // The tier travels with every art, so a collection reads for what is rare in it.
         (BotFlow flow, IReadOnlyDictionary<string, string> values) = Assert.Single(harness.Announced);
         Assert.Equal(BotFlow.SpinList, flow);
-        Assert.Equal("Gyllene Draken (legendarisk)", values["list"]);
+        Assert.Equal("legendarisk: Gyllene Draken", values["list"]);
         Assert.Equal("1", values["count"]);
+    }
+
+    [Fact]
+    public void AListTooLongForOneLineEndsOnAWholeNameAndCountsTheRest()
+    {
+        WriteWinnablePet("drake", "Gyllene Draken", PetRarity.Legendary);
+        for (int i = 0; i < 40; i++) WriteWinnablePet($"katt{i:00}", $"Space-Cat {i:00}");
+        Harness harness = Build();
+
+        Assert.True(harness.Spins.HandleChatMessage(Message("!alla")));
+
+        string list = Assert.Single(harness.Announced).Values["list"];
+        Assert.StartsWith("legendarisk: Gyllene Draken · vanlig: Space-Cat 00, ", list);
+        // 23 commons fit beside the count of the rest; the line stops after the last whole one.
+        Assert.EndsWith(", Space-Cat 22 … +17 till", list);
+        Assert.True(list.Length <= 380);
+        Assert.Equal("41", Assert.Single(harness.Announced).Values["count"]);
+    }
+
+    [Fact]
+    public void TheRarestArtIsNamedEvenWhenItAloneOutgrowsTheLine()
+    {
+        string endless = new('x', 400);
+        WriteWinnablePet("drake", endless, PetRarity.Legendary);
+        WriteWinnablePet("katt", "Space-Cat");
+        Harness harness = Build();
+
+        Assert.True(harness.Spins.HandleChatMessage(Message("!alla")));
+
+        Assert.Equal($"legendarisk: {endless} … +1 till", Assert.Single(harness.Announced).Values["list"]);
     }
 
     [Fact]

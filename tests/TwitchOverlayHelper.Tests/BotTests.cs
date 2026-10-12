@@ -286,6 +286,16 @@ public sealed class BotSenderTests
         Assert.Equal(["hej"], await spy.WaitFor(1));
     }
 
+    [Fact]
+    public async Task Cuts_a_line_Twitch_would_refuse_for_its_length()
+    {
+        var spy = new ChatSpy();
+        await using var sender = new BotSender(spy.Send, () => 20);
+
+        sender.Enqueue(new string('a', 600));
+        Assert.Equal([new string('a', 499) + "…"], await spy.WaitFor(1));
+    }
+
     /// <summary>
     /// Twitch drops a repeat of the same line within thirty seconds without a word, so a bot that
     /// sent one would look like it had stopped working. It is skipped here instead, where it can be

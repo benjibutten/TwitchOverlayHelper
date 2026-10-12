@@ -266,10 +266,10 @@ internal static class BotFlowText
         BotFlow.SpinReleased =>
             "När vinnaren av en dubblett valt att släppa ut den på skärmen i stället för att skänka bort den. Peten stannar lika länge som en vanlig pet, och gåvan är förbrukad.",
         BotFlow.SpinList =>
-            "Svaret när någon skriver kommandot för att se sin samling. {list} är arterna de vunnit – var och en med sin raritet – och {count} hur många.",
+            "Svaret när någon skriver kommandot för att se sin samling. {list} är arterna de vunnit, samlade under sin sällsynthet med de mest sällsynta först, och {count} hur många. Får inte alla plats avslutas raden med hur många som inte kom med.",
         BotFlow.SpinListEmpty => "Samma kommando, men från någon som inte vunnit något än.",
         BotFlow.SpinPool =>
-            "Svaret när någon frågar vad som över huvud taget går att vinna. {list} är alla utsatta arter samlade under sin sällsynthet, med de mest sällsynta först, och {count} hur många de är. Frågan alla ställer innan de bestämmer sig för om priset är värt det.",
+            "Svaret när någon frågar vad som över huvud taget går att vinna. {list} är alla utsatta arter samlade under sin sällsynthet, med de mest sällsynta först, och {count} hur många de är. Får inte alla plats avslutas raden med hur många som inte kom med. Frågan alla ställer innan de bestämmer sig för om priset är värt det.",
         BotFlow.SpinPoolEmpty => "Samma kommando, när ingen pet är ikryssad som vinst. Då går snurren inte att köpa heller.",
         BotFlow.SpinNotOwned =>
             "När någon löser in en vanlig pet-belöning och ber om en art som bara går att vinna. Kan belöningen återbetalas får de tillbaka poängen; annars får de en vanlig pet i stället.",

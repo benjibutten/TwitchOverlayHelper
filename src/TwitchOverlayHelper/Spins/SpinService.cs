@@ -625,39 +625,49 @@ public sealed class SpinService(
     /// </summary>
     private string PrizeRarity(string petId) => PetRarity.Normalize(catalog.Find(petId)?.Rarity);
 
-    /// <summary>
-    /// The viewer's wins as one readable line, cut before it can crowd out the template around it.
-    /// Each art carries the tier it sits in today – a collection is worth showing off for what is
-    /// rare in it, not only for how long it is.
-    /// </summary>
-    private string ListOf(IReadOnlyList<SpinWin> wins)
-    {
-        string list = string.Join(", ", wins.Select(win => $"{PrizeName(win.PetId)} ({PrizeRarity(win.PetId)})"));
-        return list.Length <= 300 ? list : list[..299] + "…";
-    }
+    // Twitch refuses a message past 500 characters, and the template around the list – a name, a
+    // count, a sentence – needs the rest.
+    private const int ListBudget = 380;
+
+    /// <summary>The viewer's wins, each under the tier it sits in today.</summary>
+    private string ListOf(IReadOnlyList<SpinWin> wins) =>
+        ByTier(wins.Select(win => (PrizeName(win.PetId), catalog.Find(win.PetId)?.Rarity)));
+
+    /// <summary>Everything the reel can land on, under the tier it is drawn at.</summary>
+    private static string PoolOf(IReadOnlyList<PetDefinition> pool) =>
+        ByTier(pool.Select(pet => (pet.Name, (string?)pet.Rarity)));
 
     /// <summary>
-    /// Everything the reel can land on, gathered under the tier it sits in rather than repeated art
-    /// by art: a pool is read as a rarity guide, and grouping keeps a channel with twenty arts inside
-    /// the line the collection has to fit in too. Rarest first, so a list long enough to be cut loses
-    /// the commons at the end instead of the legendaries nobody asked about the commons for.
+    /// Arts as one chat line, gathered under their tier with the rarest first:
+    /// "legendarisk: A · vanlig: B, C". More arts than <see cref="ListBudget"/> has room for end on
+    /// a whole name followed by how many were left out – the commons, never the legendaries. The
+    /// rarest art is always named, whatever its length.
     /// </summary>
-    private static string PoolOf(IReadOnlyList<PetDefinition> pool)
+    private static string ByTier(IEnumerable<(string Name, string? Rarity)> arts)
     {
-        var groups = new List<string>(PetRarity.All.Count);
-        foreach (string tier in PetRarity.All.Reverse())
+        // The rarest tier is the one with the smallest share of the draw.
+        (string Name, string Rarity)[] ordered = arts
+            .Select(art => (art.Name, Rarity: PetRarity.Normalize(art.Rarity)))
+            .OrderBy(art => PetRarity.Weight(art.Rarity))
+            .ThenBy(art => art.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
+
+        string line = string.Empty;
+        string? tier = null;
+        for (int i = 0; i < ordered.Length; i++)
         {
-            string[] names = pool
-                .Where(pet => string.Equals(PetRarity.Normalize(pet.Rarity), tier, StringComparison.Ordinal))
-                .Select(pet => pet.Name)
-                .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
-                .ToArray();
-            if (names.Length > 0) groups.Add($"{tier}: {string.Join(", ", names)}");
+            (string name, string rarity) = ordered[i];
+            string piece = rarity == tier ? $", {name}" : $"{(tier is null ? string.Empty : " · ")}{rarity}: {name}";
+            // A piece only fits if the count of what follows it still fits behind it.
+            int after = ordered.Length - i - 1;
+            if (i > 0 && line.Length + piece.Length + LeftOut(after).Length > ListBudget) return line + LeftOut(after + 1);
+            line += piece;
+            tier = rarity;
         }
-
-        string list = string.Join(" · ", groups);
-        return list.Length <= 300 ? list : list[..299] + "…";
+        return line;
     }
+
+    private static string LeftOut(int count) => count == 0 ? string.Empty : $" … +{count} till";
 
     private static Dictionary<string, string> DuplicateValues(string viewer, string prize, string rarity, SpinSettings spin) => Values(
         ("viewer", viewer),

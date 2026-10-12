@@ -108,7 +108,7 @@ public static class BotTemplate
             ["prize"] = "Gyllene Draken",
             ["rarity"] = PetRarity.Legendary,
             ["target"] = "Pelle",
-            ["list"] = $"Gyllene Draken ({PetRarity.Legendary}), Space-Cat ({PetRarity.Common})",
+            ["list"] = $"{PetRarity.Legendary}: Gyllene Draken · {PetRarity.Common}: Space-Cat",
             ["command"] = "!ge",
             ["release"] = "!släpp",
             ["minutes"] = "10"
