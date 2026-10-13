@@ -19,12 +19,11 @@ public enum EdgeAlertKind
 
 /// <summary>
 /// How the three kinds are ordered when they ask for the light at the same time. A higher rank takes
-/// the glow off a lower one; the same rank holds the one that is already lit; a lower rank waits its
-/// turn, which in practice means it is dropped.
+/// the glow off a lower one; the same rank holds the one that is already lit; a lower rank is dropped.
 ///
-/// <para>A reading sits between the other two on purpose. It has to be answered, so it must not be
-/// hidden by a stream of first-time hellos – but a moderator calling for the streamer is still the
-/// more urgent of the two, and the dock's approval bar keeps the reading visible either way.</para>
+/// <para>A reading sits between the other two: it has to be answered, so first-time hellos must not
+/// hide it, but a moderator's call is more urgent and the dock's approval bar keeps the reading
+/// visible either way.</para>
 /// </summary>
 internal static class EdgeAlertRank
 {
@@ -37,27 +36,22 @@ internal static class EdgeAlertRank
 }
 
 /// <summary>
-/// Decides which edge alerts actually get to light up. There is only ever one glow – one window,
-/// one animation – so triggers arriving close together do not stack; without a policy the last one
-/// simply overwrites the rest. That is the wrong answer twice over: a raid full of first-time
-/// chatters would restart the light on every line and keep the edges lit for as long as the raid
-/// lasts, and a welcome landing a second after a moderator's call would quietly replace the more
-/// urgent of the two.
+/// Decides which edge alerts get to light up. There is only ever one glow – one window, one
+/// animation – so triggers arriving close together cannot stack.
 ///
-/// So: a trigger can only ever be pushed aside by something <see cref="EdgeAlertRank">ranked</see>
-/// above it – a call is never hidden by a welcome – welcomes go quiet for
-/// <see cref="NewChatterCooldown"/> after one has been shown, and a glow that is already lit is
-/// extended rather than restarted – up to <see cref="MaxLitFactor"/> times its own length, so it
-/// always ends eventually no matter how busy chat is.
+/// <para>A trigger can only be pushed aside by something <see cref="EdgeAlertRank">ranked</see>
+/// above it, so a call is never hidden by a welcome. Welcomes go quiet for
+/// <see cref="NewChatterCooldown"/> after one has been shown, so a raid does not relight the edges
+/// on every line. A glow that is already lit is extended rather than restarted, up to
+/// <see cref="MaxLitFactor"/> times its own length, so it always ends however busy chat is.</para>
 ///
-/// Only decisions live here; the light itself is <see cref="EdgeAlertWindow"/>'s business.
+/// <para>Only decisions live here; the light itself is <see cref="EdgeAlertWindow"/>'s business.</para>
 /// </summary>
 public sealed class EdgeAlertScheduler
 {
     /// <summary>
-    /// How long welcomes stay quiet after one has finished. Long enough that a raid becomes a
-    /// handful of glows rather than one per arrival, short enough that a lone new chatter arriving
-    /// in a calm chat is still greeted.
+    /// How long welcomes stay quiet after one has finished: a raid becomes a handful of glows,
+    /// while a lone new chatter in a calm chat is still greeted.
     /// </summary>
     public static readonly TimeSpan NewChatterCooldown = TimeSpan.FromSeconds(15);
 
@@ -75,13 +69,10 @@ public sealed class EdgeAlertScheduler
 
     /// <summary>
     /// How long the edges should stay lit for this trigger, or null when it should not light at all.
-    /// Covers both a fresh glow and one being extended or taken over – the window fades from wherever
-    /// it currently is, so the two look the same from here.
+    /// Covers a fresh glow, an extended one and a takeover alike.
     ///
-    /// <para>A length rather than a yes, because the two are not the same answer. A glow being held
-    /// open has only what is left of its ceiling to run; handing back the configured duration and
-    /// letting the window play that in full is exactly how the light would outlast the limit this
-    /// class exists to keep – by up to a whole alert, every time chat keeps triggering.</para>
+    /// <para>A glow being held open gets only what is left of its ceiling, which can be shorter
+    /// than the configured duration.</para>
     /// </summary>
     public TimeSpan? PlayFor(EdgeAlertKind kind, double durationSeconds, DateTimeOffset now)
     {
@@ -93,11 +84,10 @@ public sealed class EdgeAlertScheduler
             {
                 int asking = EdgeAlertRank.Of(kind);
                 int showing = EdgeAlertRank.Of(_kind);
-                // Something more urgent is already up – the streamer is being called for, or a
-                // reading is waiting to be answered. This one is dropped rather than queued.
+                // Something more urgent is already up. This one is dropped rather than queued.
                 if (asking < showing) return null;
-                // The same thing again says it louder rather than starting over: it holds the light
-                // open, up to the ceiling. Anything more urgent takes the glow outright.
+                // The same rank holds the light open, up to the ceiling; a higher one takes the
+                // glow outright.
                 if (asking == showing) return Extend(duration, now);
                 return Start(kind, duration, now);
             }
@@ -128,10 +118,8 @@ public sealed class EdgeAlertScheduler
     }
 
     /// <summary>
-    /// Holds the current glow open a little longer instead of restarting it, and answers with what
-    /// is left rather than with the full length – the ceiling is only a ceiling if the window is
-    /// told to stop there. Once it is reached the answer is nothing: the light has already been on
-    /// for twice its length and further triggers have nothing left to say.
+    /// Holds the current glow open instead of restarting it, and answers with the time left up to
+    /// the ceiling. Null once the ceiling is reached.
     /// </summary>
     private TimeSpan? Extend(TimeSpan duration, DateTimeOffset now)
     {

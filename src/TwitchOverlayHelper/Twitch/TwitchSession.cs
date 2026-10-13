@@ -22,18 +22,14 @@ public sealed class TwitchSession : IDisposable
     private DeviceCodePrompt? _prompt;
     private string? _error;
 
-    /// <summary>
-    /// Bumped on logout. A login or refresh that was already in flight cannot be cancelled once it
-    /// is past its last await, so it checks this before writing – otherwise it would hand the
-    /// credentials back after the user signed out.
-    /// </summary>
+    // Bumped on logout. A login or refresh in flight cannot be cancelled past its last await, so
+    // it checks this before writing; otherwise it would restore the credentials after sign-out.
     private int _generation;
 
     /// <param name="scopes">
-    /// What this login asks Twitch for. Left out for the streamer's own session, which wants
-    /// everything the app can use; handed in for the chat bot, whose token is only ever allowed to
-    /// read and write in chat. It also decides what <see cref="MissingScopes"/> compares against, so
-    /// a bot login is never told it is missing permissions it was never meant to have.
+    /// What this login asks Twitch for, and what <see cref="MissingScopes"/> compares against.
+    /// Defaults to <see cref="TwitchAuth.RequiredScopes"/> for the streamer's session; the chat bot
+    /// passes <see cref="TwitchAuth.BotScopes"/>.
     /// </param>
     public TwitchSession(HttpClient httpClient, TokenStore? tokenStore = null, IReadOnlyList<string>? scopes = null)
     {
@@ -53,14 +49,11 @@ public sealed class TwitchSession : IDisposable
     /// <summary>What Twitch actually granted this login, which is not the same as what we asked for.</summary>
     public IReadOnlyList<string> Scopes => _credentials?.Scopes ?? [];
 
-    /// <summary>
-    /// Asked before subscribing to anything, so a missing permission turns a feature off quietly
-    /// rather than sending a request Twitch will answer with 403.
-    /// </summary>
+    /// <summary>Whether Twitch granted this login <paramref name="scope"/>. False when logged out.</summary>
     public bool HasScope(string scope) =>
         _credentials is { } credentials && credentials.Scopes.Contains(scope, StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>The scopes a stored login predates; empty when there is nothing to re-authorise.</summary>
+    /// <summary>The wanted scopes a stored login lacks; empty when there is nothing to re-authorise.</summary>
     public IReadOnlyList<string> MissingScopes() =>
         _credentials is null ? [] : TwitchAuth.MissingScopes(_credentials.Scopes, _scopes);
 
@@ -179,8 +172,7 @@ public sealed class TwitchSession : IDisposable
         }
         catch (TwitchAuthTransientException)
         {
-            // Twitch was unreachable or busy; the saved refresh token is still valid, so we keep
-            // the session and let the next call try again.
+            // Twitch was unreachable or busy; the saved refresh token is still valid.
             throw;
         }
         catch (TwitchAuthException)

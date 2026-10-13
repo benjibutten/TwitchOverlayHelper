@@ -4,8 +4,7 @@ namespace TwitchOverlayHelper.Pets;
 
 /// <summary>
 /// The ledger's two calls, wired to the real Helix client. The broadcaster is read through a
-/// callback rather than handed over once: the app can be pointed at another channel while it runs,
-/// and answering a redemption against the channel we have left would be rejected at best.
+/// callback on every call, because the app can be pointed at another channel while it runs.
 /// </summary>
 public sealed class TwitchRedemptionGateway(TwitchApiClient api, Func<string> broadcasterId) : IRedemptionGateway
 {

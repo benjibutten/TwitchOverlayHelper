@@ -7,13 +7,10 @@ namespace TwitchOverlayHelper.Twitch;
 
 public sealed class TwitchChatClient : IAsyncDisposable
 {
-    /// <summary>
-    /// How long a sent message waits for Twitch's answer – the USERSTATE that confirms it or the
-    /// NOTICE that refuses it. Both normally come back in well under a second, so running out means
-    /// neither arrived: the line is not echoed, and the send is reported as having gone out, because
-    /// silence is the one answer that says nothing either way and treating it as a failure would put
-    /// a message the reader had already sent back into the box.
-    /// </summary>
+    // How long a sent message waits for Twitch's answer – the USERSTATE that confirms it or the
+    // NOTICE that refuses it. On timeout the line is not echoed and the send still counts as
+    // delivered: silence proves nothing, and failing would make the dock offer a message that
+    // may have gone out for sending again.
     private static readonly TimeSpan EchoTimeout = TimeSpan.FromSeconds(5);
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
@@ -33,29 +30,20 @@ public sealed class TwitchChatClient : IAsyncDisposable
     /// </summary>
     private TaskCompletionSource<EchoAnswer?>? _echoWaiter;
 
-    /// <summary>
-    /// The connection that waiter belongs to. USERSTATE is also sent on JOIN, so a reconnect landing
-    /// while a send is in flight would otherwise have the new connection's greeting confirm a
-    /// message it never carried – and the send would be reported as delivered by a socket it was
-    /// never written to.
-    /// </summary>
+    // The connection that waiter belongs to. USERSTATE is also sent on JOIN, so without this a
+    // reconnect during a send would let the new connection's greeting confirm a message it never
+    // carried.
     private ClientWebSocket? _echoSocket;
 
-    /// <summary>
-    /// How many answers are owed to sends that already gave up waiting. Nothing in USERSTATE says
-    /// which line it answers, so an answer arriving after its send timed out would otherwise be
-    /// handed to whatever send is waiting next – and that send would take the earlier line's id.
-    /// Counted here and spent on the next answer instead, which is the safe way to be wrong: a send
-    /// left without an id echoes as a local one and merely loses pin and delete, while a send given
-    /// the wrong id pins or deletes somebody else's message.
-    /// </summary>
+    // How many answers are owed to sends that gave up waiting. USERSTATE does not say which line
+    // it answers, so a late answer must be discarded rather than handed to the next send: a send
+    // without an id only loses pin and delete, while one with the wrong id pins or deletes
+    // somebody else's message.
     private int _staleEchoAnswers;
 
     /// <summary>
-    /// Works out which words in a line we wrote were emotes. Twitch does that on the way to the
-    /// viewers and tells everyone except the sender, so without it our own line is the one message
-    /// in the column spelling its emotes out in letters. Handed in rather than reached for: what
-    /// this account may send is a Helix question, and the socket has no business asking it.
+    /// Works out which words in a line we wrote were emotes, for the echo of our own messages.
+    /// Twitch reports emote positions to everyone except the sender.
     /// </summary>
     public Func<string, IReadOnlyList<EmoteSpan>>? ResolveEmotes { get; set; }
 
@@ -72,13 +60,12 @@ public sealed class TwitchChatClient : IAsyncDisposable
     public bool CanSend { get; private set; }
 
     /// <summary>
-    /// Sends a chat line over the live IRC connection. Requires an authenticated connection.
+    /// Sends a chat line over the live IRC connection. Requires an authenticated connection, and
+    /// throws <see cref="TwitchApiException"/> when Twitch refuses the line.
     ///
-    /// Twitch never sends our own message back down the connection that wrote it – which is why a
-    /// line written in the dock used to vanish while the same line typed on twitch.tv, arriving from
-    /// a different connection, showed up fine. So the line is put into <see cref="MessageReceived"/>
-    /// here, once Twitch has confirmed it, and reaches the views the same way every other message
-    /// does rather than through a path of its own.
+    /// Twitch never sends our own message back down the connection that wrote it, so once Twitch
+    /// has confirmed the line it is raised through <see cref="MessageReceived"/> like any other
+    /// message.
     /// </summary>
     public async Task SendMessageAsync(string text, CancellationToken cancellationToken = default)
     {
@@ -93,16 +80,14 @@ public sealed class TwitchChatClient : IAsyncDisposable
         await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Read here rather than before the wait: a line queued behind another send waits out
-            // that send's answer, and a reconnect landing in the meantime leaves the connection it
-            // was going to be written to closed – the message would go out on a dead socket.
+            // Read after the wait, not before: a reconnect while queued behind another send would
+            // leave a socket captured earlier closed.
             ClientWebSocket? socket = _activeSocket;
             string? channel = _joinedChannel;
             if (!CanSend || socket is null || channel is null || socket.State != WebSocketState.Open)
                 throw new InvalidOperationException("Chatten är inte inloggad – logga in för att kunna skriva.");
 
-            // Registered before the send, not after: the answer can be on the wire before the send
-            // call has even returned.
+            // Registered before the send: the answer can arrive before the send call returns.
             var waiter = new TaskCompletionSource<EchoAnswer?>(TaskCreationOptions.RunContinuationsAsynchronously);
             _echoSocket = socket;
             _echoWaiter = waiter;
@@ -112,8 +97,7 @@ public sealed class TwitchChatClient : IAsyncDisposable
             deadline.CancelAfter(EchoTimeout);
             await using CancellationTokenRegistration giveUp = deadline.Token.Register(() => waiter.TrySetResult(null));
             answer = await waiter.Task.ConfigureAwait(false);
-            // Nothing came back in time, so this send's answer is late rather than absent: it is
-            // still owed, and the read loop has to know not to give it to the next line.
+            // The answer is late rather than absent; the read loop must not give it to the next line.
             if (answer is null) Interlocked.Increment(ref _staleEchoAnswers);
         }
         finally
@@ -123,9 +107,8 @@ public sealed class TwitchChatClient : IAsyncDisposable
             _sendLock.Release();
         }
 
-        // Twitch said no. Thrown rather than swallowed: the message never reached the chat, and the
-        // dock has already emptied the box – without this the reader is told nothing at all and has
-        // to notice for themselves that their line is missing.
+        // Thrown rather than swallowed: the dock has already emptied the box, so this is the only
+        // way the reader learns the message never reached the chat.
         if (answer?.Refusal is { } refusal)
             throw new TwitchApiException($"Twitch skickade inte meddelandet: {refusal}");
 
@@ -133,12 +116,11 @@ public sealed class TwitchChatClient : IAsyncDisposable
     }
 
     /// <summary>
-    /// Our own sent line, dressed as a message the views can show. One thing it cannot know on its
-    /// own: without an id from USERSTATE the line still needs one to be a message at all, so it gets
-    /// a local one – marked as such, so nothing tries to hand that invention to Helix.
+    /// Our own sent line as a message the views can show. Without an id from USERSTATE it gets a
+    /// local one and is marked <see cref="ChatMessage.IsLocalEcho"/>, so the id is never handed to
+    /// Helix.
     ///
-    /// Returns null for a slash command, which is an instruction to Twitch rather than something
-    /// said – except "/me", which is speech and comes back as an action.
+    /// Returns null for a slash command, except "/me", which comes back as an action.
     /// </summary>
     private ChatMessage? BuildEcho(UserState state, string line)
     {
@@ -156,8 +138,7 @@ public sealed class TwitchChatClient : IAsyncDisposable
             IsFirstMessage: false,
             IsHighlighted: false,
             DateTimeOffset.Now,
-            // Worked out here rather than in each view: the overlay and the dock draw the same
-            // message, and only one of them would ever have been taught to do this on its own.
+            // Resolved here so the overlay and the dock both get a finished message.
             ResolveEmotes?.Invoke(line))
         {
             UserId = _userId,
@@ -169,9 +150,9 @@ public sealed class TwitchChatClient : IAsyncDisposable
     }
 
     /// <summary>
-    /// Connects and keeps reconnecting. The token is asked for per attempt rather than passed once:
-    /// a Twitch access token expires after hours, and a reconnect the next morning with yesterday's
-    /// token is rejected outright – which would end the chat rather than resume it.
+    /// Connects and keeps reconnecting. <paramref name="tokenProvider"/> is asked on every attempt,
+    /// because a Twitch access token expires after hours and a reconnect with an expired one is
+    /// rejected.
     /// </summary>
     public Task ConnectAsync(string channel, string? userName = null, Func<CancellationToken, Task<string?>>? tokenProvider = null, string? userId = null)
     {
@@ -179,9 +160,8 @@ public sealed class TwitchChatClient : IAsyncDisposable
         channel = NormalizeChannel(channel);
         if (channel.Length == 0) throw new ArgumentException("Ange ett Twitch-kanalnamn.", nameof(channel));
 
-        // Carried along only so an echoed message names its author the way every other message does.
-        // IRC never tells us our own numeric id – USERSTATE has no user-id tag – and without it the
-        // dock could not open the user sheet on a line we wrote ourselves.
+        // For echoed messages: USERSTATE has no user-id tag, and the dock needs the id to open the
+        // user sheet on a line we wrote ourselves.
         _userId = userId ?? string.Empty;
         _lifetime?.Dispose();
         _lifetime = new CancellationTokenSource();
@@ -266,7 +246,7 @@ public sealed class TwitchChatClient : IAsyncDisposable
         await SendAsync(socket, $"JOIN #{channel}\r\n", token).ConfigureAwait(false);
         _activeSocket = socket;
         _joinedChannel = channel;
-        // Whatever the old connection still owed died with it – this one answers only its own lines.
+        // Answers owed by the previous connection died with it.
         Volatile.Write(ref _staleEchoAnswers, 0);
         _login = authenticated ? nick : string.Empty;
         CanSend = authenticated;
@@ -307,10 +287,9 @@ public sealed class TwitchChatClient : IAsyncDisposable
             if (result.MessageType != WebSocketMessageType.Text) continue;
             pending.Append(Encoding.UTF8.GetString(messageBytes.GetBuffer(), 0, checked((int)messageBytes.Length)));
             string buffered = pending.ToString();
-            // Walked with an index rather than by re-slicing the remainder after every line. Twitch
-            // batches lines into one frame when chat is busy, which is exactly when it matters:
-            // cutting the front off a string copies everything behind it, so a frame of n lines used
-            // to cost n copies of the whole frame.
+            // Walked with an index rather than by re-slicing the remainder after every line: Twitch
+            // batches lines into one frame when chat is busy, and each re-slice would copy the
+            // rest of the frame.
             int start = 0;
             int lineEnd;
             while ((lineEnd = buffered.IndexOf("\r\n", start, StringComparison.Ordinal)) >= 0)
@@ -329,9 +308,8 @@ public sealed class TwitchChatClient : IAsyncDisposable
                         line.Contains("Improperly formatted auth", StringComparison.OrdinalIgnoreCase))
                         throw new TwitchAuthenticationException("Inloggningen nekades av Twitch – kontrollera användarnamn och OAuth-token.");
 
-                    // A refused PRIVMSG is answered with this and nothing else, so a send waiting for
-                    // its USERSTATE would otherwise wait out the whole timeout and then be reported
-                    // as delivered. Only handed to a waiter on this same connection.
+                    // A refused PRIVMSG gets this and no USERSTATE. Only handed to a waiter on this
+                    // same connection.
                     if (IrcMessageParser.TryParseSendRefusal(line, out string? refusal))
                     {
                         if (SpendStaleAnswer()) continue;
@@ -354,9 +332,8 @@ public sealed class TwitchChatClient : IAsyncDisposable
                 if (IrcMessageParser.TryParseChatMessage(line, out ChatMessage? message)) { MessageReceived?.Invoke(message!); continue; }
                 if (IrcMessageParser.TryParseUserState(line, out UserState? userState))
                 {
-                    // Also sent on JOIN, when nobody is waiting – then it simply has no one to
-                    // answer. Scoped to the connection the line was written to as well, so a
-                    // reconnect greeting cannot confirm a send that went out on the old socket.
+                    // Also sent on JOIN, when nobody is waiting. Scoped to the sending connection so
+                    // a reconnect greeting cannot confirm a send that went out on the old socket.
                     if (SpendStaleAnswer()) continue;
                     if (ReferenceEquals(_echoSocket, socket))
                         Interlocked.Exchange(ref _echoWaiter, null)?.TrySetResult(new EchoAnswer(userState, null));
@@ -372,9 +349,8 @@ public sealed class TwitchChatClient : IAsyncDisposable
     }
 
     /// <summary>
-    /// Takes one answer off the debt left by a send that timed out, if there is any – and says so,
-    /// because that answer belongs to the line that gave up rather than to whatever is waiting now.
-    /// Called only from the read loop, so nothing else can take the same one.
+    /// Takes one answer off the debt left by sends that timed out. Returns true when the current
+    /// answer belongs to such a send and must be discarded. Call only from the read loop.
     /// </summary>
     private bool SpendStaleAnswer()
     {

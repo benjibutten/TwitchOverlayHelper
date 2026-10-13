@@ -5,10 +5,9 @@ using TwitchOverlayHelper.Storage;
 namespace TwitchOverlayHelper.Nicknames;
 
 /// <summary>
-/// Nicknames on disk. A file of their own rather than a corner of settings.json: this is the one
-/// thing in the app the user typed by hand and cannot get back from Twitch, so it is worth keeping
-/// where a rewritten settings file cannot take it with it – and it is written on every edit rather
-/// than on a timer, with a dated copy kept beside each save.
+/// Nicknames on disk. A file of their own rather than a corner of settings.json: they are typed by
+/// hand and cannot be fetched back from Twitch, so a rewritten settings file must not be able to
+/// take them with it. Written on every edit, with a dated copy kept beside each save.
 /// </summary>
 public sealed class NicknameStore
 {

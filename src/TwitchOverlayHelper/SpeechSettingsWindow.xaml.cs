@@ -9,7 +9,7 @@ namespace TwitchOverlayHelper;
 
 /// <summary>
 /// Everything name pronunciation needs: the two API keys, which voice reads the names, and a test
-/// button so the whole chain can be proven before the speaker button appears in the dock.
+/// button that runs the whole chain.
 /// </summary>
 public partial class SpeechSettingsWindow : Window
 {
@@ -67,7 +67,7 @@ public partial class SpeechSettingsWindow : Window
         speech.Volume = VolumeSlider.Value;
         speech.Normalize();
 
-        // A different language model will read the same name differently, so the old answers go.
+        // A different language model reads the same name differently, so cached answers are dropped.
         if (!string.Equals(previousModel, speech.DeepSeekModel, StringComparison.Ordinal)) _speech.ForgetPronunciations();
 
         UpdateValueLabels();

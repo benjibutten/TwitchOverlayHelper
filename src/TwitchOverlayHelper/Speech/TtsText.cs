@@ -3,16 +3,14 @@ using System.Text;
 namespace TwitchOverlayHelper.Speech;
 
 /// <summary>
-/// Turns what a viewer typed into something worth sending to a voice model. Small and separate so
-/// the awkward inputs – a wall of newlines, a hundred exclamation marks, a paragraph pasted from
-/// somewhere else – can be reasoned about without a network or a queue in the way.
+/// Turns what a viewer typed into something worth sending to a voice model: handles a wall of
+/// newlines, a hundred exclamation marks, a pasted paragraph.
 /// </summary>
 public static class TtsText
 {
     /// <summary>
-    /// How many times a character may repeat before the rest are dropped. "hejjjjjjjj" reads as a
-    /// long "hej" whatever the count, and a line of two hundred exclamation marks is otherwise two
-    /// hundred characters of billing for a sound nobody can tell from three.
+    /// How many times a character may repeat before the rest are dropped. Synthesis is billed per
+    /// character, and a longer run sounds no different.
     /// </summary>
     private const int MaxRun = 3;
 
@@ -20,8 +18,7 @@ public static class TtsText
     /// The message as it should be spoken, or an empty string when there is nothing to say.
     ///
     /// <para>Cut at <paramref name="maxCharacters"/>, on the last word boundary before the limit
-    /// when there is one – ending mid-word sounds like the app broke rather than like the message
-    /// was long.</para>
+    /// when there is one.</para>
     /// </summary>
     public static string Clean(string? text, int maxCharacters)
     {

@@ -6,9 +6,8 @@ namespace TwitchOverlayHelper.Settings;
 
 /// <summary>
 /// The edge glow: a soft band of light that fades in along the screen's edges and out again, to
-/// catch the streamer's eye without putting anything readable on top of the game. Two things light
-/// it, each with a colour of its own – a moderator writing the call command, and a first-time
-/// chatter – so the colour alone says which of the two just happened.
+/// catch the streamer's eye without putting anything readable on top of the game. Each trigger has
+/// a colour of its own, so the colour alone says what just happened.
 /// </summary>
 public sealed class EdgeAlertSettings
 {
@@ -20,9 +19,7 @@ public sealed class EdgeAlertSettings
 
     /// <summary>
     /// Lit when a viewer has paid to have something read out loud and it is waiting for a yes. Off
-    /// by default – the approval bar in the dock says the same thing without lighting up the room –
-    /// but it is the one thing here that needs answering rather than merely noticing, so it is
-    /// worth being able to see without looking at the dock.
+    /// by default: the approval bar in the dock says the same thing.
     /// </summary>
     public EdgeAlertStyle TtsAlert { get; set; } = new() { Enabled = false, Color = "#A970FF" };
 

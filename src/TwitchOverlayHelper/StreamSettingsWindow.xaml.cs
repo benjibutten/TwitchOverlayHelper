@@ -5,10 +5,8 @@ using TwitchOverlayHelper.Settings;
 namespace TwitchOverlayHelper;
 
 /// <summary>
-/// Appearance of the chat the viewers see. A window of its own next to the dock's rather than a tab
-/// inside it: the two are read by different people at different distances, and the questions worth
-/// asking are different too. Nothing here decides what the streamer sees, and nothing in the dock's
-/// window reaches the broadcast.
+/// Appearance of the chat the viewers see. Nothing here decides what the streamer sees, and nothing
+/// in the dock's window reaches the broadcast.
 /// </summary>
 public partial class StreamSettingsWindow : Window
 {

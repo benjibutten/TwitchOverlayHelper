@@ -5,26 +5,14 @@ using TwitchOverlayHelper.Settings;
 namespace TwitchOverlayHelper.Bot;
 
 /// <summary>
-/// Turns a streamer's message template into the line the bot writes.
-///
-/// <para>Two jobs, and the second one is the reason this is not a string.Replace at the call site.
-/// The first is filling in <c>{viewer}</c> and its siblings. The second is that everything the app
-/// already words for the streamer – the reason a redemption was paid back, above all – is written in
-/// the app's own vocabulary, and chat is a different audience: the words "pet" and "streamern" are
-/// the app's guesses at what this channel calls things, and a reason string is sometimes an error
-/// message from ElevenLabs that no viewer should ever be shown.</para>
+/// Turns a streamer's message template into the line the bot writes: fills in <c>{viewer}</c> and
+/// its siblings, and rewords the app's internal refund reasons for chat.
 /// </summary>
 public static class BotTemplate
 {
-    /// <summary>
-    /// What the bot may say about a redemption that did not work out, keyed by the wording the app
-    /// uses internally.
-    ///
-    /// <para><b>Why a list and not a passthrough.</b> A reading that failed carries whatever the
-    /// synthesis threw – an HTTP status, a quota message, the word "Unauthorized" – and passing that
-    /// to chat would put the streamer's plumbing on stream. Anything not recognised here becomes the
-    /// flow's own fallback instead, which says the honest thing without saying too much.</para>
-    /// </summary>
+    // What the bot may say about a redemption that did not work out, keyed by the app's internal
+    // wording. An allow-list rather than a passthrough: a failed reading's reason can be a raw
+    // error from the synthesis API (HTTP status, quota message), which must never reach chat.
     private static readonly Dictionary<string, string> KnownReasons = new(StringComparer.OrdinalIgnoreCase)
     {
         ["peten levde klart"] = "{peten} levde klart",
@@ -82,18 +70,15 @@ public static class BotTemplate
     };
 
     /// <summary>
-    /// What a command the streamer wrote themselves can fill in. Only the person who typed it, for
-    /// now – the words every message gets are added by the caller.
+    /// What a command the streamer wrote themselves can fill in, beyond the
+    /// <see cref="GlobalPlaceholders"/>: the person who typed it.
     /// </summary>
     public static IReadOnlyList<string> CommandPlaceholders { get; } = ["viewer"];
 
     /// <summary>The words every template can use, whatever raised it.</summary>
     public static IReadOnlyList<string> GlobalPlaceholders { get; } = ["streamer", "pet", "pets", "peten"];
 
-    /// <summary>
-    /// Stand-in values, so the settings window can show what a template will actually look like
-    /// without waiting for a viewer to redeem something.
-    /// </summary>
+    /// <summary>Stand-in values for previewing a template in the settings window.</summary>
     public static IReadOnlyDictionary<string, string> SampleFor(BotFlow flow, BotSettings settings)
     {
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -125,8 +110,8 @@ public static class BotTemplate
     }
 
     /// <summary>
-    /// The reason worded for chat: the app's own sentence when it is one we recognise, with this
-    /// channel's words in it, and the caller's fallback when it is anything else.
+    /// The reason worded for chat: the known sentence with this channel's words in it, or
+    /// <paramref name="fallback"/> when the reason is not recognised.
     /// </summary>
     public static string Reason(string? reason, string fallback, BotSettings settings)
     {
@@ -138,8 +123,7 @@ public static class BotTemplate
 
     /// <summary>
     /// Fills in a template. Placeholders are <c>{name}</c>, case-insensitive; an unknown one is left
-    /// standing rather than silently swallowed, because the settings window previews every template
-    /// and a typo that shows up there is one the streamer can fix before chat ever sees it.
+    /// standing, so a typo shows up in the settings window's preview.
     /// </summary>
     public static string Render(string template, BotSettings settings, IReadOnlyDictionary<string, string>? values)
     {
@@ -161,8 +145,7 @@ public static class BotTemplate
             index = close + 1;
         }
 
-        // A line whose only content was an empty placeholder would otherwise go out as "@ fick
-        // tillbaka  poäng"; collapsing the gaps keeps a half-filled template readable.
+        // An empty placeholder value leaves a double space ("fick tillbaka  poäng").
         return CollapseSpaces(result.ToString());
     }
 

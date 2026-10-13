@@ -8,10 +8,9 @@ namespace TwitchOverlayHelper.Bot;
 
 /// <summary>What the bot has to be able to look up that it does not own itself.</summary>
 /// <param name="DynamicCommand">
-/// First claim on a chat line that looks like a command, for the commands whose answers change with
-/// the data – the spin's "!mina" above all, whose reply nobody could write as a fixed template. True
-/// means the line is handled and the static commands and the welcome stay out of it; the answer
-/// itself comes back through <see cref="BotService.Announce"/>.
+/// First claim on a chat line, for the commands whose answers depend on data (the spin's "!mina").
+/// Returns true when the line is handled, which keeps the static commands and the welcome out of it;
+/// the answer itself comes back through <see cref="BotService.Announce"/>.
 /// </param>
 public sealed record BotContext(
     Func<IReadOnlyList<TtsEntry>> ReadingQueue,
@@ -22,17 +21,9 @@ public sealed record BotContext(
 /// Decides what the bot says and when. Everything that reaches chat goes through here and then
 /// through <see cref="BotSender"/>; nothing else in the app writes a bot line.
 ///
-/// <para><b>Why the app needs this at all.</b> The app already knows a great deal that only it knows –
-/// that a redemption was paid back and why, that a reading is still waiting for a yes, that the
-/// overlay is down and points spent right now would come straight back. Until now all of it went to
-/// the streamer's own status line, where the person it concerns cannot see it. The viewer paid, and
-/// the viewer is the one left guessing.</para>
-///
-/// <para><b>What it refuses to do.</b> Say the same thing twice, say a dozen things at once because
-/// a sweep settled a whole stream's redemptions in one second, repeat a reason that was really an
-/// error message from a synthesis API, or answer its own messages. Each of those is a way a helpful
-/// bot becomes the loudest thing in the channel, and each is handled here rather than left to the
-/// templates.</para>
+/// <para>It tells viewers what only the app knows: that a redemption was paid back and why, that a
+/// reading is waiting for a yes, that the overlay is down. It batches a burst of refunds into one
+/// line, honours per-flow cooldowns and never answers its own messages.</para>
 /// </summary>
 public sealed class BotService : IDisposable
 {
@@ -40,9 +31,8 @@ public sealed class BotService : IDisposable
     private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(2);
 
     /// <summary>
-    /// How long every pet overlay may be gone before the bot mentions it. The same reasoning as the
-    /// ledger's own grace: a scene change in OBS drops the socket for a second or two, and a bot that
-    /// announced that would be announcing the streamer's scene changes to the channel.
+    /// How long every pet overlay may be gone before the bot mentions it. A scene change in OBS drops
+    /// the socket for a second or two.
     /// </summary>
     private static readonly TimeSpan OverlayGrace = TimeSpan.FromSeconds(30);
 
@@ -52,24 +42,18 @@ public sealed class BotService : IDisposable
     private readonly Timer _timer;
     private readonly Lock _gate = new();
 
-    /// <summary>
-    /// When each flow last spoke, so its cooldown can be honoured. Keyed by the viewer named in the
-    /// line too, not the flow alone: a flow that answers with one person's own data (the spin's
-    /// collection commands, above all) would otherwise let one viewer's answer use up the cooldown
-    /// for everybody else's, which reads as the command "not working" for the second person to try
-    /// it. A flow that names nobody keys on the empty string, which is exactly today's channel-wide
-    /// behaviour.
-    /// </summary>
+    // When each flow last spoke, for its cooldown. The viewer part of the key is the empty string
+    // (one channel-wide cooldown) except for the flows in PerViewerCooldownFlows.
     private readonly Dictionary<(BotFlow Flow, string Viewer), DateTimeOffset> _lastSaid = [];
 
-    /// <summary>The same for the streamer's own commands, keyed by the word that sets them off.</summary>
+    // The same for the streamer's own commands, keyed by the command word.
     private readonly Dictionary<string, DateTimeOffset> _commandsSaid = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Refunds waiting to be announced, held long enough to notice they are a crowd.</summary>
+    // Refunds waiting to be announced, held for the batch window so a burst becomes one line.
     private readonly List<RedemptionNotice> _pendingRefunds = [];
     private DateTimeOffset _refundsSince;
 
-    /// <summary>Readings the bot has already nudged about, so it nudges once and not every tick.</summary>
+    // Ids of the readings the bot has already nudged about.
     private readonly HashSet<string> _nudged = new(StringComparer.Ordinal);
 
     private DateTimeOffset? _overlayGoneSince;
@@ -87,8 +71,8 @@ public sealed class BotService : IDisposable
     private BotSettings Bot => _settings.Bot;
 
     /// <summary>
-    /// Whether a line from this account should be treated as chat rather than as the bot talking to
-    /// itself. Asked by the app before a message triggers a pet, an edge alert or a welcome.
+    /// True when the message was written by the bot's own account and the bot is set to ignore its
+    /// own lines.
     /// </summary>
     public bool IsOwnMessage(ChatMessage message)
     {
@@ -98,9 +82,8 @@ public sealed class BotService : IDisposable
     }
 
     /// <summary>
-    /// A verdict reached the viewer's points. Held for a moment rather than announced: the sweep
-    /// after a restart answers everything left over from last time, and one line per redemption
-    /// would be the bot's loudest minute of the stream for something nobody is waiting on.
+    /// A verdict reached the viewer's points. A fulfilment is announced at once; a refund is held
+    /// for the batch window, so a sweep that settles many at once becomes one line.
     /// </summary>
     public void OnRedemptionAnswered(RedemptionNotice notice)
     {
@@ -108,8 +91,7 @@ public sealed class BotService : IDisposable
 
         if (!notice.Refunded)
         {
-            // A fulfilled spin was already celebrated by SpinWin the moment the reel stopped;
-            // booking the redemption is paperwork nobody in chat is waiting on.
+            // A fulfilled spin was already announced by SpinWin when the reel stopped.
             if (notice.Subject == "spin") return;
             BotFlow flow = notice.Subject == "tts" ? BotFlow.TtsSpoken : BotFlow.PetFulfilled;
             Say(flow, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -127,7 +109,7 @@ public sealed class BotService : IDisposable
         }
     }
 
-    /// <summary>A pet redemption that never became a pet, so the viewer knows what to expect.</summary>
+    /// <summary>A pet redemption that never became a pet.</summary>
     public void OnPetOutcome(string viewer, int cost, PetSpawnOutcome outcome)
     {
         if (!Bot.IsActive) return;
@@ -142,7 +124,10 @@ public sealed class BotService : IDisposable
         Say(chosen, Viewer(viewer, cost));
     }
 
-    /// <summary>How many pet overlays are connected. Zero starts a clock rather than a message.</summary>
+    /// <summary>
+    /// How many pet overlays are connected. Zero starts the <see cref="OverlayGrace"/> clock rather
+    /// than a message.
+    /// </summary>
     public void OnPetOverlayCountChanged(int count)
     {
         lock (_gate)
@@ -170,18 +155,15 @@ public sealed class BotService : IDisposable
     }
 
     /// <summary>
-    /// A reading reached an ending, whatever the ending was. One entry point for four flows,
-    /// because the difference between them is the reason and whether the points came back – and
-    /// deciding that here keeps the app from having to know which template answers which failure.
+    /// A reading reached an ending, whatever the ending was. A refundable ending is not announced
+    /// here; that waits for <see cref="OnRedemptionAnswered"/>.
     /// </summary>
     public void OnReadingFinished(TtsRequest request, TtsState state, string reason)
     {
         if (!Bot.IsActive) return;
         lock (_gate) _nudged.Remove(request.Id);
 
-        // Two channel-wide warnings that are worth saying whoever paid and however it was paid: the
-        // next viewer about to spend on a queue that is full, or on a feature that is not running, is
-        // the one who benefits from hearing it. Their cooldowns keep a busy minute to one line.
+        // Two channel-wide warnings, said whoever paid: they are for the next viewer about to spend.
         if (string.Equals(reason, TtsService.QueueFullReason, StringComparison.Ordinal))
         {
             Say(BotFlow.TtsQueueFull, Viewer(request.DisplayName, request.Cost));
@@ -195,25 +177,16 @@ public sealed class BotService : IDisposable
             return;
         }
 
-        // Everything left is this one reading's own ending, and a refundable one is not this method's
-        // to announce.
-        //
-        // <para><b>Why not.</b> A refundable ending raises TtsService.Answered as well, which hands
-        // the verdict to the ledger – and the ledger only reports back once Twitch has actually taken
-        // it, retrying for as long as that takes and giving up out loud if it never does. This event
-        // fires the moment the reading ended, before that call has even been attempted. Announcing
-        // here would tell a viewer their points are back while the refund is still being retried, and
-        // would go on saying it after the ledger had given up. It would also say it twice, because
-        // the ledger's own notice arrives later and reads the same – which is exactly what the
-        // sender's duplicate guard was quietly hiding.</para>
+        // A refundable ending is announced by OnRedemptionAnswered, once Twitch has actually taken the
+        // verdict. Announcing it here would promise points back before the refund call has been made,
+        // and say it a second time when the ledger's notice arrives.
         if (request.Refundable) return;
 
-        // Nothing was refundable here, so a reading that failed has no refund to promise and nothing
-        // worth saying. One that was read out loud is its own good news.
+        // Without a refund to promise, a failed reading has nothing worth saying.
         if (state == TtsState.Spoken) Say(BotFlow.TtsSpoken, Viewer(request.DisplayName, request.Cost));
     }
 
-    /// <summary>A moderator's call landed, so the mod can see that it did.</summary>
+    /// <summary>Acknowledges a moderator's call.</summary>
     public void OnModCall(ChatMessage message)
     {
         if (!Bot.IsActive) return;
@@ -224,9 +197,8 @@ public sealed class BotService : IDisposable
     }
 
     /// <summary>
-    /// Somebody wrote the call command and nothing happened. The two reasons are worded for the
-    /// person who wrote it rather than for the log: one of them is something they can do nothing
-    /// about, and the other is that they are not a moderator.
+    /// Somebody wrote the call command and nothing happened: the alert is switched off, or they are
+    /// not a moderator.
     /// </summary>
     public void OnModCallMissed(ChatMessage message, bool alertDisabled)
     {
@@ -241,20 +213,18 @@ public sealed class BotService : IDisposable
     }
 
     /// <summary>
-    /// One chat line, for everything the bot answers rather than announces: the welcome and the two
-    /// commands. Returns quietly for its own lines, which is what keeps a bot that greets people from
-    /// greeting itself.
+    /// One chat line, for everything the bot answers rather than announces: the commands and the
+    /// welcome. The bot's own lines are ignored.
     /// </summary>
     public void OnChatMessage(ChatMessage message)
     {
         if (!Bot.IsActive || IsOwnMessage(message)) return;
 
-        // The data-driven commands go first: a streamer's own "!mina" row would otherwise shadow
-        // the spin's answer with a fixed text that cannot know what anybody won.
+        // The data-driven commands go first, so a streamer's own "!mina" row cannot shadow the spin's
+        // answer with a fixed text.
         if (_context.DynamicCommand?.Invoke(message) == true) return;
 
-        // A command answers and nothing else follows. Someone whose first ever line is a command is
-        // asking a question, not saying hello, and answering both would be two lines at a stranger.
+        // A first-ever line that is a command gets its answer and no welcome on top.
         if (AnswerCommand(message)) return;
 
         if (message.IsFirstMessage)
@@ -264,12 +234,11 @@ public sealed class BotService : IDisposable
     /// <summary>
     /// A line another service asked for – the spin announcing a win, prompting for a gift recipient,
     /// answering a command. The flow's own switch and template still decide whether and how it is
-    /// said; this only opens the door that <see cref="Say"/> guards for everything else.
+    /// said.
     /// </summary>
     /// <param name="ignoreCooldown">
-    /// True for the lines that name one person and answer them alone – silencing the second of two
-    /// winners would leave somebody who paid with nothing. False for the ones viewers can set off
-    /// on purpose, like the list command.
+    /// True for lines that answer one person who paid; false for the ones viewers can set off on
+    /// purpose, like the list command.
     /// </param>
     public void Announce(BotFlow flow, IReadOnlyDictionary<string, string>? values, bool ignoreCooldown = true) =>
         Say(flow, values, ignoreCooldown);
@@ -299,7 +268,7 @@ public sealed class BotService : IDisposable
         if (flow is { } chosen) Say(chosen, values);
     }
 
-    /// <summary>Everything waiting goes without being said – the channel changed, or the bot was switched off.</summary>
+    /// <summary>Drops everything waiting to be said and all cooldowns – the channel changed, or the bot was switched off.</summary>
     public void Reset()
     {
         lock (_gate)
@@ -314,12 +283,7 @@ public sealed class BotService : IDisposable
         _sender.Clear();
     }
 
-    /// <summary>
-    /// Answers one of the streamer's own commands, and says whether it did.
-    ///
-    /// <para>The cheap test comes first: chat is mostly not commands, and a busy room should not cost
-    /// a walk through the command list per line.</para>
-    /// </summary>
+    /// <summary>Answers one of the streamer's own commands. Returns true when the line was one.</summary>
     private bool AnswerCommand(ChatMessage message)
     {
         string text = message.Text.Trim();
@@ -329,9 +293,8 @@ public sealed class BotService : IDisposable
         {
             if (!command.IsUsable || !Matches(text, command.Command)) continue;
 
-            // Matched but not for this person. Answered with silence rather than with a refusal: a
-            // viewer who was never told the command exists does not need to be told off for trying
-            // it, and a bot that announces every refusal is a bot chat learns to set off on purpose.
+            // Matched but not for this person: silence rather than a refusal, which chat would learn
+            // to set off on purpose.
             if (command.ModeratorsOnly && !message.IsBroadcaster && !message.IsModerator) return true;
 
             if (!OnCooldown(command))
@@ -340,8 +303,7 @@ public sealed class BotService : IDisposable
                     new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["viewer"] = message.DisplayName });
                 if (line.Length > 0) _sender.Enqueue(line);
             }
-            // Handled either way. A command still inside its cooldown is not a line that should then
-            // go on to be treated as ordinary chat.
+            // A command inside its cooldown is still handled, not ordinary chat.
             return true;
         }
         return false;
@@ -362,17 +324,16 @@ public sealed class BotService : IDisposable
         }
     }
 
-    /// <summary>
-    /// The three things that are true of a moment rather than of an event: a reading nobody has
-    /// answered yet, a batch of refunds old enough to be counted, and an overlay that has been gone
-    /// long enough to mean it.
-    /// </summary>
-    /// <summary>How many cooldown entries are being kept, for the test that proves they get pruned.</summary>
+    /// <summary>How many cooldown entries are being kept.</summary>
     internal int CooldownEntryCount
     {
         get { lock (_gate) return _lastSaid.Count; }
     }
 
+    /// <summary>
+    /// Handles what depends on time rather than on an event: a reading nobody has answered yet, a
+    /// batch of refunds old enough to be counted, an overlay gone past its grace, expired cooldowns.
+    /// </summary>
     internal void Tick()
     {
         try
@@ -386,18 +347,14 @@ public sealed class BotService : IDisposable
         }
         catch (Exception ex)
         {
-            // A timer callback that throws takes the process with it, and this one runs while the
-            // streamer is live.
+            // A timer callback that throws takes the process with it.
             AppLog.Error("Bot: fel i botens rond", ex);
         }
     }
 
     /// <summary>
-    /// Drops the cooldown entries that could no longer block anything even if asked about right now.
-    /// A per-viewer flow leaves one entry behind per person who has ever asked, and on a stream that
-    /// runs for hours that would otherwise grow for as long as the bot does; nothing here shortens or
-    /// lengthens a cooldown, since an entry is only ever removed once its own window has already
-    /// passed.
+    /// Drops the cooldown entries whose window has passed. A per-viewer flow leaves one entry per
+    /// person who has asked, which would otherwise grow for as long as the stream runs.
     /// </summary>
     private void PruneExpiredCooldowns(DateTimeOffset now)
     {
@@ -424,8 +381,7 @@ public sealed class BotService : IDisposable
         var waiting = new List<TtsEntry>();
         lock (_gate)
         {
-            // Anything no longer in the queue has been answered, spoken or let go, and its id can
-            // come round again on a later request from the same viewer.
+            // An id that has left the queue can come round again on a later request.
             _nudged.IntersectWith(queue.Select(entry => entry.Id));
             foreach (TtsEntry entry in queue)
             {
@@ -453,15 +409,13 @@ public sealed class BotService : IDisposable
 
         if (due.Length >= Bot.RefundBatchThreshold)
         {
-            // Switched off, this stays silent rather than falling back to one line per refund. A
-            // streamer who turns off the summary is saying a pile of refunds is not worth a message,
-            // and answering that with thirty messages would be the opposite of what they asked for.
+            // With the summary switched off this stays silent; it does not fall back to one line per
+            // refund.
             Say(BotFlow.RefundBatch, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["count"] = due.Length.ToString(),
                 ["total"] = due.Sum(notice => notice.Cost).ToString(),
-                // They are a batch because they happened together, which almost always means they
-                // happened for the same reason; the first one speaks for the rest.
+                // Refunds that arrive together almost always share a reason; the first one's is used.
                 ["reason"] = BotTemplate.Reason(due[0].Reason, "de kunde inte levereras", Bot)
             }, ignoreCooldown: true);
             return;
@@ -491,19 +445,13 @@ public sealed class BotService : IDisposable
         Say(BotFlow.PetOverlayDown, null);
     }
 
-    /// <summary>
-    /// The flows whose cooldown protects one viewer's own turn rather than the channel's – asking
-    /// again too soon blocks only the asker, not whoever asks next. Everything not listed here keeps
-    /// a single channel-wide cooldown, which is the right default: a flow added later without an
-    /// entry here fails safe as "shared", the same throttling every other flow has always had, rather
-    /// than silently opening up as per-viewer.
-    /// </summary>
+    // The flows whose cooldown is counted per viewer, so one viewer's answer does not block the next
+    // person who asks. Every other flow shares one channel-wide cooldown.
     private static readonly HashSet<BotFlow> PerViewerCooldownFlows = [BotFlow.SpinList, BotFlow.SpinListEmpty];
 
     /// <summary>
-    /// Writes one line, if this flow is switched on and has not just spoken. The cooldown is skipped
-    /// for the flows that name a person: two viewers owed their points back are two answers, and
-    /// silencing the second one leaves somebody who paid with nothing at all.
+    /// Writes one line, if this flow is switched on and has not just spoken. Callers pass
+    /// <paramref name="ignoreCooldown"/> for lines owed to one viewer, such as a refund notice.
     /// </summary>
     private void Say(BotFlow flow, IReadOnlyDictionary<string, string>? values, bool ignoreCooldown = false)
     {

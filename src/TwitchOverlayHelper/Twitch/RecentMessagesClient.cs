@@ -9,30 +9,25 @@ namespace TwitchOverlayHelper.Twitch;
 /// history on join and Helix has no endpoint for chat – so this asks recent-messages.robotty.de,
 /// the community service Chatterino uses for the same job.
 ///
-/// <para>Worth knowing about the trade: no key, no login, no registration, just a GET. In return it
-/// is one person's free service rather than Twitch's, it can be down, and broadcasters can have
-/// their channel left out of it. Every failure here is silent by design – the chat that follows is
-/// the point of the app, and the lines from before it are a courtesy.</para>
+/// <para>It needs no key or login, but it is a free third-party service: it can be down, and
+/// broadcasters can opt their channel out. Failures are therefore silent and yield no history.</para>
 ///
-/// <para>The reason it fits so neatly: the service answers with raw IRC lines, tags and all, so
-/// <see cref="IrcMessageParser"/> reads them with exactly the code that reads the live connection.
-/// Nothing here knows what a chat message looks like.</para>
+/// <para>The service answers with raw IRC lines, tags and all, which
+/// <see cref="IrcMessageParser"/> reads like lines from the live connection.</para>
 /// </summary>
 public sealed class RecentMessagesClient(HttpClient httpClient)
 {
     private const string BaseUrl = "https://recent-messages.robotty.de/api/v2/recent-messages/";
 
     /// <summary>
-    /// The lines the service still has for this channel, oldest first.
-    ///
-    /// <para>Both "hide" flags are on: a message that was deleted, and a message from someone who
-    /// was banned, must not come back to life on a restart. Moderation is a decision someone made
-    /// about that chat, and quietly undoing it on screen would be the wrong kind of helpful.</para>
+    /// The lines the service still has for this channel, oldest first, without deleted messages
+    /// and messages from banned users. Empty when the service does not answer successfully.
     /// </summary>
     public async Task<IReadOnlyList<ChatTimelineItem>> GetAsync(string channel, int limit, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(channel)) return [];
 
+        // Both hide flags are on so a moderated message does not come back to life on a restart.
         string url = $"{BaseUrl}{Uri.EscapeDataString(channel)}" +
             $"?limit={Math.Clamp(limit, 1, 800)}&hide_moderation_messages=true&hide_moderated_messages=true";
 
@@ -44,9 +39,8 @@ public sealed class RecentMessagesClient(HttpClient httpClient)
     }
 
     /// <summary>
-    /// Turns the service's answer into timeline items. Anything that is not a chat line or a notice
-    /// we draw a card for – and anything the parser does not recognise at all – is dropped without
-    /// comment: the feed is someone else's format, and a line we cannot read is not an error.
+    /// Turns the service's answer into timeline items. Lines that are neither a chat message nor a
+    /// user notice are skipped, and a body that is not valid JSON yields an empty list.
     /// </summary>
     internal static IReadOnlyList<ChatTimelineItem> Parse(string body)
     {

@@ -7,45 +7,29 @@ using TwitchOverlayHelper.Twitch;
 namespace TwitchOverlayHelper.Bot;
 
 /// <summary>
-/// The second Twitch account: its own login, its own token on disk, its own connection to the same
-/// chat.
+/// The second Twitch account: its own login, its own token on disk and its own IRC connection to the
+/// same chat, since one connection cannot speak as two accounts.
 ///
-/// <para><b>Why a whole second everything.</b> A Twitch token belongs to one account, and the point
-/// of a bot is that it is not the streamer. So it gets its own <see cref="TwitchSession"/> with its
-/// own credentials file, and its own IRC connection – Twitch will not let one connection speak as two
-/// accounts, and there is no shortcut around that.</para>
-///
-/// <para><b>Why the read events are left unwired.</b> This connection joins the channel and receives
-/// every line in it, exactly like the streamer's does. Listening to both would put every message into
-/// the app twice. The bot's own lines are not lost by ignoring them either: Twitch sends them down
-/// every connection except the one that wrote them, so the streamer's connection carries them and
-/// they reach the dock and the overlay the ordinary way.</para>
+/// <para>The connection's read events are left unwired: the streamer's connection already receives
+/// every line, the bot's own included.</para>
 /// </summary>
 public sealed class BotAccount : IAsyncDisposable
 {
     private readonly TwitchSession _session;
     private readonly TwitchChatClient _chat = new();
 
-    /// <summary>
-    /// Serialises the joining and the leaving. Both are asked for from UI handlers that do not wait
-    /// for them, so without this a disconnect can run straight through the middle of a connect.
-    /// </summary>
+    // Serialises joining and leaving: both come from UI handlers that do not await them.
     private readonly SemaphoreSlim _applyLock = new(1, 1);
 
-    /// <summary>
-    /// Bumped by everything that changes what the bot should be doing. Fetching a token takes a
-    /// network round trip, and a connect paused in the middle of one has no idea that the user has
-    /// since disconnected or switched channel – it would come back and join a channel the app has
-    /// left. Checked after every await, so the stale attempt gives up instead.
-    /// </summary>
+    // Bumped by everything that changes what the bot should be doing, and checked after every await,
+    // so a connect paused on a network call gives up when it has been overtaken.
     private int _generation;
     private string _channel = string.Empty;
     private bool _disposed;
 
     public BotAccount(HttpClient httpClient, string? tokenPath = null)
     {
-        // Its own file, beside the streamer's. Sharing one would mean logging the bot in signed the
-        // streamer out, which is the one thing this feature must never do.
+        // Its own file: sharing the streamer's would sign the streamer out when the bot logs in.
         _session = new TwitchSession(
             httpClient,
             new TokenStore(tokenPath ?? ProfilePaths.File("credentials.bot.bin")),
@@ -80,9 +64,8 @@ public sealed class BotAccount : IAsyncDisposable
     }
 
     /// <summary>
-    /// Joins the channel, or leaves it again when there is nothing to join it with. Safe to call
-    /// whenever anything changed – the channel, the mode, the login – because it works out for
-    /// itself whether it has anything to do.
+    /// Joins the channel, or leaves it when there is nothing to join it with. Safe to call whenever
+    /// the channel, the mode or the login changed; does nothing when already in the right state.
     /// </summary>
     public async Task ApplyAsync(string channel, bool wanted)
     {
@@ -93,8 +76,7 @@ public sealed class BotAccount : IAsyncDisposable
         await _applyLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            // Overtaken while waiting for the lock: a later call knows better than this one what the
-            // bot is supposed to be doing.
+            // Overtaken by a later call while waiting for the lock.
             if (_disposed || Volatile.Read(ref _generation) != generation) return;
 
             bool shouldRun = wanted && _session.IsLoggedIn && normalized.Length > 0;
@@ -104,12 +86,10 @@ public sealed class BotAccount : IAsyncDisposable
             if (_chat.IsRunning) await LeaveAsync().ConfigureAwait(false);
             if (!shouldRun) return;
 
-            // Asked for before connecting: a bot that cannot get a token joins anonymously otherwise,
-            // which looks connected and can never write a word.
+            // Fetched before connecting: without a token the bot would join anonymously, which looks
+            // connected and can never write.
             string? token = await _session.TryGetIrcTokenAsync().ConfigureAwait(false);
-            // The round trip above is the long one, and the window this check closes is the whole
-            // reason the generation exists: without it, a disconnect during it is followed by this
-            // attempt cheerfully joining the channel the user just left.
+            // A disconnect during the token round trip must not be followed by a join.
             if (Volatile.Read(ref _generation) != generation) return;
             if (token is null)
             {
@@ -134,13 +114,11 @@ public sealed class BotAccount : IAsyncDisposable
         finally { _applyLock.Release(); }
     }
 
-    /// <summary>
-    /// Leaves the channel. The generation is bumped before the lock is taken rather than after, so a
-    /// connect that is currently paused on a network call is already stale by the time it wakes –
-    /// otherwise it would sit behind this waiting for the lock and then join again.
-    /// </summary>
+    /// <summary>Leaves the channel and cancels any connect that is in flight.</summary>
     public async Task DisconnectAsync()
     {
+        // Bumped before taking the lock, so a connect paused on a network call is stale when it wakes
+        // rather than joining again once this has released the lock.
         Interlocked.Increment(ref _generation);
         await _applyLock.WaitAsync().ConfigureAwait(false);
         try { await LeaveAsync().ConfigureAwait(false); }
@@ -153,7 +131,7 @@ public sealed class BotAccount : IAsyncDisposable
         if (_chat.IsRunning) await _chat.DisconnectAsync().ConfigureAwait(false);
     }
 
-    /// <summary>Writes one line as the bot. Throws when it is not connected, which the sender logs.</summary>
+    /// <summary>Writes one line as the bot. Throws when it is not connected.</summary>
     public Task SendAsync(string text, CancellationToken cancellationToken) =>
         _chat.SendMessageAsync(text, cancellationToken);
 

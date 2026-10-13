@@ -3,12 +3,9 @@ namespace TwitchOverlayHelper.Twitch;
 /// <summary>
 /// Remembers the message ids seen recently, so a notification delivered twice is only acted on once.
 ///
-/// This is not a precaution against a rare Twitch quirk: handling a reconnect the way Twitch
-/// requires means keeping the old socket open until the replacement has welcomed, and Twitch keeps
-/// delivering on both for that moment. Every event in the overlap arrives twice by design.
-///
-/// Bounded, and oldest-first: an overlap lasts seconds, so remembering the last few hundred ids is
-/// plenty and the buffer must never grow without limit on a stream that runs for hours.
+/// During an EventSub reconnect Twitch delivers on both the old and the replacement socket until
+/// the handover completes, so every event in that overlap arrives twice. The overlap lasts
+/// seconds, so only the last <c>limit</c> ids are kept, oldest dropped first.
 /// </summary>
 public sealed class RecentMessageIds(int limit = 512)
 {
@@ -17,15 +14,15 @@ public sealed class RecentMessageIds(int limit = 512)
     private readonly Lock _gate = new();
 
     /// <summary>
-    /// True the first time an id is offered, false every time after. Locked because the two sockets
-    /// of a reconnect are read by two tasks at once, which is the whole point of the overlap.
+    /// True the first time an id is offered, false every time after. A null or empty id is always
+    /// new. Thread-safe.
     /// </summary>
     public bool IsNew(string? messageId)
     {
-        // A frame carrying no id cannot be tracked. Letting it through risks showing something
-        // twice; dropping it risks never showing it at all, and that is the worse of the two.
+        // A frame without an id cannot be tracked; showing it twice beats never showing it.
         if (string.IsNullOrEmpty(messageId)) return true;
 
+        // The two sockets of a reconnect are read by two tasks at once.
         lock (_gate)
         {
             if (!_seen.Add(messageId)) return false;

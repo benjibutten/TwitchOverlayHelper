@@ -29,8 +29,8 @@ public sealed record NicknameFile(int Version, IReadOnlyList<Nickname> Entries)
 public sealed class NicknameBook
 {
     /// <summary>
-    /// Long enough for a real nickname, short enough that it cannot push the message out of a
-    /// narrow dock column. It sits next to a name, not instead of one.
+    /// Short enough that a nickname cannot push the message out of a narrow dock column: it sits
+    /// next to a name, not instead of one.
     /// </summary>
     public const int MaxLength = 24;
 
@@ -81,8 +81,6 @@ public sealed class NicknameBook
         string name = login?.Trim().ToLowerInvariant() ?? string.Empty;
         string cleaned = Clean(text);
         if (id.Length == 0 && name.Length == 0) return null;
-        // A nickname of nothing but spaces is not a nickname; the only honest reading of it is that
-        // the one that was there should go.
         if (cleaned.Length == 0) { Remove(id, name); return null; }
 
         lock (_changeLock)
@@ -152,9 +150,8 @@ public sealed class NicknameBook
     }
 
     /// <summary>
-    /// What a nickname is allowed to be. Line breaks and control characters would break the row it
-    /// is drawn on, and a run of spaces is not a name; the length cap keeps it beside the chatter's
-    /// own name rather than in place of the message.
+    /// Reduces text to what a nickname may be: control characters and line breaks removed, runs of
+    /// whitespace collapsed to one space, and cut at <see cref="MaxLength"/>.
     /// </summary>
     public static string Clean(string? text)
     {

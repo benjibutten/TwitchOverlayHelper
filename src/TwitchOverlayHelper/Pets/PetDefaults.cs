@@ -7,9 +7,8 @@ namespace TwitchOverlayHelper.Pets;
 internal sealed record PetSeed(string Id, string Manifest, string Body);
 
 /// <summary>
-/// The pets the app is born with. They live inside the exe only until the first start, when they
-/// are written out as ordinary files – a streamer who wants Blaze in another colour edits the same
-/// kind of folder as for a pet they made themselves.
+/// The pets that ship with the app, embedded in the exe. <see cref="PetCatalog"/> writes them out
+/// as ordinary pet folders on first start.
 /// </summary>
 internal static class PetDefaults
 {

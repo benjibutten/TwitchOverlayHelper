@@ -7,15 +7,12 @@ using TwitchOverlayHelper.Settings;
 namespace TwitchOverlayHelper;
 
 /// <summary>
-/// Appearance of the card the viewers see while a paid message is read out loud. A window of its own
-/// next to the dock's and the stream chat's, for the same reason those two are apart: it is a
-/// surface with its own audience and its own questions. Nothing here changes what the streamer sees,
-/// and nothing here decides whether a reading happens at all – that stays on the Uppläsning tab,
-/// where the money is.
+/// Appearance of the card the viewers see while a paid message is read out loud. Nothing here
+/// changes what the streamer sees or decides whether a reading happens; that is the Uppläsning tab.
 /// </summary>
 public partial class TtsWidgetWindow : Window
 {
-    /// <summary>The colours the card can be given. A handful of clear names beats a colour picker.</summary>
+    /// <summary>The colours the card can be given.</summary>
     private static readonly (string Name, string Hex)[] Colors =
     [
         ("Lila", "#A970FF"), ("Turkos", "#5FD6C8"), ("Grön", "#22C55E"), ("Gul", "#FACC15"),
@@ -29,8 +26,7 @@ public partial class TtsWidgetWindow : Window
 
     /// <param name="onPreview">
     /// Shows the card in OBS with an invented reading, and answers with what to tell the user – how
-    /// many pages drew it, or that none are connected. The window has no way of knowing that itself:
-    /// it can see the settings, but only the app can see who is listening.
+    /// many pages drew it, or that none are connected.
     /// </param>
     public TtsWidgetWindow(AppSettings settings, Action onChanged, Func<string> onPreview)
     {
@@ -134,9 +130,8 @@ public partial class TtsWidgetWindow : Window
         RadiusValue.Text = widget.CornerRadius > 0 ? $"{widget.CornerRadius:0} px" : "raka";
         LingerValue.Text = widget.LingerMilliseconds > 0 ? $"{widget.LingerMilliseconds / 1000.0:0.0} s" : "försvinner direkt";
 
-        // The card is drawn by the reading page, and that page only ever gets a clip when the sound
-        // is meant for OBS. Said here rather than left to be discovered on a live stream, where the
-        // symptom – a card that never appears – says nothing about the reason.
+        // The card is drawn by the reading page, which only gets a clip when the sound is meant for
+        // OBS; otherwise the card never appears, and the hint says why.
         EnabledHint.Text = EnabledCheck.IsChecked != true
             ? "Av: browserkällan ritar ingenting och kan ligga kvar på 1×1 px."
             : _settings.Tts.UsesBrowser
@@ -200,9 +195,7 @@ public partial class TtsWidgetWindow : Window
     private void Preview_Click(object sender, RoutedEventArgs e) => PreviewStatus.Text = _onPreview();
 
     /// <summary>
-    /// Back to the defaults – including switched off, which is the default. Deliberately: this button
-    /// is what somebody reaches for when the card has ended up somewhere they cannot see it, and
-    /// leaving it on would leave them looking for it again.
+    /// Back to the defaults – including switched off, which is the default.
     /// </summary>
     private void Reset_Click(object sender, RoutedEventArgs e)
     {

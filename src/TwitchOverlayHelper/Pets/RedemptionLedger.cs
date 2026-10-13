@@ -4,9 +4,8 @@ using TwitchOverlayHelper.Twitch;
 namespace TwitchOverlayHelper.Pets;
 
 /// <summary>
-/// The two Twitch calls the ledger makes, behind an interface so the deciding can be tested without
-/// a network. The broadcaster is the gateway's business, not the ledger's – there is only ever one
-/// channel whose rewards this app owns.
+/// The two Twitch calls the ledger makes. The gateway supplies the broadcaster: there is only ever
+/// one channel whose rewards this app owns.
 /// </summary>
 public interface IRedemptionGateway
 {
@@ -18,11 +17,10 @@ public interface IRedemptionGateway
 }
 
 /// <summary>
-/// Something the ledger did, worded for the streamer rather than for the log.
-/// <paramref name="Subject"/> is what the redemption bought – "pet" or "tts" – so the app can put
-/// the sentence next to the feature it belongs to instead of reporting a reading under the pets.
-/// <paramref name="RedemptionId"/> is carried for the features that keep their own books: it is the
-/// only signal that Twitch actually took the verdict, and the spin clears its owed fulfilments on it.
+/// A verdict Twitch has taken, worded for the streamer.
+/// <paramref name="Subject"/> is what the redemption bought: "pet", "tts" or "spin".
+/// <paramref name="RedemptionId"/> lets a feature that keeps its own books clear them; the spin
+/// settles its owed fulfilments on it.
 /// </summary>
 public sealed record RedemptionNotice(
     bool Refunded, string ViewerName, int Cost, string Reason, string Subject = "pet", string RedemptionId = "");
@@ -31,20 +29,17 @@ public sealed record RedemptionNotice(
 /// How long the ledger waits before it calls something undelivered.
 /// </summary>
 /// <param name="AckGrace">
-/// How long a spawned pet has to be reported drawn before the redemption is paid back. Long enough
-/// for a slow first paint and a spritesheet fetch, short enough that the viewer meets the refund
-/// while they still remember redeeming.
+/// How long a spawned pet has to be reported drawn before the redemption is paid back. Has to
+/// cover a slow first paint and a spritesheet fetch.
 /// </param>
 /// <param name="OverlayGrace">
 /// How long every pet overlay may be gone before the pets on screen are declared unseen. A reload
-/// in OBS or a scene change drops the socket for a second or two and must not cost anybody their
-/// points; a source removed from the scene never comes back.
+/// in OBS or a scene change drops the socket for a second or two.
 /// </param>
 /// <param name="ReceiptWindow">
-/// How stale a receipt may be and still vouch for an entry booked just after it. The spawn frame
-/// leaves before the entry is written, so on one machine the receipt can beat the bookkeeping.
-/// Short on purpose: pet ids are viewer ids and come round again, so a receipt from the viewer's
-/// last redemption must not answer for this one.
+/// How stale a receipt may be and still vouch for an entry booked just after it. Short, because
+/// pet ids are viewer ids and come round again: a receipt from the viewer's last redemption must
+/// not answer for this one.
 /// </param>
 public sealed record RedemptionLedgerTimings(TimeSpan AckGrace, TimeSpan OverlayGrace, TimeSpan Interval, TimeSpan ReceiptWindow)
 {
@@ -56,19 +51,17 @@ public sealed record RedemptionLedgerTimings(TimeSpan AckGrace, TimeSpan Overlay
 /// Keeps a redemption open until the pet it bought has actually been delivered, and pays it back
 /// when it has not.
 ///
-/// <para><b>Why it is not simpler.</b> Twitch offers exactly one moment to refund: while the
-/// redemption still sits unfulfilled in the channel's queue. Fulfilling at spawn would close that
-/// door immediately – and spawn only means the server added a pet and sent a frame, which is still
-/// true when the OBS browser source failed to come up and the lawn is empty. So the verdict waits
-/// for the pet to live out its time, and every way it can fail to be seen in the meantime is a
-/// refund instead.</para>
+/// <para>Twitch only refunds a redemption that is still unfulfilled, and a spawn only means the
+/// server sent a frame – true even when the OBS browser source never came up. So the verdict waits
+/// until the pet has lived out its time, and every way it can fail to be seen before then is a
+/// refund.</para>
 ///
-/// <para>Only rewards this app created ever get here. Everything else has no verdict to give:
-/// Twitch answers 403 for a reward made in the dashboard, whatever the token carries.</para>
+/// <para>Only rewards this app created ever get here: Twitch answers 403 for a reward made in the
+/// dashboard, whatever the token carries.</para>
 /// </summary>
 public sealed class RedemptionLedger : IDisposable
 {
-    /// <summary>Twitch was there but unhappy this many times in a row; after that the entry is let go.</summary>
+    /// <summary>How many times one verdict is sent to Twitch before the entry is given up on.</summary>
     private const int MaxAttempts = 5;
 
     private sealed class Entry(string redemptionId, string rewardId, string petId, string viewerName, int cost, DateTimeOffset expiresAt)
@@ -84,17 +77,15 @@ public sealed class RedemptionLedger : IDisposable
         public int Attempts { get; set; }
 
         /// <summary>
-        /// The verdict already decided for this entry, set only when Twitch could not be told and
-        /// the entry went back in the queue to be tried again. It has to survive the wait: an
-        /// entry put back without it would be judged by the rules a second time, and a refund that
-        /// failed to send would come back round as a fulfilment – the one mistake here that quietly
-        /// keeps the viewer's points.
+        /// The verdict already decided for this entry, set when Twitch could not be told and the
+        /// entry was put back to be retried. Without it the entry would be judged again, and a
+        /// refund that failed to send could come back as a fulfilment.
         /// </summary>
         public RedemptionStatus? Verdict { get; set; }
 
         public string Reason { get; set; } = string.Empty;
 
-        /// <summary>What this redemption bought, carried so the notice can be worded for it.</summary>
+        /// <summary>What this redemption bought; see <see cref="RedemptionNotice"/>.</summary>
         public string Subject { get; init; } = "pet";
     }
 
@@ -106,16 +97,11 @@ public sealed class RedemptionLedger : IDisposable
     private readonly Dictionary<string, Entry> _pending = new(StringComparer.Ordinal);
     private readonly Timer _timer;
 
-    /// <summary>
-    /// Pet ids an overlay has reported drawing, and when. Kept because the receipt can beat the
-    /// bookkeeping: the spawn frame goes out from inside the spawn, and the entry is only written
-    /// once that call has returned, so a lawn on the same machine can answer in the gap. Without
-    /// this the receipt would land on nothing, and a pet everybody watched would be paid back when
-    /// the grace period ran out.
-    /// </summary>
+    // Pet ids an overlay has reported drawing, and when. The spawn frame goes out before Track is
+    // called, so an overlay on the same machine can send its receipt before the entry exists.
     private readonly Dictionary<string, DateTimeOffset> _recentlyShown = new(StringComparer.Ordinal);
 
-    /// <summary>When every pet overlay went away, or null while at least one is connected.</summary>
+    // When every pet overlay went away, or null while at least one is connected.
     private DateTimeOffset? _overlayGoneSince;
     private int _ticking;
     private bool _disposed;
@@ -129,31 +115,25 @@ public sealed class RedemptionLedger : IDisposable
         _timer = new Timer(_ => _ = TickAsync(), null, _timings.Interval, _timings.Interval);
     }
 
-    /// <summary>Raised after Twitch has been told, so the app can say what happened.</summary>
+    /// <summary>Raised after Twitch has taken a verdict.</summary>
     public event Action<RedemptionNotice>? Answered;
 
     /// <summary>
-    /// Asks whether some other part of the app is already holding a redemption, by id. Set by the
-    /// reading queue, which owns its own redemptions and settles them itself.
-    ///
-    /// <para>Only the sweep consults this, and it is what keeps the sweep from undoing the very
-    /// thing it exists to back up. A reconnect mid-stream runs the sweep again with a fresh cutoff,
-    /// and every reading currently waiting for the streamer's yes was redeemed before that moment –
-    /// so without this, coming back from a dropped connection would pay back the request sitting on
-    /// screen while the streamer was still reading it.</para>
+    /// Tells <see cref="SweepAsync"/> that another part of the app holds a redemption (by id) and
+    /// settles it itself, so the sweep leaves it alone. A reconnect mid-stream sweeps again with a
+    /// fresh cutoff, which would otherwise refund a reading still waiting for the streamer's yes.
     /// </summary>
     public Func<string, bool>? ClaimedElsewhere { get; set; }
 
-    /// <summary>How many redemptions are still waiting on a verdict. For the tests and the log.</summary>
+    /// <summary>How many redemptions are still waiting on a verdict.</summary>
     public int PendingCount
     {
         get { lock (_gate) return _pending.Count; }
     }
 
     /// <summary>
-    /// A pet is on the lawn and the redemption behind it stays in the queue until it has lived its
-    /// time. Re-redeeming extends the same pet, so a second entry keeps its own expiry: the first
-    /// purchase was delivered in full whatever happens to the extension.
+    /// Starts tracking the redemption behind a pet on the lawn; it stays open until the pet has
+    /// lived its time. Re-redeeming extends the same pet, and each redemption keeps its own expiry.
     /// </summary>
     public void Track(string redemptionId, string rewardId, string petId, string viewerName, int cost, DateTimeOffset expiresAt)
     {
@@ -161,8 +141,7 @@ public sealed class RedemptionLedger : IDisposable
         var entry = new Entry(redemptionId, rewardId, petId, viewerName, cost, expiresAt);
         lock (_gate)
         {
-            // The receipt for this pet may already have come back – the frame left before this call
-            // did – so it is taken from what arrived rather than waited for all over again.
+            // The overlay's receipt for this pet may already have arrived.
             if (_recentlyShown.TryGetValue(petId, out DateTimeOffset shownAt)
                 && DateTimeOffset.UtcNow - shownAt < _timings.ReceiptWindow)
             {
@@ -174,21 +153,15 @@ public sealed class RedemptionLedger : IDisposable
 
     /// <summary>
     /// Pays back a redemption that never became a pet at all – pets switched off, the lawn full, no
-    /// overlay to draw on. Nothing is tracked: there is no pet whose life could change the answer.
+    /// overlay to draw on. Retries like <see cref="AnswerNow"/>.
     /// </summary>
     public Task RefundNow(string redemptionId, string rewardId, string viewerName, int cost, string reason) =>
         AnswerNow(redemptionId, rewardId, viewerName, cost, RedemptionStatus.Canceled, reason);
 
     /// <summary>
-    /// Answers one redemption whose verdict is already decided, and keeps trying until Twitch takes
-    /// it. Nothing is tracked: unlike a pet there is no life left to run that could change the
-    /// answer, and the only thing still in question is whether the message got through.
-    ///
-    /// <para><b>Why this is not a bare API call.</b> Twitch will only accept a verdict while the
-    /// redemption is still unfulfilled, and a token being refreshed, a dropped connection or a bad
-    /// minute at Twitch would otherwise turn a refusal into a viewer who paid and got neither the
-    /// thing nor their points back. So it goes through the same retrying path as everything else
-    /// here: put back with its verdict attached, tried again on the timer, given up on out loud.</para>
+    /// Answers one redemption whose verdict is already decided. A failed call is retried on the
+    /// timer, up to <see cref="MaxAttempts"/> times, so a token refresh or a dropped connection
+    /// does not leave the viewer with neither the thing nor the points.
     /// </summary>
     public Task AnswerNow(
         string redemptionId, string rewardId, string viewerName, int cost, RedemptionStatus status, string reason,
@@ -198,14 +171,11 @@ public sealed class RedemptionLedger : IDisposable
             status, reason);
 
     /// <summary>
-    /// A pet was taken off the lawn before its time by something other than a refund – the lawn was
-    /// full and an ordinary redemption or a test spawn pushed the oldest one home.
+    /// A pet was pushed off a full lawn before its time. Any redemption behind it is paid back
+    /// rather than left to be booked as delivered.
     ///
-    /// <para>Rewards that can pay back refuse rather than evict, so they never do this to anybody.
-    /// They can still be on the receiving end of it: an app-made pet is just a pet once it is out
-    /// there, and the chat route and the test button both evict the oldest without asking whose it
-    /// is. Without this the redemption would sit out the rest of its time and be booked as
-    /// delivered, for a pet that left the screen minutes early.</para>
+    /// <para>A refundable reward never evicts, but its pet can still be evicted by one that does:
+    /// a non-refundable redemption, the test button or a spin win.</para>
     /// </summary>
     public void PetEvicted(string petId)
     {
@@ -227,9 +197,8 @@ public sealed class RedemptionLedger : IDisposable
     }
 
     /// <summary>
-    /// Pays back everything still waiting, because the pets stopped being watchable for a reason
-    /// that has nothing to do with any one of them – pets switched off in the app above all, which
-    /// hides the whole lawn while the creatures on it go on living out their time.
+    /// Pays back everything still waiting, for when the whole lawn stops being visible – such as
+    /// pets being switched off in the app, which hides the lawn while the pets go on living.
     /// </summary>
     public void RefundAll(string reason)
     {
@@ -244,8 +213,8 @@ public sealed class RedemptionLedger : IDisposable
     }
 
     /// <summary>
-    /// The overlay reports it has drawn a pet. Every redemption riding on that pet is delivered –
-    /// and the receipt is written down as well, for the entry that has not been booked yet.
+    /// The overlay reports it has drawn a pet. Marks every redemption riding on that pet as shown,
+    /// and remembers the receipt for an entry that is tracked just after it.
     /// </summary>
     public void MarkShown(string petId)
     {
@@ -257,9 +226,8 @@ public sealed class RedemptionLedger : IDisposable
                 if (string.Equals(entry.PetId, petId, StringComparison.Ordinal)) entry.Shown = true;
 
             _recentlyShown[petId] = now;
-            // The lawn reports every pet it draws, reconnects included, so this would otherwise
-            // grow for as long as the app runs. Anything past the window can no longer vouch for
-            // anybody.
+            // The overlay reports every pet it draws, reconnects included, so receipts past the
+            // window are pruned to keep this from growing for as long as the app runs.
             if (_recentlyShown.Count > 64)
             {
                 foreach ((string id, DateTimeOffset at) in _recentlyShown.ToArray())
@@ -269,8 +237,8 @@ public sealed class RedemptionLedger : IDisposable
     }
 
     /// <summary>
-    /// How many pet overlays are connected. Zero starts the clock: the pets already on screen are
-    /// being drawn for nobody, and once the grace period is out they are paid back.
+    /// How many pet overlays are connected. Zero starts the clock: once the overlay grace is out,
+    /// the pets on the lawn are paid back.
     /// </summary>
     public void OverlayCountChanged(int count)
     {
@@ -279,8 +247,7 @@ public sealed class RedemptionLedger : IDisposable
 
     /// <summary>
     /// Twitch says a redemption changed status without us asking – the streamer worked the queue in
-    /// the dashboard. A refund there has to reach the lawn too, or the pet stays up for a purchase
-    /// that has been paid back.
+    /// the dashboard. The entry is dropped, and on a refund its pet is taken off the lawn.
     /// </summary>
     public void HandleExternalUpdate(string redemptionId, string status)
     {
@@ -299,21 +266,17 @@ public sealed class RedemptionLedger : IDisposable
     }
 
     /// <summary>
-    /// Clears the queue of everything redeemed while nobody was listening. The pets live in memory
-    /// only, so anything still unfulfilled on one of our rewards from before we subscribed belongs
-    /// to a pet that no longer exists – a clean exit, a crash mid-stream, a spell in another
-    /// channel and the seconds it takes the socket to come up all read the same here, and the
-    /// viewer is owed their points in every one of them.
+    /// Refunds everything redeemed on these rewards while nobody was listening. The pets live in
+    /// memory only, so anything still unfulfilled from before the app subscribed (an exit, a crash,
+    /// a spell in another channel) belongs to a pet that no longer exists.
     /// </summary>
     /// <param name="listeningSince">
     /// When EventSub confirmed it is delivering redemptions. Anything younger arrives through the
     /// normal path and is left alone.
     /// </param>
     /// <returns>
-    /// Whether every reward's queue was actually read. False means at least one could not be, and
-    /// the sweep is worth running again – its caller uses this to decide whether it may stop asking.
-    /// A sweep that quietly counted a failed read as done would leave those redemptions in the
-    /// queue for good.
+    /// True when every reward's queue was read. False means at least one could not be, and the
+    /// sweep should be run again.
     /// </returns>
     public async Task<bool> SweepAsync(IReadOnlyList<string> rewardIds, DateTimeOffset listeningSince, CancellationToken token = default)
     {
@@ -327,9 +290,8 @@ public sealed class RedemptionLedger : IDisposable
             }
             catch (Exception ex)
             {
-                // A reward we no longer own, Twitch having a bad minute, or a token being refreshed
-                // underneath us. Only the first is permanent and we cannot tell them apart from
-                // here, so it is reported as unfinished and tried again on the next connection.
+                // A reward we do not own, Twitch failing, or a token being refreshed. Only the first
+                // is permanent and they cannot be told apart here, so the sweep reports unfinished.
                 AppLog.Warn($"Pets: kunde inte läsa kön för belöning {rewardId}: {ex.Message}");
                 complete = false;
                 continue;
@@ -338,19 +300,13 @@ public sealed class RedemptionLedger : IDisposable
             foreach (QueuedRedemption redemption in queued)
             {
                 if (redemption.RedeemedAt >= listeningSince) continue;
-                // Already ours, already alive on the lawn. The cutoff alone cannot rule this out:
-                // EventSub can deliver a redemption made a moment before we finished subscribing,
-                // and refunding a pet that is walking about right now would be the sweep undoing
-                // the very path it exists to back up.
+                // Already tracked, with its pet on the lawn. The cutoff alone cannot rule this out:
+                // EventSub can deliver a redemption made a moment before subscribing finished.
                 lock (_gate)
                 {
                     if (_pending.ContainsKey(redemption.Id)) continue;
                 }
-                // Somebody else's to settle – a reading still waiting on the streamer. Same reason
-                // as the check above, for a queue this ledger cannot see into.
                 if (ClaimedElsewhere?.Invoke(redemption.Id) == true) continue;
-                // A refund that does not go through here is not lost: AnswerAsync puts the entry
-                // back with its verdict attached, and the timer keeps trying.
                 await AnswerAsync(
                     new Entry(redemption.Id, rewardId, string.Empty, redemption.UserName, redemption.Cost, DateTimeOffset.UtcNow),
                     RedemptionStatus.Canceled,
@@ -362,8 +318,7 @@ public sealed class RedemptionLedger : IDisposable
 
     /// <summary>
     /// Lets everything still waiting go without answering Twitch – the app is closing, or has left
-    /// the channel. The redemptions stay in the queue, where the streamer can work them by hand,
-    /// which is a better ending than a refund fired off while the window is disappearing.
+    /// the channel. The redemptions stay in Twitch's queue, where the streamer can work them by hand.
     /// </summary>
     public void Reset()
     {
@@ -375,10 +330,7 @@ public sealed class RedemptionLedger : IDisposable
         }
     }
 
-    /// <summary>
-    /// One round of verdicts. Internal rather than private so the tests can drive it a step at a
-    /// time instead of waiting on the timer.
-    /// </summary>
+    /// <summary>One round of verdicts. A call that overlaps a round still running returns at once.</summary>
     internal async Task TickAsync()
     {
         // The timer keeps firing while a slow round of API calls is still going; a second pass over
@@ -396,12 +348,11 @@ public sealed class RedemptionLedger : IDisposable
                 {
                     if (entry.Verdict is { } verdict)
                     {
-                        // Already judged; it is only here because telling Twitch did not go through.
+                        // Already judged; a retry of a verdict Twitch has not taken yet.
                         due.Add((entry, verdict, entry.Reason));
                     }
                     else if (now >= entry.ExpiresAt)
                     {
-                        // Lived its full time with somebody watching: the points are earned.
                         due.Add((entry, RedemptionStatus.Fulfilled, "peten levde klart"));
                     }
                     else if (overlayLost)
@@ -410,9 +361,8 @@ public sealed class RedemptionLedger : IDisposable
                     }
                     else if (!entry.Shown && now - entry.SpawnedAt > _timings.AckGrace)
                     {
-                        // The frame went out and no overlay reported drawing it. This is the case
-                        // that started all of this: a browser source that is connected but never
-                        // came up properly.
+                        // The frame went out and no overlay reported drawing it: a browser source
+                        // that is connected but never came up properly.
                         due.Add((entry, RedemptionStatus.Canceled, "overlayen ritade aldrig peten"));
                     }
                     else
@@ -428,8 +378,7 @@ public sealed class RedemptionLedger : IDisposable
         }
         catch (Exception ex)
         {
-            // A timer callback that throws takes the process with it, and this one runs while the
-            // streamer is live.
+            // A timer callback that throws takes the process with it.
             AppLog.Error("Pets: fel i återbetalningsrundan", ex);
         }
         finally
@@ -447,23 +396,16 @@ public sealed class RedemptionLedger : IDisposable
         }
         catch (TwitchNotPermittedException ex)
         {
-            // Not ours to answer: the reward was made in the dashboard after all, the client id has
-            // changed, or the reward is gone. Retrying cannot fix any of those.
+            // Not ours to answer: the reward was made in the dashboard, the client id has changed,
+            // or the reward is gone. Retrying cannot fix any of those.
             AppLog.Warn($"Pets: Twitch nekade svaret på inlösen {entry.RedemptionId} – belöningen är inte skapad av appen längre. {ex.Message}");
             return;
         }
         catch (Exception ex)
         {
-            // Everything else is put back and tried again next round: Twitch unhappy, Twitch not
-            // there at all, or a token being refreshed underneath us – a logout mid-round throws
-            // TwitchAuthException from a layer below this one, and it used to travel past a narrow
-            // catch list and take the entry with it.
-            //
-            // Caught by type rather than by list on purpose. The entry has already been taken out
-            // of the pending set by the time we get here, so anything that escapes loses it for
-            // good, and what that costs is a viewer who paid for a pet nobody saw and never hears
-            // about it again. A bug swallowed into a retry is the cheaper mistake, and the log
-            // still carries it.
+            // Everything else is put back and retried next round. Deliberately a catch-all: the
+            // entry has already left the pending set, so an exception that escaped (a logout
+            // mid-round throws TwitchAuthException from a layer below) would lose it for good.
             entry.Attempts++;
             if (entry.Attempts < MaxAttempts)
             {
@@ -484,7 +426,7 @@ public sealed class RedemptionLedger : IDisposable
         Answered?.Invoke(new RedemptionNotice(refund, entry.ViewerName, entry.Cost, reason, entry.Subject, entry.RedemptionId));
     }
 
-    /// <summary>Takes the refunded pet off the lawn, so nothing paid back is left walking about.</summary>
+    /// <summary>Takes the refunded pet off the lawn.</summary>
     private void SendHome(Entry entry)
     {
         if (entry.PetId.Length == 0) return;

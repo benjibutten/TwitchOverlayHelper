@@ -45,8 +45,8 @@ public partial class App : Application
         InstallCrashHandlers();
         bool startMinimized = e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase);
 
-        // Create the activation event before claiming the mutex. This removes the startup
-        // race where a second process can see the mutex before the first can be signalled.
+        // Created before the mutex is claimed, so a second process can never see the mutex
+        // before the first can be signalled.
         _activateExistingInstanceEvent = new EventWaitHandle(
             initialState: false,
             mode: EventResetMode.AutoReset,
@@ -93,8 +93,8 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// The automatic check, held back until the app has settled. Connecting to chat is what the first
-    /// seconds after launch are for, and an update dialog on top of that is in the way.
+    /// Runs the automatic update check once the app has settled, so its dialog does not land on top
+    /// of connecting to chat.
     /// </summary>
     private static async Task CheckForUpdatesAfterStartupAsync(Window owner)
     {
@@ -127,26 +127,22 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// The three ways an exception can end this process without anyone being told, wired to the log
-    /// before anything else runs. Until this existed the app simply vanished: no window, no dialog,
-    /// no tray icon, nothing on disk – which is indistinguishable from someone having closed it.
+    /// Starts the log session and logs the three ways an exception can end this process without
+    /// anyone being told.
     /// </summary>
     private void InstallCrashHandlers()
     {
         AppLog.StartSession();
 
-        // An exception in a UI callback – a click, a timer tick, anything posted with BeginInvoke.
-        // Marked handled on purpose: this app's job is to keep running while someone is live, and a
-        // stray exception in one callback is not a reason to take the overlay off the stream. It is
-        // written down instead, which is the part that was missing.
+        // An exception in a UI callback. Marked handled on purpose: a stray exception in one
+        // callback must not take the overlay off the stream while someone is live.
         DispatcherUnhandledException += (_, args) =>
         {
             AppLog.Error("Ohanterat fel på UI-tråden (appen fortsätter köra).", args.Exception);
             args.Handled = true;
         };
 
-        // Nothing can stop this one – the process is already on its way down. Logged so the next
-        // run's file starts with the reason the previous one ended.
+        // The process is already on its way down; logged so the reason it ended is on disk.
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             AppLog.Error("Ohanterat fel – appen avslutas.", args.ExceptionObject as Exception);
 

@@ -4,12 +4,12 @@ namespace TwitchOverlayHelper.Twitch;
 
 /// <summary>
 /// How the logged-in account looks in the joined channel, as Twitch describes it in USERSTATE.
-/// It is the only description we ever get of ourselves: our own messages never come back down the
-/// connection that sent them, so a line written from the dock has to be dressed in this.
+/// Our own messages never come back down the connection that sent them, so a line written from
+/// the dock is dressed in this.
 /// </summary>
 /// <param name="MessageId">
-/// Twitch's id for the message this USERSTATE answers, when it sends one at all. Nullable rather
-/// than assumed: without it the line is ours to show but not ours to pin or delete through Helix.
+/// Twitch's id for the message this USERSTATE answers. Null when Twitch sends none; the line can
+/// then be shown but not pinned or deleted through Helix.
 /// </param>
 internal sealed record UserState(string? MessageId, string? DisplayName, string? Color, IReadOnlyList<ChatBadge> Badges)
 {
@@ -63,17 +63,16 @@ internal static class IrcMessageParser
             RewardId = EmptyToNull(tags.GetValueOrDefault("custom-reward-id")),
             // A cheer is an ordinary message that happens to carry bits; Twitch sends no notice for it.
             Bits = ParseCount(tags.GetValueOrDefault("bits")),
-            // The one power-up IRC does tell us about. Undocumented but sent in practice, and worth
-            // reading here rather than over EventSub: this way a message effect shows for a viewer
-            // who is logged out, in someone else's channel, exactly as it does for the broadcaster.
+            // Undocumented but sent in practice. Read from IRC rather than EventSub so the effect
+            // also shows when logged out or in someone else's channel.
             MessageEffectId = EmptyToNull(tags.GetValueOrDefault("animation-id"))
         };
         return true;
     }
 
     /// <summary>
-    /// Reads the reply-parent-* tags. Twitch sends them on every message written through the reply
-    /// button, and only then, so their absence is what says "this is a fresh line".
+    /// Reads the reply-parent-* tags, which Twitch sends only on messages written through the reply
+    /// button. Returns null for a message that is not a reply.
     /// </summary>
     internal static ChatReply? ParseReply(Dictionary<string, string> tags)
     {
@@ -89,11 +88,10 @@ internal static class IrcMessageParser
     }
 
     /// <summary>
-    /// Cuts the "@name " that Twitch pastes onto the front of every reply. The tags already say who
-    /// is being answered and the views show it on a line of their own, so leaving the copy in place
-    /// would say the same thing twice – and would make "@name !pet" miss the command it starts with.
-    /// The name is matched against both the display name and the login, because Twitch writes
-    /// whichever of the two the sender's client used.
+    /// Cuts the "@name " that Twitch pastes onto the front of every reply, shifting the emote and
+    /// GIF spans to match, so a reply like "@name !pet" still starts with its command. Returns
+    /// whether a mention was removed. Matches the display name or the login, since Twitch writes
+    /// whichever the sender's client used.
     /// </summary>
     internal static bool StripReplyMention(
         ref string text,
@@ -162,9 +160,8 @@ internal static class IrcMessageParser
 
     /// <summary>
     /// Parses USERSTATE, which Twitch sends when we join a channel and again after every line we
-    /// send that it accepts. Two things make it worth reading: it says how we look in this room, and
-    /// its arrival is the only confirmation that a message actually went out – a line Twitch refuses
-    /// is answered with a NOTICE and no USERSTATE at all.
+    /// send that it accepts. Its arrival is the only confirmation that a message went out: a
+    /// refused line is answered with a NOTICE and no USERSTATE.
     /// </summary>
     public static bool TryParseUserState(string line, out UserState? state)
     {
@@ -188,14 +185,10 @@ internal static class IrcMessageParser
     }
 
     /// <summary>
-    /// A NOTICE saying a line we sent was not delivered – banned, timed out, slow mode, followers
-    /// only, a duplicate, the rate limit. Twitch marks exactly those with a msg-id in the
-    /// <c>msg_*</c> family, and answers a refused PRIVMSG with this and nothing else: no USERSTATE
-    /// ever follows, so without reading it a send can only sit out its timeout.
-    ///
-    /// <para>The same NOTICE command also carries things about the room – "slow mode on",
-    /// "this room is now in emote-only mode" – which say nothing about our message. The msg-id is
-    /// what tells the two apart, so a notice without one is not a refusal.</para>
+    /// Parses a NOTICE saying a line we sent was not delivered – banned, timed out, slow mode,
+    /// followers only, a duplicate, the rate limit. Twitch marks those with a msg-id in the
+    /// <c>msg_*</c> family and sends no USERSTATE after them. Room notices such as "slow mode on"
+    /// use the same command without that msg-id and are not refusals.
     /// </summary>
     public static bool TryParseSendRefusal(string line, out string? reason)
     {
@@ -266,9 +259,8 @@ internal static class IrcMessageParser
     }
 
     /// <summary>
-    /// Parses USERNOTICE, which is how subs, raids and announcements reach IRC. Anything with a
-    /// msg-id we do not recognise still comes back as an event carrying Twitch's own system-msg,
-    /// so a new notice type shows up as a readable line rather than being dropped on the floor.
+    /// Parses USERNOTICE, which is how subs, raids and announcements reach IRC. An unrecognised
+    /// msg-id comes back as <see cref="ChatEventType.Other"/> carrying Twitch's own system-msg.
     /// </summary>
     public static bool TryParseUserNotice(string line, out ChatEvent? chatEvent)
     {
@@ -336,8 +328,7 @@ internal static class IrcMessageParser
         "giftpaidupgrade" or "anongiftpaidupgrade" or "primepaidupgrade" => ChatEventType.SubUpgrade,
         "raid" => ChatEventType.Raid,
         "unraid" => ChatEventType.Unraid,
-        // Announcements are sent in practice but are missing from Twitch's IRC documentation, so
-        // this msg-id rests on observation rather than on a contract.
+        // Sent in practice but missing from Twitch's IRC documentation.
         "announcement" => ChatEventType.Announcement,
         "bitsbadgetier" => ChatEventType.BitsBadge,
         "viewermilestone" when tags.GetValueOrDefault("msg-param-category") == "watch-streak" => ChatEventType.WatchStreak,
@@ -376,11 +367,9 @@ internal static class IrcMessageParser
     }
 
     // Tag format: "0-33|joSNxeswxuc74Juo8X|https://media4.giphy.com/media/...". Ranges are
-    // inclusive and counted the way the emote tag counts – in Unicode code points – so the same map
-    // turns them into UTF-16 indices. Twitch documents no escaping for the address it hands over
-    // and asks that it be used unchanged, which is why nothing here touches it beyond checking that
-    // it is an https URL: the machine that renders chat is the streamer's own, and a line from IRC
-    // must not be able to point it at just any scheme.
+    // inclusive and counted in Unicode code points, like the emote tag. Twitch asks that the
+    // address be used unchanged; it is only checked to be https, so a line from IRC cannot point
+    // the streamer's machine at another scheme.
     internal static IReadOnlyList<GifSpan> ParseGifs(string? raw, string text)
     {
         if (string.IsNullOrWhiteSpace(raw)) return Array.Empty<GifSpan>();
@@ -410,10 +399,8 @@ internal static class IrcMessageParser
     }
 
     /// <summary>
-    /// Cuts the gifs tag into its entries. Twitch separates them with a comma, which is also a
-    /// character a query string may legally contain – so a comma only starts a new entry when what
-    /// follows it opens one, "digits-digits|". Anything else is given back to the address it came
-    /// from rather than turning one GIF into two unreadable halves.
+    /// Cuts the gifs tag into its entries. Twitch separates them with a comma, which a query
+    /// string may also contain, so a comma only starts a new entry when "digits-digits|" follows.
     /// </summary>
     private static List<string> SplitGifEntries(string raw)
     {
@@ -440,14 +427,12 @@ internal static class IrcMessageParser
         Uri.TryCreate(value, UriKind.Absolute, out Uri? url) && url.Scheme == Uri.UriSchemeHttps;
 
     /// <summary>
-    /// Where every code point in the text begins, counted in UTF-16 indices, with the length of the
-    /// text as a final entry so the character after the last one has a place too. That is what lets
-    /// a Twitch range, whose end is inclusive and counted in code points, be read as map[end + 1].
+    /// The UTF-16 index where each code point of the text begins, with the text's length as a
+    /// final entry so an inclusive Twitch range end can be read as map[end + 1].
     ///
-    /// <para>Callers bound that end against <c>Length - 1</c> rather than testing <c>end + 1</c>:
-    /// the range comes off the wire, and an end of <see cref="int.MaxValue"/> makes <c>end + 1</c>
-    /// wrap round to a negative number that passes any upper bound and then indexes the map off its
-    /// front.</para>
+    /// <para>Callers must bound <c>end</c> against <c>Length - 1</c> rather than testing
+    /// <c>end + 1</c>: the range comes off the wire, and <see cref="int.MaxValue"/> + 1 wraps
+    /// negative and passes any upper bound.</para>
     /// </summary>
     private static int[] BuildCodePointIndexMap(string text)
     {
@@ -479,12 +464,6 @@ internal static class IrcMessageParser
 
     /// <summary>
     /// What was said, taken from after the channel name. Null when the line carries no text at all.
-    ///
-    /// <para>The leading ":" is optional here on purpose. IRC only requires it when the trailing
-    /// parameter contains a space, and Twitch's own connection always sends it – but the
-    /// recent-messages service rebuilds its stored lines without it for single-word messages, and
-    /// insisting on the colon quietly dropped about one fetched line in eight. Everything else about
-    /// the line is identical, so the colon is stripped when present and not missed when absent.</para>
     /// </summary>
     /// <param name="channelAt">Index of the first character of the channel name.</param>
     private static string? ReadTrailing(string line, int channelAt)
@@ -492,17 +471,16 @@ internal static class IrcMessageParser
         int channelEnd = line.IndexOf(' ', channelAt);
         if (channelEnd < 0) return null;
 
+        // The leading ":" is optional: Twitch always sends it, but the recent-messages service
+        // omits it for single-word messages, as IRC allows.
         string trailing = line[(channelEnd + 1)..];
         return trailing.StartsWith(':') ? trailing[1..] : trailing;
     }
 
     /// <summary>
-    /// Whether Twitch marked the sender as a moderator of this room. The mod tag is the plain answer
-    /// and rides along on every PRIVMSG and USERSTATE; user-type says the same thing in words and is
-    /// read as a fallback for the same reason we read the tag at all – one channel of the answer can
-    /// go missing, and the badges cannot stand in for it. Neither is set for the broadcaster: Twitch
-    /// does not count the owner as a mod of their own channel, which is why callers ask about the
-    /// broadcaster badge separately.
+    /// Whether Twitch marked the sender as a moderator of this room, from the mod tag with
+    /// user-type as a fallback. False for the broadcaster: Twitch does not count the owner as a mod
+    /// of their own channel, so callers check the broadcaster badge separately.
     /// </summary>
     private static bool ReadModTag(Dictionary<string, string> tags) =>
         tags.GetValueOrDefault("mod") == "1" || tags.GetValueOrDefault("user-type") == "mod";

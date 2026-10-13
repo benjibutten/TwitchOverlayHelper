@@ -1,10 +1,9 @@
 namespace TwitchOverlayHelper.Pets;
 
 /// <summary>
-/// How rare a winnable pet is in the lucky spin, as a small set of named tiers rather than a free
-/// number. Names because they are written by hand into pet.json and shown in a dropdown; a weight
-/// typo of 1000 instead of 100 would silently drown every other pet, while an unknown name here
-/// just becomes "vanlig".
+/// How rare a winnable pet is in the lucky spin, as a small set of named tiers. Names rather than
+/// numeric weights because they are written by hand into pet.json: a mistyped weight would skew
+/// the whole draw, while an unknown name just becomes "vanlig".
 /// </summary>
 public static class PetRarity
 {
@@ -17,9 +16,8 @@ public static class PetRarity
     public static readonly IReadOnlyList<string> All = [Common, Uncommon, Rare, Legendary];
 
     /// <summary>
-    /// The tier's share of the draw, relative to the others in the same spin. A legendary next to a
-    /// common wins roughly one time in thirty-four – rare enough to be an event, common enough that
-    /// a channel actually sees one.
+    /// The tier's share of the draw, relative to the others in the same spin: one legendary next to
+    /// one common wins roughly one time in thirty-four.
     /// </summary>
     public static int Weight(string rarity) => Normalize(rarity) switch
     {
@@ -29,7 +27,7 @@ public static class PetRarity
         _ => 100
     };
 
-    /// <summary>The tier a hand-written value means, with everything unrecognised read as common.</summary>
+    /// <summary>The canonical tier name for a value, ignoring case; anything unrecognised is common.</summary>
     public static string Normalize(string? rarity)
     {
         string trimmed = (rarity ?? string.Empty).Trim();

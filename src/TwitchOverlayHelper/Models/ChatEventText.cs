@@ -29,8 +29,7 @@ public static class ChatEventText
             ? $"{chatEvent.DisplayName} skickade ett firande för {chatEvent.Bits} bits"
             : $"{chatEvent.DisplayName} skickade ett firande",
         ChatEventType.HypeTrainBegin => $"{TrainName(chatEvent.HypeKind, chatEvent.HypeIsShared)} igång{LevelSuffix(chatEvent.HypeLevel)}",
-        // The card is one line, so the biggest contributor rides along in it rather than in a list
-        // of its own the way the dock's strip can afford.
+        // The card is one line, so the top contributor rides along in it.
         ChatEventType.HypeTrainEnd => TrainEnded(
             chatEvent.HypeKind, chatEvent.HypeIsShared, chatEvent.HypeLevel, chatEvent.HypeTotal,
             chatEvent.TopContributions.Count > 0 ? chatEvent.TopContributions[0] : null),
@@ -39,8 +38,7 @@ public static class ChatEventText
     };
 
     /// <summary>
-    /// A redemption is only worth a line if it can name the reward. Without the title all we have
-    /// is a GUID, which tells a reader nothing – so it says "en belöning" instead of showing it.
+    /// Names the reward by its title. Without one all we have is a GUID, so it says "en belöning".
     /// </summary>
     private static string Redemption(ChatEvent chatEvent)
     {
@@ -51,8 +49,8 @@ public static class ChatEventText
     }
 
     /// <summary>
-    /// The one line on the dock's hype train strip. The contributors get a row of their own there,
-    /// so the headline stays a headline and leaves them out.
+    /// The one line on the dock's hype train strip. Leaves the contributors out: they get a row of
+    /// their own there.
     /// </summary>
     public static string DescribeHypeTrain(HypeTrainState train) => train.HasEnded
         ? TrainEnded(train.Kind, train.IsShared, train.Level, train.Total, top: null)
@@ -63,8 +61,8 @@ public static class ChatEventText
         train.Goal > 0 ? $"{Number(train.Progress)} / {Points(train.Goal)}" : Points(train.Total);
 
     /// <summary>
-    /// One contributor. Twitch writes a subscription as its tier price – 500, 1000 or 2500 – which
-    /// is an encoding and not a number anyone should be shown, so it is spelled out as a tier.
+    /// One contributor. Twitch writes a subscription as its tier price – 500, 1000 or 2500 – so it
+    /// is spelled out as a tier.
     /// </summary>
     public static string DescribeContribution(HypeTrainContribution contribution)
     {
@@ -83,8 +81,7 @@ public static class ChatEventText
     }
 
     /// <summary>
-    /// What to call the train. Version 2 of the subscription is what tells the special ones apart,
-    /// and a golden Kappa train is exactly the thing a viewer wants to know they were there for.
+    /// What to call the train. Version 2 of the subscription is what tells the special ones apart.
     /// </summary>
     private static string TrainName(string? kind, bool shared)
     {

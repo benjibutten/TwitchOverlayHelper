@@ -26,17 +26,16 @@ public sealed record PetDefinition(
 
 /// <summary>
 /// Every pet species the overlay can show, read from the user's pets folder. The pets that ship
-/// with the app are written there on first start rather than kept in code, so a streamer can
-/// recolour Blaze or give Owly a new name with a text editor. The folder layout is Codex's
-/// hatch-pet layout – <c>&lt;pet-id&gt;/pet.json</c> plus a drawing – so a pet hatched there can be
-/// dropped in unchanged.
+/// with the app are written there on first start, so the streamer can edit them. The folder layout
+/// is Codex's hatch-pet layout – <c>&lt;pet-id&gt;/pet.json</c> plus a drawing – so a pet hatched
+/// there can be dropped in unchanged.
 /// </summary>
 public sealed class PetCatalog
 {
-    /// <summary>Pratbubblor for a pet whose manifest names none.</summary>
+    /// <summary>Speech-bubble emoji for a pet whose manifest names none.</summary>
     private static readonly IReadOnlyList<string> DefaultEmoji = ["✨", "💬"];
 
-    /// <summary>Last resort when even the shipped pets are unreadable, so a spawn never crashes.</summary>
+    /// <summary>Last resort when even the shipped pets are unreadable.</summary>
     private static readonly PetDefinition Placeholder = new("robo", "Robo", string.Empty, [], DefaultEmoji, IsDefault: true);
 
     /// <summary>Records which shipped pets have been written out, so a deleted pet stays deleted.</summary>
@@ -69,7 +68,7 @@ public sealed class PetCatalog
     /// <summary>Human-readable notes about pets that could not be loaded.</summary>
     public IReadOnlyList<string> Warnings { get { lock (_lock) return _warnings; } }
 
-    /// <summary>Re-reads the folder, so an edited or newly dropped-in pet shows up without a restart.</summary>
+    /// <summary>Re-reads the folder.</summary>
     public void Reload()
     {
         (IReadOnlyList<PetDefinition> pets, Dictionary<string, PetDefinition> byAlias,
@@ -83,15 +82,12 @@ public sealed class PetCatalog
         }
     }
 
-    /// <summary>The pets the lucky spin can hand out. Empty means there is nothing to win at all.</summary>
+    /// <summary>The pets the lucky spin can hand out.</summary>
     public IReadOnlyList<PetDefinition> Winnable => Pets.Where(pet => pet.WinOnly).ToArray();
 
     /// <summary>
-    /// Writes a pet's spin settings into its own pet.json, and reloads so the change is live.
-    ///
-    /// <para>The file is edited as a document rather than re-serialized from what this app read of
-    /// it: pet.json is Codex's format and carries fields this app has no properties for, and a
-    /// round-trip through <see cref="PetManifest"/> would silently drop every one of them.</para>
+    /// Writes a pet's spin settings into its own pet.json and reloads the catalog. Returns false
+    /// with <paramref name="error"/> set when the file cannot be edited.
     /// </summary>
     public bool TrySetWinnable(string id, bool winOnly, string rarity, out string error) =>
         TryEditManifest(id, manifest =>
@@ -101,16 +97,11 @@ public sealed class PetCatalog
         }, out error);
 
     /// <summary>
-    /// Gives a pet a new id and a new display name, in its own pet.json.
+    /// Gives a pet a new id and a new display name in its own pet.json, and reloads the catalog. The
+    /// folder keeps its name. Wins are booked against the id, so a caller that changes it has to
+    /// move them along (<c>SpinWinStore.RenamePet</c>).
     ///
-    /// <para>The folder keeps the name it has: the id in the manifest is what the app goes by, and
-    /// renaming the folder underneath a running app would pull the spritesheet out from under every
-    /// pet already on screen. What the id does carry is ownership – wins are booked against it – so
-    /// a caller that changes it has to move those along with it.</para>
-    ///
-    /// <para>Refused when the new id or name already belongs to another pet, alias included: names
-    /// are looked up in one shared table where the first pet wins, and a duplicate would quietly
-    /// make one of the two unreachable by name instead of saying so.</para>
+    /// <para>Refused when the new id or name already belongs to another pet, alias included.</para>
     /// </summary>
     public bool TryRename(string id, string newId, string newName, out string error)
     {
@@ -129,7 +120,8 @@ public sealed class PetCatalog
             return false;
         }
 
-        // An unchanged id is not a clash with itself, and neither is an unchanged name.
+        // Names share one lookup table where the first pet wins, so a clash would make one of the
+        // two pets unreachable by name. An unchanged id or name is not a clash with itself.
         string[] wanted = string.Equals(newId, id, StringComparison.OrdinalIgnoreCase)
             ? [newName]
             : [newId, newName];
@@ -152,10 +144,7 @@ public sealed class PetCatalog
         }, out error);
     }
 
-    /// <summary>
-    /// Changes one pet's pet.json and reloads so the change is live. The shared half of every edit
-    /// this app makes to a manifest.
-    /// </summary>
+    /// <summary>Changes one pet's pet.json and reloads the catalog.</summary>
     private bool TryEditManifest(string id, Action<JsonObject> edit, out string error)
     {
         error = string.Empty;
@@ -163,14 +152,15 @@ public sealed class PetCatalog
         lock (_lock) manifestPath = _manifestPaths.GetValueOrDefault(id);
         if (manifestPath is null || !File.Exists(manifestPath))
         {
-            // Only the built-in fallback pets lack a file – the folder itself was unreadable, and
-            // there is nowhere durable to write the choice.
+            // Only the built-in fallback pets, used when the folder is unreadable, lack a file.
             error = $"Peten \"{id}\" har ingen pet.json att spara i.";
             return false;
         }
 
         try
         {
+            // Edited as a JSON document: pet.json is Codex's format, and a round-trip through
+            // PetManifest would drop every field this app has no property for.
             JsonNode document = JsonNode.Parse(File.ReadAllText(manifestPath),
                 documentOptions: new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true })
                 ?? new JsonObject();
@@ -201,9 +191,9 @@ public sealed class PetCatalog
     }
 
     /// <summary>
-    /// Finds the species named somewhere in a redemption message. The viewer writes free text
-    /// ("en blaze tack!"), so every name is looked for inside the line rather than compared to it.
-    /// Names are matched whole, which is what lets a "space-cat" or a "Rostiga Rolf" be asked for.
+    /// Finds the species named somewhere in free text ("en blaze tack!"). Names match as whole
+    /// words and may themselves contain spaces or hyphens ("space-cat", "Rostiga Rolf"). The name
+    /// that starts first wins; of two starting in the same place, the longer.
     /// </summary>
     public PetDefinition? ResolveFromText(string? text)
     {
@@ -216,8 +206,8 @@ public sealed class PetCatalog
             foreach ((string alias, PetDefinition pet) in _byAlias)
             {
                 int at = IndexOfWord(text, alias);
-                // The first species the viewer names is the one they get; where two names start in
-                // the same place the longer one wins, so "space cat" beats a plain "space".
+                // Earliest start wins; at the same start the longer name does, so "space cat" beats
+                // "space".
                 if (at < 0 || at > bestAt || (at == bestAt && alias.Length <= bestLength)) continue;
                 (best, bestAt, bestLength) = (pet, at, alias.Length);
             }
@@ -227,12 +217,10 @@ public sealed class PetCatalog
 
     /// <summary>
     /// The full pick order for a spawn: the species the viewer asked for, else the streamer's
-    /// default, else a random one so nobody ever gets an empty hand.
+    /// default, else a random one.
     ///
-    /// <para><paramref name="mayUse"/> is who this viewer is allowed to be handed. Left out, no
-    /// win-only pet is ever chosen – asking for one by name, having it as the channel default and
-    /// drawing it at random are all ways somebody who never won it would end up with it. A caller
-    /// who knows the viewer's wins passes their own answer instead.</para>
+    /// <para><paramref name="mayUse"/> filters which species this viewer may be handed, at every
+    /// step. Left out, no win-only pet is ever chosen.</para>
     /// </summary>
     public PetDefinition Choose(string? text, string? defaultPetId, Func<PetDefinition, bool>? mayUse = null)
     {
@@ -245,7 +233,7 @@ public sealed class PetCatalog
         return pets.Length > 0 ? pets[Random.Shared.Next(pets.Length)] : Placeholder;
     }
 
-    /// <summary>Absolute spritesheet path for a spritesheet pet, for the server's sprite endpoint.</summary>
+    /// <summary>Absolute spritesheet path for a spritesheet pet.</summary>
     public bool TryGetSpriteFile(string id, out string path)
     {
         path = string.Empty;
@@ -256,8 +244,7 @@ public sealed class PetCatalog
     }
 
     /// <summary>
-    /// The drawing for a pet, as the overlay asks for it. Read on every request rather than cached,
-    /// so "Ladda om pets" after an edit is enough to see the change.
+    /// The SVG drawing for a pet, read from disk on every call. False for a spritesheet pet.
     /// </summary>
     public bool TryGetBody(string id, out string svg)
     {
@@ -275,15 +262,14 @@ public sealed class PetCatalog
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* fall back below */ }
         }
 
-        // The folder could not be written or was pulled out from under us; the copy inside the exe
-        // keeps the overlay from showing an empty patch of ground.
+        // The file is missing or unreadable; fall back to the copy embedded in the exe.
         svg = PetDefaults.Body(pet.Id);
         return svg.Length > 0;
     }
 
     /// <summary>
-    /// Where <paramref name="word"/> stands on its own in the text, or -1. Matching whole words is
-    /// what keeps "blazer" from spawning a Blaze, while still finding one in "en BLAZE, tack!".
+    /// Where <paramref name="word"/> stands on its own in the text, or -1: "blazer" does not match
+    /// "blaze", "en BLAZE, tack!" does.
     /// </summary>
     private static int IndexOfWord(string text, string word)
     {
@@ -298,7 +284,7 @@ public sealed class PetCatalog
         return -1;
     }
 
-    /// <summary>Outside the text, or a character no name can run into: punctuation, space, emoji.</summary>
+    /// <summary>True when the index is outside the text or at a character that is not a letter or digit.</summary>
     private static bool IsEdge(string text, int index) =>
         index < 0 || index >= text.Length || !char.IsLetterOrDigit(text[index]);
 
@@ -316,8 +302,7 @@ public sealed class PetCatalog
         }
         if (pets.Count == 0) pets.AddRange(Shipped());
 
-        // The pets that ship with the app keep first claim on their names, so a pet added later
-        // cannot quietly take over the "robo" every viewer already knows.
+        // The shipped pets sort first, which gives them first claim on their names in byAlias.
         pets = pets.OrderByDescending(pet => pet.IsDefault).ThenBy(pet => pet.Id, StringComparer.OrdinalIgnoreCase).ToList();
 
         var byAlias = new Dictionary<string, PetDefinition>(StringComparer.OrdinalIgnoreCase);
@@ -331,8 +316,8 @@ public sealed class PetCatalog
     }
 
     /// <summary>
-    /// Writes the shipped pets to the folder, once each. The marker file is what makes it once: a
-    /// pet the streamer deleted on purpose should not come back at the next start.
+    /// Writes the shipped pets to the folder, once each: the marker file records which have been
+    /// written, so a pet the streamer deleted does not come back.
     /// </summary>
     private void Seed(List<string> warnings)
     {
@@ -361,9 +346,8 @@ public sealed class PetCatalog
             }
             finally
             {
-                // Written before anything is allowed to go wrong further down the list: a pet that
-                // did reach the disk must be marked, or the next start writes over the edits the
-                // streamer has made to it in the meantime.
+                // In a finally so a failure further down the list still marks the pets that reached
+                // the disk; unmarked, the next start would overwrite the streamer's edits to them.
                 if (written.Count > 0) File.AppendAllLines(marker, written);
             }
 
@@ -391,7 +375,7 @@ public sealed class PetCatalog
         }
     }
 
-    /// <summary>The shipped pets, straight from the exe, for when the folder is unusable.</summary>
+    /// <summary>The shipped pets as embedded in the exe, for when the folder is unusable.</summary>
     private static IEnumerable<PetDefinition> Shipped()
     {
         foreach (PetSeed seed in PetDefaults.All)
@@ -403,7 +387,7 @@ public sealed class PetCatalog
         }
     }
 
-    /// <summary>Reads one pet folder. A broken pet becomes a warning, never a crash.</summary>
+    /// <summary>Reads one pet folder. A broken pet returns null and adds a warning.</summary>
     private static PetDefinition? LoadOne(string folder, List<string> warnings)
     {
         string folderName = Path.GetFileName(folder);
@@ -430,8 +414,7 @@ public sealed class PetCatalog
             return null;
         }
 
-        // A spritesheet wins over a drawing, so a hatch-pet folder behaves exactly as it did before
-        // pets were SVG files at all.
+        // A spritesheet wins over a drawing.
         string? sprite = Resolve(folder, manifest.SpritesheetPath ?? "spritesheet.webp", folderName, "spritesheetPath", warnings);
         string? body = sprite is null ? Resolve(folder, manifest.BodyPath ?? "body.svg", folderName, "bodyPath", warnings) : null;
         if (sprite is null && body is null)
@@ -444,8 +427,9 @@ public sealed class PetCatalog
     }
 
     /// <summary>
-    /// Turns a path out of pet.json into an absolute file inside the pet's own folder. The id ends
-    /// up in a URL, so the manifest must not be able to point the server at an arbitrary file.
+    /// Turns a path out of pet.json into an absolute file inside the pet's own folder, or null. A
+    /// path that escapes the folder is refused: the server serves this file, so the manifest must
+    /// not be able to point it at an arbitrary one.
     /// </summary>
     private static string? Resolve(string folder, string relative, string folderName, string field, List<string> warnings)
     {
@@ -484,7 +468,10 @@ public sealed class PetCatalog
     private static IReadOnlyList<string> Clean(string[]? values) =>
         (values ?? []).Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value.Trim()).ToArray();
 
-    /// <summary>The id is used in URLs and DOM lookups, so anything but simple characters is dropped.</summary>
+    /// <summary>
+    /// Lower-cases the id and drops everything but a–z, 0–9, '-' and '_': it is used in URLs and DOM
+    /// lookups.
+    /// </summary>
     public static string SanitizeId(string raw) =>
         new(raw.Trim().ToLowerInvariant().Where(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_').ToArray());
 

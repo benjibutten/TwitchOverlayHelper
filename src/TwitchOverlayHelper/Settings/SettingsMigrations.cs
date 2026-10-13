@@ -4,9 +4,8 @@ namespace TwitchOverlayHelper.Settings;
 /// <param name="From">The version the file was written in. 0 is anything from before this stamp existed.</param>
 /// <param name="To">The version it is in now.</param>
 /// <param name="FromFuture">
-/// The file was written by a newer build than this one. Nothing is migrated then – a step that
-/// only knows how to go forwards cannot be run backwards – and the settings this build has no
-/// property for are carried through untouched instead of being dropped on the next save.
+/// The file was written by a newer build than this one. Nothing is migrated then, and the settings
+/// this build has no property for are carried through untouched.
 /// </param>
 public sealed record SettingsMigrationResult(int From, int To, bool FromFuture)
 {
@@ -16,11 +15,9 @@ public sealed record SettingsMigrationResult(int From, int To, bool FromFuture)
 /// <summary>
 /// Brings a settings file written by an older build up to the shape this one expects.
 ///
-/// <para>The point is not the steps – so far there are none worth the name – it is having the
-/// place they go. Renaming a property or splitting one setting into two is otherwise a change that
-/// silently loses whatever the user had set, because <see cref="System.Text.Json"/> answers a
-/// property it does not recognise by ignoring it and the next save then writes the default back
-/// over it. With a version on the file, the old shape can be read once and carried over.</para>
+/// <para><see cref="System.Text.Json"/> ignores a property it does not recognise and the next save
+/// writes the default over it, so renaming or splitting a setting needs a step here that reads the
+/// old shape and carries it over.</para>
 ///
 /// <para>Every step must be safe to run on a file it has already run on: a save that failed after
 /// migrating, or a snapshot restored by hand, both bring the same file round a second time.</para>
@@ -31,14 +28,14 @@ public static class SettingsMigrations
     /// The shape this build writes. Raise it in the same commit that adds the step for it.
     ///
     /// <list type="bullet">
-    /// <item><description>0 – everything up to and including the first builds with a bot: no stamp on the file.</description></item>
-    /// <item><description>1 – the stamp itself, so later changes have something to migrate from.</description></item>
-    /// <item><description>2 – the lucky spin stopped paying back duplicates, so the two bot lines that
-    /// promised the points back are worded afresh where the streamer had left them as they were.</description></item>
-    /// <item><description>3 – the spin's win lines can say the tier the prize was drawn on, and the
-    /// two that announce a win are given the <c>{rarity}</c> wording where they were left untouched.</description></item>
-    /// <item><description>4 – a duplicate can be released onto the lawn instead of given away, and the
-    /// line that explains the choice names the <c>{release}</c> command where it was left untouched.</description></item>
+    /// <item><description>0 – no stamp on the file.</description></item>
+    /// <item><description>1 – the stamp itself.</description></item>
+    /// <item><description>2 – the lucky spin does not pay back duplicates; the two bot lines that
+    /// promised the points back are reworded where they were left at the default.</description></item>
+    /// <item><description>3 – the two lines that announce a spin win carry <c>{rarity}</c> where
+    /// they were left at the default.</description></item>
+    /// <item><description>4 – a duplicate can be released onto the lawn; the line that explains
+    /// the choice names the <c>{release}</c> command where it was left at the default.</description></item>
     /// </list>
     /// </summary>
     public const int CurrentVersion = 4;
@@ -48,9 +45,8 @@ public static class SettingsMigrations
         int from = settings.SchemaVersion;
         if (from > CurrentVersion) return new SettingsMigrationResult(from, from, FromFuture: true);
 
-        // Deliberately a loop over single steps rather than one big if: a file three versions old
-        // has to walk the same path a file one version old does, or the rarely-taken jump is the
-        // one nobody ever tries.
+        // Single steps in a loop, so a file three versions old walks the same path as a file one
+        // version old.
         for (int version = from; version < CurrentVersion; version++)
             Step(settings, version);
 
@@ -63,25 +59,18 @@ public static class SettingsMigrations
         switch (from)
         {
             case 0:
-                // Nothing to reshape: every property an unstamped file can hold is still read by
-                // the same name. The step exists so that version 1 means "seen and checked" rather
-                // than "never looked at".
+                // Nothing to reshape: every property an unstamped file can hold is read by the same name.
                 break;
 
             case 1:
-                // A duplicate win used to end in a refund when nobody was named in time, and two of
-                // the bot's lines said so out loud. It does not any more – the spin buys one chance
-                // to place the pet and nothing else – so a line the streamer never touched is put
-                // right rather than left promising points that will not come.
+                // A duplicate win is not refunded, so a default line promising the points back is replaced.
                 Reword(settings.Bot, BotFlow.SpinDuplicate,
                     "@{viewer} du vann {prize} – men den har du redan! Skriv \"{command} namn\" inom {minutes} min för att skänka den till någon, annars får du tillbaka poängen.");
                 Reword(settings.Bot, BotFlow.SpinGiftOwned, "@{viewer} @{target} har redan {prize} – välj någon annan.");
                 break;
 
             case 2:
-                // The prize's rarity is a value the bot can fill in now. A line the streamer never
-                // touched gets it; one they wrote themselves keeps their words, and {rarity} is
-                // there for them to add whenever they want it.
+                // The default win lines gain {rarity}.
                 Reword(settings.Bot, BotFlow.SpinWin, "🎉 @{viewer} vann {prize} i lyckosnurren!");
                 Reword(settings.Bot, BotFlow.SpinDuplicate,
                     "@{viewer} du vann {prize} – men den har du redan! Skriv \"{command} namn\" inom {minutes} min för att skänka den till någon, annars är chansen borta.");
@@ -95,9 +84,8 @@ public static class SettingsMigrations
     }
 
     /// <summary>
-    /// Puts one flow back on the wording this build ships with – but only where it still reads word
-    /// for word as the old default did. A template the streamer has made their own is theirs, and a
-    /// migration that overwrote it would be taking their words away to fix the app's.
+    /// Puts one flow on the wording this build ships with, but only where it reads word for word
+    /// as <paramref name="wasDefault"/>. A template the streamer has made their own is left alone.
     /// </summary>
     private static void Reword(BotSettings? bot, BotFlow flow, string wasDefault)
     {

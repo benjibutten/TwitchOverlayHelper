@@ -33,11 +33,11 @@ public sealed class SpinSettings
     /// <summary>How long the reel spins before it lands, seconds.</summary>
     public int SpinSeconds { get; set; } = 8;
 
-    /// <summary>The headline over the reel. The streamer's to word, like everything the viewers see.</summary>
+    /// <summary>The headline over the reel.</summary>
     public string Title { get; set; } = "Lyckosnurren";
 
     /// <summary>
-    /// How long a duplicate win waits for its winner to name a recipient before the points go back.
+    /// How long a duplicate win waits for its winner to name a recipient before the chance runs out.
     /// </summary>
     public int GiftTimeoutMinutes { get; set; } = 10;
 
@@ -49,8 +49,6 @@ public sealed class SpinSettings
 
     /// <summary>
     /// What anyone types to see the whole pool: every art the reel can land on and how rare each is.
-    /// The counterpart to <see cref="ListCommand"/> – that one answers "what do I have", this one
-    /// "what is there", which is the question somebody has to answer before the price looks worth it.
     /// </summary>
     public string PoolCommand { get; set; } = "!alla";
 
@@ -92,8 +90,7 @@ public sealed class SpinSettings
         // command yields, because the list command is the one viewers meet first.
         if (string.Equals(ListCommand, GiveCommand, StringComparison.OrdinalIgnoreCase))
             GiveCommand = string.Equals(ListCommand, "!ge", StringComparison.OrdinalIgnoreCase) ? "!skänk" : "!ge";
-        // The pool command yields to both for the same reason, and to a second-choice word that is
-        // free rather than one that would only collide again.
+        // The pool command yields to both, taking the first candidate word that is free.
         if (string.Equals(PoolCommand, ListCommand, StringComparison.OrdinalIgnoreCase)
             || string.Equals(PoolCommand, GiveCommand, StringComparison.OrdinalIgnoreCase))
             PoolCommand = FreeWord(["!alla", "!vinster", "!lista"], ListCommand, GiveCommand);

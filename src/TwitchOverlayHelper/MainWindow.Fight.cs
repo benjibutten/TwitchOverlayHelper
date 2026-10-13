@@ -9,8 +9,8 @@ using TwitchOverlayHelper.Web;
 namespace TwitchOverlayHelper;
 
 /// <summary>
-/// The Fajt tab: the wait screen where the streamer's characters fight it out. Everything here is
-/// pushed to an open wait screen as it changes, so the OBS source is set up once and never touched.
+/// The Fajt tab: the wait screen where the streamer's characters fight it out. Every change is
+/// pushed to an open wait screen, so the OBS source never needs a reload.
 /// </summary>
 public partial class MainWindow
 {
@@ -69,8 +69,8 @@ public partial class MainWindow
         outfit.Name.Length > 0 ? outfit.Name : outfit.Code == 1 ? "Standard" : $"Klädsel {outfit.Code}";
 
     /// <summary>
-    /// Changes with the file, so a sprite redrawn under the same id is fetched again rather than
-    /// taken from the browser's memory of the old one.
+    /// A cache-busting stamp that changes with the file, so a sprite redrawn under the same id is
+    /// fetched again. 0 when the file cannot be read.
     /// </summary>
     private static long Stamp(string file)
     {
@@ -217,8 +217,8 @@ public partial class MainWindow
         if (_loading || _populatingFight) return;
         FightDeleteTextButton.IsEnabled = SelectedSavedText() is not null;
         if (FightPresetBox.SelectedItem is not ComboBoxItem { Tag: FightText text }) return;
-        // Filled without going through the change handler twice, then saved and sent once. The
-        // choice stays in the list – that is what the delete button acts on.
+        // Filled with the change handler muted, then saved and sent once. The choice stays in the
+        // list, since that is what the delete button acts on.
         _populatingFight = true;
         try
         {
@@ -237,8 +237,8 @@ public partial class MainWindow
         if (_loading || _populatingFight) return;
         _settings.Fight.Headline = FightHeadlineBox.Text.Trim();
         _settings.Fight.Subline = FightSublineBox.Text.Trim();
-        // Once the words no longer match what is chosen, the list lets go of it: picking the same
-        // text again then fills the fields again, and the delete button cannot hit the wrong one.
+        // Edited words deselect the chosen text: picking it again refills the fields, and the
+        // delete button cannot hit a text that is not the one on screen.
         if (FightPresetBox.SelectedItem is ComboBoxItem { Tag: FightText chosen }
             && (chosen.Headline != _settings.Fight.Headline || chosen.Subline != _settings.Fight.Subline))
         {
@@ -304,9 +304,8 @@ public partial class MainWindow
         fight.CommandsEnabled = FightCommandsCheck.IsChecked == true;
         fight.ShowCommandHint = FightHintCheck.IsChecked == true;
         fight.ShowSupporters = FightSupportersCheck.IsChecked == true;
-        // The command words are taken when their box loses focus, not per keystroke: half-typed, a
-        // word passes through states – "!" alone, the other command's word – that would be cleaned
-        // into something the streamer never meant.
+        // The command words are taken when their box loses focus, not per keystroke: a half-typed
+        // word ("!" alone, the other command's word) would be cleaned into something unintended.
         if (int.TryParse(FightCooldownBox.Text.Trim(), out int seconds)) fight.CooldownSeconds = seconds;
         if (ParseSoloAssist(FightSoloAssistBox.Text) is { } solo) fight.SoloAssist = solo;
         fight.Normalize();

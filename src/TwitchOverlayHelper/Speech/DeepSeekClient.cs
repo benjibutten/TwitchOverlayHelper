@@ -7,9 +7,9 @@ using System.Text.Json;
 namespace TwitchOverlayHelper.Speech;
 
 /// <summary>
-/// Rewrites a Twitch user name into something a voice model can actually say. Twitch names are full
-/// of decorative x-es, doubled letters and shouted abbreviations that a TTS model would spell out
-/// letter by letter, which is exactly the noise this feature exists to remove.
+/// Rewrites a Twitch user name into something a voice model can say. Twitch names are full of
+/// decorative x-es, doubled letters and shouted abbreviations that a TTS model would otherwise
+/// spell out letter by letter.
 /// </summary>
 public sealed class DeepSeekClient(HttpClient httpClient)
 {
@@ -55,8 +55,8 @@ public sealed class DeepSeekClient(HttpClient httpClient)
                 new { role = "user", content = $"Användarnamn: {userName}" }
             },
             stream = false,
-            // DeepSeek V4 thinks by default. Reasoning about a single name would spend tokens – and the
-            // budget below – on deliberation the task does not need, and can eat the whole answer.
+            // DeepSeek V4 thinks by default, and reasoning tokens count against the budget below, so
+            // they can eat the whole answer.
             thinking = new { type = "disabled" },
             // The answer is one short line; a low temperature keeps the same name sounding the same.
             temperature = 0.3,

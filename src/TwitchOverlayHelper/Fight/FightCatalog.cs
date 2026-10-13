@@ -69,10 +69,10 @@ public sealed record ArenaDefinition(
     bool IsDefault);
 
 /// <summary>
-/// The fighters and arenas the wait screen can use, read from the user's fight folder. Built like
-/// the pets: what ships with the app is written out on first start and is then the streamer's own,
-/// and a new fighter is a folder dropped in next to the others – <c>fighters/&lt;id&gt;/fighter.json</c>
-/// with a <c>sprite.webp</c>, or <c>arenas/&lt;id&gt;/arena.json</c> with a picture.
+/// The fighters and arenas the wait screen can use, read from the user's fight folder. What ships
+/// with the app is written out on first start and is then the streamer's to edit; a new fighter is
+/// a folder dropped in next to the others – <c>fighters/&lt;id&gt;/fighter.json</c> with a
+/// <c>sprite.webp</c>, or <c>arenas/&lt;id&gt;/arena.json</c> with a picture.
 /// </summary>
 public sealed class FightCatalog
 {
@@ -91,7 +91,7 @@ public sealed class FightCatalog
         AllowTrailingCommas = true
     };
 
-    /// <summary>Where a transparent scene puts the feet and the walls – the old garage's numbers.</summary>
+    /// <summary>The transparent arena. Its floor and walls are also the defaults for an arena that names none.</summary>
     public static ArenaDefinition Transparent { get; } =
         new(TransparentArenaId, "Transparent – ingen bakgrund", "Bara fajten, streamen syns bakom.", null, 0.815, 0.09, 0.91, IsDefault: true);
 
@@ -120,7 +120,7 @@ public sealed class FightCatalog
     /// <summary>Human-readable notes about folders that could not be loaded.</summary>
     public IReadOnlyList<string> Warnings { get { lock (_lock) return _warnings; } }
 
-    /// <summary>Re-reads the folder, so a new fighter shows up without a restart.</summary>
+    /// <summary>Re-reads the folder.</summary>
     public void Reload()
     {
         var warnings = new List<string>();
@@ -161,7 +161,10 @@ public sealed class FightCatalog
 
     public ArenaDefinition ArenaOrFallback(string? id) => FindArena(id) ?? Arenas.FirstOrDefault(a => a.ImageFile is not null) ?? Transparent;
 
-    /// <summary>Only files the catalog itself resolved are served, so a URL cannot name any other.</summary>
+    /// <summary>
+    /// The strip for the fighter's ordinary look. Only files the catalog itself resolved are
+    /// returned, so a URL cannot name any other.
+    /// </summary>
     public bool TryGetFighterSprite(string id, out string path) => TryGetFighterSprite(id, 1, out path);
 
     /// <summary>The special attack's poses or its thrown prop. "special" or "prop"; anything else is not found.</summary>
@@ -380,8 +383,9 @@ public sealed class FightCatalog
     }
 
     /// <summary>
-    /// A path out of a manifest, as an absolute file inside that folder. The id ends up in a URL,
-    /// so a manifest must not be able to point the server at a file anywhere else.
+    /// A path out of a manifest, as an absolute file inside that folder, or null. A path that
+    /// escapes the folder is refused: the server serves this file, so a manifest must not be able
+    /// to point it anywhere else.
     /// </summary>
     private static string? Resolve(string folder, string relative, string folderName, string field, List<string> warnings)
     {
@@ -401,8 +405,8 @@ public sealed class FightCatalog
     }
 
     /// <summary>
-    /// Writes what ships with the app to the folder, once each. The marker is what makes it once: a
-    /// fighter the streamer deleted on purpose stays deleted.
+    /// Writes what ships with the app to the folder, once each: the marker file records what has
+    /// been written, so a fighter the streamer deleted stays deleted.
     /// </summary>
     private void Seed(List<string> warnings)
     {
@@ -479,8 +483,8 @@ public sealed class FightCatalog
 internal sealed record FightSeed(string Kind, string Id, IReadOnlyList<(string Name, byte[] Content)> Files);
 
 /// <summary>
-/// What the wait screen is born with. Inside the exe only until the first start, then ordinary
-/// files the streamer can change or delete like anything they added themselves.
+/// The fighters and arenas that ship with the app, embedded in the exe. <see cref="FightCatalog"/>
+/// writes them out as ordinary folders on first start.
 /// </summary>
 internal static class FightDefaults
 {

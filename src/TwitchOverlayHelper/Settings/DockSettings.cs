@@ -26,13 +26,12 @@ public sealed class DockSettings
     public bool ShowEmotes { get; set; } = true;
     /// <summary>
     /// Draws the GIFs tier 2 and tier 3 subscribers can send. Off leaves the line as Twitch worded
-    /// it – "[Yes GIF by Someone]" – which is a sentence in its own right, so nothing goes missing.
+    /// it – "[Yes GIF by Someone]".
     /// </summary>
     public bool ShowGifs { get; set; } = true;
     /// <summary>
-    /// Draws an emote a Gigantify power-up enlarged at its full size, on a row of its own. On by
-    /// default: someone spent bits to make it big, and shrinking it back would throw that away.
-    /// Off leaves the emote at reading size with a "⚡ förstorad" marker, for a calm column.
+    /// Draws an emote a Gigantify power-up enlarged at its full size, on a row of its own. Off
+    /// leaves it at reading size with a "⚡ förstorad" marker.
     /// </summary>
     public bool GiantEmotes { get; set; } = true;
 
@@ -44,8 +43,8 @@ public sealed class DockSettings
     public bool DimCommands { get; set; } = true;
 
     /// <summary>
-    /// Which event cards the dock draws. Travels to the dock with the rest of these settings, so the
-    /// filtering happens where the cards are built and a change lands without a reload.
+    /// Which event cards the dock draws. Sent to the dock with the rest of these settings, so the
+    /// dock does the filtering and a change lands without a reload.
     /// </summary>
     public ChatEventVisibility Events { get; set; } = new();
 

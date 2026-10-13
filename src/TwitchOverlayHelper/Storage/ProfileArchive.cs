@@ -26,9 +26,8 @@ public sealed record ProfileSnapshot(ProfileSnapshotOutcome Outcome, string? Pat
     public static readonly ProfileSnapshot Nothing = new(ProfileSnapshotOutcome.Nothing, null, 0, 0);
 
     /// <summary>
-    /// Whether this counts as done. An incomplete copy does not: the point of the snapshot is that
-    /// it is the whole profile, so a start that could not manage that should try again at the next
-    /// one rather than record the version as safely copied.
+    /// Whether this counts as done. An incomplete copy does not, so the next start tries again
+    /// rather than recording the version as safely copied.
     /// </summary>
     public bool Complete => Outcome is ProfileSnapshotOutcome.Written or ProfileSnapshotOutcome.Nothing;
 }
@@ -36,13 +35,10 @@ public sealed record ProfileSnapshot(ProfileSnapshotOutcome Outcome, string? Pat
 /// <summary>
 /// A copy of the whole profile folder in one zip.
 ///
-/// <para>The per-file backups next to each store answer the everyday mishap – a settings file
-/// truncated by a power cut, a nickname list emptied by mistake. They cannot answer the one that
-/// happens at a new version: a build that reads the old file, understands half of it, and writes
-/// back what it understood. By the time that is noticed the dated copies are all post-upgrade too.
-/// So the moment the app first runs under a version it has not run under before, everything is
-/// copied aside exactly as the previous version left it – before a single migration or save
-/// touches it.</para>
+/// <para>The per-file backups next to each store cannot answer a build that reads an older file,
+/// understands half of it and writes back what it understood: by the time that is noticed the dated
+/// copies are all post-upgrade too. So the first time the app runs under a version it has not run
+/// under before, everything is copied aside before a single migration or save touches it.</para>
 ///
 /// <para>A plain zip on purpose: getting the old settings back has to be possible from Utforskaren
 /// on a bad evening, without the app that wrote it being able to start.</para>
@@ -53,16 +49,14 @@ public static class ProfileArchive
     public const int DefaultKeep = 8;
 
     /// <summary>
-    /// Marks a zip that is missing a file it should have had. In the name rather than in a note
-    /// beside it, so that the one thing anybody reads – the file listing – says which copies can be
-    /// trusted whole, and so a retry can find its own earlier attempt and replace it.
+    /// Marks a zip that is missing a file it should have had. In the name, so the file listing
+    /// says which copies are whole and a retry can find its own earlier attempt and replace it.
     /// </summary>
     private const string PartialSuffix = "-delvis";
 
     /// <summary>
-    /// What is not worth copying: things the app refetches or rewrites by itself. Caches are the
-    /// bulk of the folder and the least of the loss, and the logs are already dated files that a
-    /// new version does not rewrite.
+    /// What is not copied: things the app refetches or rewrites by itself. Caches are the bulk of
+    /// the folder, and the logs are dated files that another version does not rewrite.
     /// </summary>
     private static readonly string[] SkippedFolders = ["snapshots", "logs", "ttscache", "namecache"];
 
@@ -105,17 +99,15 @@ public static class ProfileArchive
             if (files.Count == 0) return ProfileSnapshot.Nothing;
 
             Directory.CreateDirectory(folder);
-            // Built under a name of its own and moved in: a snapshot interrupted halfway is not a
-            // zip anyone should later find and trust, and the name it ends up with is not known
-            // until the copying has said how much of the profile it managed.
+            // Built under a name of its own and moved in: an interrupted snapshot must not look like
+            // a zip to trust, and the final name depends on how much of the profile was copied.
             string building = Path.Combine(folder, "profile.building");
             int skipped = Write(building, root, files);
             string path = NextPath(folder, label, partial: skipped > 0);
 
-            // An earlier incomplete attempt at this same version is replaced rather than added to.
-            // Every start retries until one copy is whole, and without this the retries would fill
-            // the folder and push out the snapshots from older versions – which are the ones with
-            // anything left to say.
+            // An earlier incomplete attempt at this same version is replaced rather than added to:
+            // every start retries until one copy is whole, and the retries would otherwise push
+            // out the snapshots from older versions.
             RemovePartial(folder, label);
             File.Move(building, path, true);
             Prune(folder, keep);
@@ -146,9 +138,8 @@ public static class ProfileArchive
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    // One file being held open elsewhere is no reason to lose the other forty – but
-                    // it does mean this copy is not the whole profile, and saying so is what makes
-                    // the next start try again instead of trusting it.
+                    // One file held open elsewhere must not lose the rest, but the copy is counted
+                    // as incomplete so the next start tries again.
                     skipped++;
                 }
             }

@@ -3,9 +3,8 @@ using System.IO;
 namespace TwitchOverlayHelper.Storage;
 
 /// <summary>
-/// Where the user's own data lives. Every store used to spell the same three path segments out for
-/// itself, which was fine while there were two of them and is how a folder ends up half-moved: one
-/// place that answers the question is what lets a snapshot know what it is copying.
+/// Where the user's own data lives. The one place that knows the profile folder, which is what
+/// lets a snapshot know what it is copying.
 /// </summary>
 public static class ProfilePaths
 {

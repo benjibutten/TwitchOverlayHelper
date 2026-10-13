@@ -10,9 +10,7 @@ namespace TwitchOverlayHelper;
 
 /// <summary>
 /// One pet in a list: its portrait, whether the spin may hand it out, how rare it is, and the two
-/// boxes it is renamed with. A view of the pet's own pet.json rather than of anything in
-/// settings.json – the file in the pet's folder is where these live, so a pet moved to another
-/// machine takes them along.
+/// boxes it is renamed with. A view of the pet's own pet.json, not of settings.json.
 /// </summary>
 public sealed class PetRow : INotifyPropertyChanged
 {
@@ -75,9 +73,8 @@ public sealed class PetRow : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Whether the row is showing its two name boxes instead of the name. The boxes edit copies
-    /// rather than <see cref="Name"/> and <see cref="Id"/> themselves, so an edit that is escaped –
-    /// or refused because the name is taken – leaves the row saying what the pet is actually called.
+    /// Whether the row is showing its two name boxes instead of the name. The boxes edit copies,
+    /// so an abandoned or refused edit leaves <see cref="Name"/> and <see cref="Id"/> untouched.
     /// </summary>
     public bool IsEditing
     {
@@ -124,12 +121,8 @@ public sealed class PetRow : INotifyPropertyChanged
 
     /// <summary>
     /// The pet's first spritesheet cell – the standing still frame – as a picture for the list.
-    ///
-    /// <para>Null for anything that will not decode, which is a real possibility rather than a
-    /// theoretical one: the sheets are WebP, and Windows decodes those through a codec that a
-    /// machine may simply not have. The row then shows the pet's emoji instead, and everything on
-    /// it still works; a missing preview must not be able to stop somebody marking a pet winnable.
-    /// </para>
+    /// Null for anything that will not decode: the sheets are WebP, and a machine may lack the
+    /// codec Windows decodes them with.
     /// </summary>
     private static ImageSource? LoadPortrait(PetDefinition pet)
     {
@@ -141,7 +134,7 @@ public sealed class PetRow : INotifyPropertyChanged
                 new Uri(file), BitmapCreateOptions.None, BitmapCacheOption.OnLoad).Frames[0];
 
             // Cells are 192×208 and every sheet is 8 wide, so the row count falls out of the
-            // sheet's own proportions – the same reasoning the overlay uses.
+            // sheet's own proportions, as it does in the overlay.
             int rows = (int)Math.Round(frame.PixelHeight * 8 * 192.0 / (frame.PixelWidth * 208.0));
             if (rows is not (9 or 11)) rows = pet.SpriteVersion >= 2 ? 11 : 9;
 
@@ -159,20 +152,14 @@ public sealed class PetRow : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// The top-left cell of a sheet, lifted out as a picture of its own with the alpha intact.
-    ///
-    /// <para>Copied pixel by pixel rather than wrapped in a <see cref="CroppedBitmap"/>, because of
-    /// what Windows' WebP codec answers with: a frame in <c>Bgr32</c>, a format whose fourth byte
-    /// is defined as meaningless – even though the decoder has filled it with the real alpha. WPF
-    /// takes the format at its word and draws every see-through pixel opaque, which is what put a
-    /// white block behind one pet and an orange one behind another: whatever colour happened to lie
-    /// under the transparent parts of that particular sheet. The bytes are the same bytes; handing
-    /// them back as <c>Bgra32</c> is what makes the alpha count again.</para>
+    /// The top-left cell of a sheet, lifted out as a frozen picture of its own with the alpha intact.
     /// </summary>
     private static ImageSource Cell(BitmapSource sheet, int width, int height)
     {
-        // Anything that is not already four bytes to a pixel – a paletted or 24-bit sheet – is
-        // converted first, so the copy below can assume the one stride it knows how to read.
+        // Copied pixel by pixel, not wrapped in a CroppedBitmap: Windows' WebP codec answers with
+        // Bgr32 while filling the fourth byte with the real alpha, and WPF would draw every
+        // see-through pixel opaque. Handing the same bytes back as Bgra32 makes the alpha count.
+        // A paletted or 24-bit sheet is converted first, so the copy can assume four bytes a pixel.
         BitmapSource source =
             sheet.Format == PixelFormats.Bgra32 || sheet.Format == PixelFormats.Pbgra32 || sheet.Format == PixelFormats.Bgr32
                 ? sheet
@@ -182,10 +169,9 @@ public sealed class PetRow : INotifyPropertyChanged
         byte[] pixels = new byte[stride * height];
         source.CopyPixels(new Int32Rect(0, 0, width, height), pixels, stride, 0);
 
-        // A sheet that really has no alpha comes back with that byte zero the whole way through,
-        // and reading it as alpha would hand back a cell nobody can see. Opaque is the honest answer
-        // for those, and the only cost is that a sheet whose first cell is genuinely empty shows as
-        // a blank square rather than as nothing at all.
+        // A sheet with no alpha at all comes back with that byte zero throughout, which read as alpha
+        // would be an invisible cell, so it is made opaque. A genuinely empty first cell then shows
+        // as a blank square.
         bool transparentThroughout = true;
         for (int at = 3; at < pixels.Length && transparentThroughout; at += 4) transparentThroughout = pixels[at] == 0;
         if (transparentThroughout)

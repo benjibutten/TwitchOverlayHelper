@@ -10,11 +10,8 @@ namespace TwitchOverlayHelper;
 
 /// <summary>
 /// One row per thing the bot can say: whether it says it, in what words, and how long it keeps quiet
-/// afterwards.
-///
-/// <para>The preview is the point of the whole window. A template is a sentence with holes in it, and
-/// the only way to know whether the holes were spelled right is to see them filled – otherwise a
-/// mistyped <c>{viewers}</c> is discovered by the channel rather than by the streamer.</para>
+/// afterwards. The preview shows the template with its placeholders filled, so a mistyped
+/// <c>{viewers}</c> is seen before the channel sees it.
 /// </summary>
 public sealed class BotFlowRow : INotifyPropertyChanged
 {
@@ -99,9 +96,8 @@ public sealed class BotFlowRow : INotifyPropertyChanged
 }
 
 /// <summary>
-/// One row of the custom command table. A view of a <see cref="BotCommand"/> rather than the thing
-/// itself, so the cooldown can be a half-typed string in a box without becoming a nonsense number in
-/// the settings.
+/// One row of the custom command table. A view of a <see cref="BotCommand"/>, so a half-typed
+/// cooldown stays a string in its box and never reaches the settings.
 /// </summary>
 public sealed class BotCommandRow : INotifyPropertyChanged
 {
@@ -154,13 +150,11 @@ public sealed class BotCommandRow : INotifyPropertyChanged
         set { _moderatorsOnly = value; Raise(); }
     }
 
-    /// <summary>
-    /// Writes the row into the settings. The command word is stored as typed and only cleaned by
-    /// Normalize: rewriting it under the cursor would make "!disc" impossible to type on the way to
-    /// "!discord".
-    /// </summary>
+    /// <summary>Writes the row into the settings. The command word is stored as typed.</summary>
     public void Apply()
     {
+        // Cleaned only by Normalize: rewriting the word under the cursor would make "!disc"
+        // impossible to type on the way to "!discord".
         Source.Command = _command;
         Source.Response = _response;
         Source.Enabled = _enabled;
@@ -176,8 +170,7 @@ public sealed class BotCommandRow : INotifyPropertyChanged
 
 /// <summary>
 /// What each flow is called and when it happens, worded for the person choosing whether to switch it
-/// on. Kept here rather than on <see cref="BotFlow"/> itself: the enum is a contract with the
-/// settings file, and this is copy for one window.
+/// on. Copy for this one window; <see cref="BotFlow"/> itself is a contract with the settings file.
 /// </summary>
 internal static class BotFlowText
 {
@@ -281,7 +274,7 @@ internal static class BotFlowText
 
 /// <summary>
 /// The editor for everything the bot can say. Every change is written straight through to the
-/// settings – there is no OK button, the same way the rest of the app's settings work.
+/// settings; there is no OK button.
 /// </summary>
 public partial class BotSettingsWindow : Window
 {
@@ -319,8 +312,8 @@ public partial class BotSettingsWindow : Window
         foreach (BotCommandRow row in _commands) row.Apply();
         _onChanged();
 
-        // Named out loud rather than silently dropped by Normalize: two rows answering the same word
-        // means only the first will ever fire, and the second looks like it works.
+        // Two rows answering the same word means only the first ever fires while the second looks
+        // like it works, so the duplicate is named in the status line.
         var duplicates = _commands
             .Select(row => EdgeAlertSettings.CleanCommand(row.Command))
             .Where(command => command.Length > 1)
@@ -354,10 +347,7 @@ public partial class BotSettingsWindow : Window
         StatusText.Text = "Kommandot är borttaget.";
     }
 
-    /// <summary>
-    /// Says out loud when none of this can reach chat. A window full of switches that do nothing is
-    /// the single most confusing state this feature has, and it is one radio button away at all times.
-    /// </summary>
+    /// <summary>Shows a warning while the bot is switched off and nothing here can reach chat.</summary>
     private void ShowMode()
     {
         if (_settings.Bot.IsActive)
@@ -393,9 +383,8 @@ public partial class BotSettingsWindow : Window
     }
 
     /// <summary>
-    /// Writes one line for real, with the same stand-in values the previews use. It goes through the
-    /// bot's own queue, so what it proves is the whole chain – login, connection, rate limit – and
-    /// not merely that a template renders.
+    /// Sends the first enabled row to chat for real, with the stand-in values the previews use. It
+    /// goes through the bot's own queue, so it tests login, connection and rate limit as well.
     /// </summary>
     private void Test_Click(object sender, RoutedEventArgs e)
     {

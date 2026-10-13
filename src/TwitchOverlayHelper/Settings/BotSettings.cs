@@ -7,32 +7,29 @@ namespace TwitchOverlayHelper.Settings;
 [JsonConverter(typeof(BotModeJsonConverter))]
 public enum BotMode
 {
-    /// <summary>Nothing is ever written to chat. The app still says everything it says today.</summary>
+    /// <summary>Nothing is ever written to chat.</summary>
     Off,
 
-    /// <summary>A second Twitch account, logged in separately. What the feature is for.</summary>
+    /// <summary>A second Twitch account, logged in separately.</summary>
     Bot,
 
     /// <summary>
-    /// The streamer's own account, over the connection the app already has. There when someone wants
-    /// the messages without setting up a second account – and the only thing that works at all until
-    /// the bot has been logged in.
+    /// The streamer's own account, over the connection the app already has. Works without a second
+    /// account being set up.
     /// </summary>
     Streamer
 }
 
 /// <summary>
-/// One thing the bot can be asked to say. Serialized by name rather than by number: the order here
-/// is going to change as more are added, and a saved settings file must not start meaning something
-/// else because a flow was inserted in the middle.
+/// One thing the bot can be asked to say. Serialized by name rather than by number, so inserting a
+/// flow does not change what a saved settings file means.
 /// </summary>
 [JsonConverter(typeof(BotFlowJsonConverter))]
 public enum BotFlow
 {
     /// <summary>
-    /// A flow this version does not have – one a later version added, or an earlier version had and
-    /// this one dropped. Zero so a rule saved without a flow at all lands here rather than on
-    /// whichever real flow happened to be first, and dropped by <see cref="BotSettings.Normalize"/>.
+    /// A flow this version does not have. Zero so a rule saved without a flow lands here rather than
+    /// on a real flow; dropped by <see cref="BotSettings.Normalize"/>.
     /// </summary>
     Unknown = 0,
 
@@ -149,14 +146,9 @@ public enum BotFlow
 /// Reads the bot's mode, and answers <see cref="BotMode.Off"/> for a name it does not know instead
 /// of throwing.
 ///
-/// <para>The stock string converter throws, and the exception does not stop at this property: it
-/// travels out through the whole document, so a settings file naming a mode this build has never
-/// heard of is a settings file this build cannot read at all – the overlay, the channel, the pets,
-/// the bot's own wording, everything. That is what a downgrade looks like from here, and one word
-/// is not worth the rest of the file.</para>
-///
-/// <para>Off rather than a guess at what was meant: this decides who writes in the streamer's chat,
-/// and a build that cannot tell should not be picking an account to speak as.</para>
+/// <para>The stock string converter throws, which makes the whole settings file unreadable over one
+/// unknown word – what a downgrade would otherwise look like. Off rather than a guess: this decides
+/// which account writes in the streamer's chat.</para>
 /// </summary>
 public sealed class BotModeJsonConverter : JsonConverter<BotMode>
 {
@@ -175,12 +167,9 @@ public sealed class BotModeJsonConverter : JsonConverter<BotMode>
 /// Reads a flow name, and answers <see cref="BotFlow.Unknown"/> for one it does not know instead of
 /// throwing.
 ///
-/// <para><b>Why this exists.</b> Flows come and go between versions. The stock string converter
-/// throws on a name it has never heard of, and that exception travels all the way out to
-/// <see cref="SettingsStore.Load"/> – which catches it and hands back a blank
-/// <see cref="AppSettings"/>. Upgrading past a removed flow would therefore not merely drop that
-/// flow: it would silently reset the overlay, the channel, the pets and every other setting in the
-/// file. One unrecognised word is not worth somebody's whole configuration.</para>
+/// <para>Flows come and go between versions. The stock string converter throws on an unknown name,
+/// and <see cref="SettingsStore.Load"/> answers that exception with a blank
+/// <see cref="AppSettings"/> – one unrecognised flow would reset every setting in the file.</para>
 /// </summary>
 public sealed class BotFlowJsonConverter : JsonConverter<BotFlow>
 {
@@ -197,9 +186,8 @@ public sealed class BotFlowJsonConverter : JsonConverter<BotFlow>
 /// <summary>
 /// A command the streamer made up: a word viewers type in chat, and what the bot answers with.
 ///
-/// <para>Deliberately the plainest thing that works. The answer is a template like every other
-/// message the bot sends, so <c>{viewer}</c>, <c>{streamer}</c> and this channel's own word for its
-/// pets already work inside it without anything here knowing about them.</para>
+/// <para>The answer is a template like every other message the bot sends, so <c>{viewer}</c>,
+/// <c>{streamer}</c> and this channel's own word for its pets work inside it.</para>
 /// </summary>
 public sealed class BotCommand
 {
@@ -212,9 +200,8 @@ public sealed class BotCommand
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// How long this command keeps quiet after answering. Not zero by default: a command is the one
-    /// thing here viewers can set off on purpose, and a room deciding to type it together is how a
-    /// bot spends its whole write allowance in ten seconds.
+    /// How long this command keeps quiet after answering. Not zero by default: viewers can set a
+    /// command off on purpose, and a room typing it together would spend the bot's write allowance.
     /// </summary>
     public int CooldownSeconds { get; set; } = 30;
 
@@ -226,9 +213,8 @@ public sealed class BotCommand
 
     public void Normalize()
     {
-        // An empty command stays empty rather than becoming "!" plus something invented: this is a
-        // row the streamer has added and not filled in yet, and giving it a trigger of our choosing
-        // would put a command in the channel that nobody chose.
+        // An empty command stays empty: it is a row not filled in yet, and inventing a trigger for
+        // it would put a command in the channel that nobody chose.
         string typed = (Command ?? string.Empty).Trim();
         Command = typed.Length == 0 ? string.Empty : EdgeAlertSettings.CleanCommand(typed);
         Response = (Response ?? string.Empty).Trim();
@@ -254,9 +240,8 @@ public sealed class BotMessageRule
     public string Template { get; set; } = string.Empty;
 
     /// <summary>
-    /// How long this flow keeps quiet after it has spoken. Zero means every occurrence is announced,
-    /// which is right for the ones that name a viewer and wrong for the ones about the channel as a
-    /// whole: a lawn that fills up during a raid would otherwise say so twenty times in a minute.
+    /// How long this flow keeps quiet after it has spoken. Zero announces every occurrence: right
+    /// for flows that name a viewer, wrong for channel-wide ones such as a lawn filling up in a raid.
     /// </summary>
     public int CooldownSeconds { get; set; }
 
@@ -276,28 +261,20 @@ public sealed class BotMessageRule
 }
 
 /// <summary>
-/// A chat bot that says out loud the things the app currently only knows: that a redemption was paid
-/// back and why, that a reading is still waiting for an answer, that the overlay is down and points
+/// A chat bot that says out loud what the app otherwise only knows: that a redemption was paid back
+/// and why, that a reading is still waiting for an answer, that the overlay is down and points
 /// spent right now would come straight back.
 ///
-/// <para><b>Why a second account.</b> These are the channel's messages rather than the streamer's,
-/// and a viewer scrolling chat should be able to tell the difference at a glance. It is also the only
-/// shape where the messages keep working when the streamer's own account is busy elsewhere. Running
-/// as the streamer is offered anyway, because it works before anything has been set up.</para>
-///
-/// <para><b>Why the wording is all configurable.</b> Nothing here is the app's business to name. A
-/// channel that calls its pets "on screen-vänner" should not have the bot say "pet", and a streamer
-/// who would rather be called by name than "streamern" should not have to accept the app's word for
-/// themselves.</para>
+/// <para>A second account by design, so a viewer can tell the channel's messages from the
+/// streamer's; running as the streamer is offered because it works before anything is set up. All
+/// the wording is configurable: what a channel calls its pets and its streamer is not the app's to
+/// decide.</para>
 /// </summary>
 public sealed class BotSettings
 {
     public BotMode Mode { get; set; } = BotMode.Off;
 
-    /// <summary>
-    /// What the bot calls the streamer. Empty means the generic word, which is what a channel wants
-    /// before it has thought about it – and exactly what a channel with a name wants to replace.
-    /// </summary>
+    /// <summary>What the bot calls the streamer. Empty means the generic word.</summary>
     public string StreamerName { get; set; } = string.Empty;
 
     /// <summary>What one pet is called in this channel. Singular, indefinite: "en pet".</summary>
@@ -308,8 +285,7 @@ public sealed class BotSettings
 
     /// <summary>
     /// The definite singular: "peten". Its own field because Swedish cannot derive it – "vän" becomes
-    /// "vännen" and "pet" becomes "peten", and guessing would put the bot's grammar in the app's
-    /// hands rather than the streamer's.
+    /// "vännen" and "pet" becomes "peten".
     /// </summary>
     public string PetWordDefinite { get; set; } = "peten";
 
@@ -317,9 +293,8 @@ public sealed class BotSettings
     public int TtsWaitingSeconds { get; set; } = 60;
 
     /// <summary>
-    /// How many refunds landing close together stop being announced one by one and become a single
-    /// line instead. The sweep that runs after a restart can answer a whole stream's worth of
-    /// redemptions in a few seconds, and a bot reading them out would be its own incident.
+    /// How many refunds landing close together are announced as a single line instead of one by
+    /// one. The sweep after a restart can refund a whole stream's worth of redemptions in seconds.
     /// </summary>
     public int RefundBatchThreshold { get; set; } = 3;
 
@@ -334,24 +309,22 @@ public sealed class BotSettings
     public int MessagesPer30Seconds { get; set; } = 15;
 
     /// <summary>
-    /// Whether the bot's own lines are kept out of the overlay. They belong in chat, where they are
-    /// answering someone; on top of a game they are a stream of notifications nobody asked for.
+    /// Whether the bot's own lines are kept out of the overlay, where they would be notifications
+    /// on top of a game rather than answers in chat.
     /// </summary>
     public bool HideOwnMessagesInOverlay { get; set; } = true;
 
     /// <summary>
     /// Whether the bot's lines are exempt from everything chat can trigger – pets, edge alerts, the
-    /// welcome. Left on: a bot that greets itself, or spawns a pet from its own "{pet} levde klart",
-    /// is the loop this switch exists to prevent.
+    /// welcome – so it cannot greet itself or spawn a pet from its own "{pet} levde klart".
     /// </summary>
     public bool IgnoreOwnMessages { get; set; } = true;
 
     public List<BotMessageRule> Messages { get; set; } = [];
 
     /// <summary>
-    /// Commands the streamer made up. Empty to begin with, on purpose: what a channel wants to be
-    /// able to answer is not something the app can guess, and shipping guesses would mean shipping
-    /// commands somebody has to go and switch off.
+    /// Commands the streamer made up. Empty by default: what a channel wants to answer is not
+    /// something the app can guess.
     /// </summary>
     public List<BotCommand> Commands { get; set; } = [];
 
@@ -373,15 +346,13 @@ public sealed class BotSettings
         RefundBatchThreshold = Math.Clamp(RefundBatchThreshold, 2, 50);
         RefundBatchWindowSeconds = Math.Clamp(RefundBatchWindowSeconds, 1, 60);
         MessagesPer30Seconds = Math.Clamp(MessagesPer30Seconds, 1, 90);
-        // Rebuilt from the defaults rather than patched in place: a flow added by a later version has
-        // to appear with its default text, and a flow this version has never heard of is dropped
-        // rather than kept as a rule nothing will ever raise.
+        // Rebuilt from the defaults rather than patched in place: a flow missing from the file
+        // appears with its default text, and one this version does not know is dropped.
         Messages ??= [];
         var kept = new List<BotMessageRule>(Defaults.Count);
         foreach (BotMessageRule fallback in Defaults)
         {
-            // "messages": [null] is the same kind of hand-edit, and the null would land in the
-            // comparison rather than in the result.
+            // A hand-edited "messages": [null] must not throw in the comparison.
             BotMessageRule rule = Messages.FirstOrDefault(saved => saved is not null && saved.Flow == fallback.Flow)
                 ?? new BotMessageRule { Flow = fallback.Flow, Enabled = fallback.Enabled, Template = fallback.Template, CooldownSeconds = fallback.CooldownSeconds };
             rule.Normalize(fallback);
@@ -389,9 +360,8 @@ public sealed class BotSettings
         }
         Messages = kept;
 
-        // Nulls here are the same hand-edit as everywhere else in this file. Two rows answering the
-        // same word are not: only the first would ever fire, so the second is dropped rather than
-        // left in the list looking as though it works.
+        // Nulls are a hand-edit and skipped. Of two rows answering the same word only the first
+        // would ever fire, so the second is dropped.
         Commands ??= [];
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var commands = new List<BotCommand>(Commands.Count);
@@ -416,11 +386,9 @@ public sealed class BotSettings
     /// <summary>
     /// The wording the app ships with, and the source of truth for which flows exist at all.
     ///
-    /// <para>What is on by default is the half a viewer is owed an answer to: their points came back,
-    /// their reading is still waiting, the thing they were about to pay for is not working right now.
-    /// The celebratory half – subs, hype trains, a pet that lived out its time – is off, because
-    /// Twitch already says most of it and a channel should choose to add to that rather than have to
-    /// switch it off.</para>
+    /// <para>On by default are the answers a viewer is owed: their points came back, their reading
+    /// is still waiting, the thing they were about to pay for is down. The celebratory flows – subs,
+    /// hype trains, a pet that lived out its time – are off, because Twitch already says most of it.</para>
     /// </summary>
     public static IReadOnlyList<BotMessageRule> Defaults { get; } =
     [
@@ -456,8 +424,7 @@ public sealed class BotSettings
         Rule(BotFlow.SpinReleased, true, "🐾 @{viewer} släppte ut sin {prize} på skärmen!"),
         Rule(BotFlow.SpinList, true, "@{viewer} din samling: {list}.", cooldown: 15),
         Rule(BotFlow.SpinListEmpty, true, "@{viewer} du har inte vunnit någon {pet} än – lyckosnurren väntar!", cooldown: 15),
-        // The one answer here that is the same for everybody who asks, so it keeps quiet for longer:
-        // a whole chat trying the word at once would otherwise repeat one list a dozen times.
+        // The same answer for everybody who asks, so it keeps quiet for longer than the per-viewer ones.
         Rule(BotFlow.SpinPool, true, "@{viewer} {pets} som går att vinna ({count} st): {list}", cooldown: 30),
         Rule(BotFlow.SpinPoolEmpty, true, "@{viewer} inga {pets} går att vinna just nu.", cooldown: 30),
         Rule(BotFlow.SpinNotOwned, true, "@{viewer} {prize} kan bara användas av den som vunnit den i lyckosnurren."),
