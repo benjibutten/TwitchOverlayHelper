@@ -1,11 +1,8 @@
 /* The card the viewers see while a paid message is being read out loud.
 
-   Same medium as the stream chat and the same rules follow from it: this is drawn over video nobody
-   knows the colour of, so the text carries its own plate and its own rim rather than trusting the
-   scene behind it. What is different is how long it is there. The chat column is permanent furniture
-   read in passing; this appears for the twenty seconds a reading lasts and is the thing on screen
-   while it does – which is why it may be this big, and why it has to leave cleanly rather than being
-   left to be pushed off by something newer. */
+   Like the stream chat, it is drawn over video of unknown colour, so the text carries its own plate
+   and rim. Unlike the chat column it is only up for the length of a reading, so it may be big and
+   has to leave cleanly. */
 
 :root {
   --font: Verdana, sans-serif;
@@ -39,9 +36,8 @@ body {
   cursor: default;
 }
 
-/* The "is it alive" dot, for a streamer looking at this address in a browser. At the 1×1 size a
-   sound-only source is given, nobody ever sees it – but a source made big enough to hold the card is
-   a source the viewers are looking at, and a grey dot in its corner would be on the broadcast. */
+/* The "is it alive" dot, for a streamer looking at this address in a browser. Hidden when the card
+   is on: a source big enough to hold the card is on the broadcast. */
 #state {
   position: fixed; left: 4px; top: 4px; width: 8px; height: 8px; border-radius: 50%;
   background: #6b7280; transition: background 200ms linear;
@@ -50,11 +46,10 @@ body {
 #state[data-playing="true"] { background: var(--accent); }
 body[data-widget="true"] #state { display: none; }
 
-/* ------------------------------------------------------------------ placement
+/* Placement
 
-   The whole picture, with the card pushed into one of nine corners by the flexbox. Placing it this
-   way rather than with nine sets of top/left rules means the card keeps its own size: it grows with
-   the message up to the width the settings allow, and stays put while it does. */
+   The stage covers the whole picture and flexbox pushes the card into one of nine positions, so
+   the card keeps its own size and grows with the message up to the configured width. */
 
 .stage {
   position: fixed;
@@ -75,17 +70,15 @@ body[data-widget="true"] #state { display: none; }
 /* Likewise across: a centred card is centred, and an inset would only make it not be. */
 .stage[data-position$="center"] { padding-left: 0; padding-right: 0; }
 
-/* ------------------------------------------------------------------ the card */
+/* The card */
 
 .card {
   max-width: var(--width);
   min-width: min(240px, 100%);
   padding: 0.6em 0.85em;
   border-radius: var(--radius);
-  /* No rule along an edge and no frame. The colour belongs to the words that need it – the caption,
-     the name, the bars – and a card that takes its colour from its own contents reads as part of the
-     channel, where a black box with a coloured stripe on top reads as a box something was dropped
-     into. What is left is a plate and a shadow to lift it off the video. */
+  /* No border or frame: the accent colour is carried by the caption, the name and the bars. A
+     plate and a shadow lift the card off the video. */
   background: rgba(14, 12, 22, var(--plate));
   box-shadow: 0 14px 34px rgba(0, 0, 0, calc(var(--plate) * 0.5));
   opacity: 0;
@@ -99,8 +92,7 @@ body[data-widget="true"] #state { display: none; }
   transition: opacity 200ms ease, transform 320ms cubic-bezier(0.2, 1.3, 0.4, 1), visibility 0s;
 }
 
-/* With no plate the card is only its letters, so the rim has to do the work the background did –
-   and the shadow has nothing left to sit on. */
+/* With no plate the card is only its letters: the text rim does the work and the shadow goes. */
 body[data-plate="false"] .card {
   background: none;
   box-shadow: none;
@@ -116,22 +108,18 @@ body[data-outline="true"] .card {
     -1px 0 2px rgba(0, 0, 0, 0.55);
 }
 
-/* Where the card comes from, and where it goes back to. Written as the state it is *not* in rather
-   than as the state it rests in: these selectors are more specific than the one that says the card
-   has arrived, so a resting "transform: none" over there would lose to them and the card would sit
-   permanently displaced – nudged out of place with slide, permanently shrunk with pop, and moving
-   for neither.
+/* Where the card comes from and goes back to. Written on the state it is not in: these selectors
+   are more specific than the visible one, so a resting "transform: none" there would lose to them
+   and leave the card displaced.
 
-   Slide comes in from whichever edge the card is anchored to: a card at the bottom rising into place
-   reads as arriving, while the same card dropping in from above reads as falling. */
+   Slide comes in from the edge the card is anchored to. */
 body[data-animation="slide"] .stage[data-position^="bottom"] .card:not([data-visible="true"]) { transform: translateY(22px); }
 body[data-animation="slide"] .stage[data-position^="top"] .card:not([data-visible="true"]) { transform: translateY(-22px); }
 body[data-animation="slide"] .stage[data-position="middle-left"] .card:not([data-visible="true"]) { transform: translateX(-22px); }
 body[data-animation="slide"] .stage[data-position="middle-right"] .card:not([data-visible="true"]) { transform: translateX(22px); }
 body[data-animation="slide"] .stage[data-position="middle-center"] .card:not([data-visible="true"]) { transform: translateY(14px); }
 body[data-animation="pop"] .card:not([data-visible="true"]) { transform: scale(0.85); }
-/* None still fades, and deliberately: a card that blinks in and out on a single frame is the one
-   thing here that looks like a glitch rather than like a choice. */
+/* None still fades briefly: a card that blinks in on a single frame looks like a glitch. */
 body[data-animation="none"] .card { transition-duration: 90ms; }
 
 .label {
@@ -177,16 +165,13 @@ body[data-animation="none"] .card { transition-duration: 90ms; }
   overflow: hidden;
 }
 
-/* Empty parts are taken out rather than left as gaps, so a card with the message switched off is a
-   name and nothing else instead of a name with a hole under it. */
+/* Empty parts are removed rather than left as gaps. */
 .label:empty, .cost:empty, .message:empty { display: none; }
 
-/* ------------------------------------------------------------------ the bars
+/* The bars
 
-   Not an equaliser: the audio is nowhere near this element, and reading it would mean routing the
-   clip through the Web Audio API for a decoration. What the bars are for is the difference between
-   "this is being said right now" and "a notification got stuck on screen" – and for that, moving at
-   all is what matters, not moving in time with the voice. */
+   Not an equaliser: reading the audio would mean routing the clip through the Web Audio API for a
+   decoration. The bars only need to move, to show that something is being said right now. */
 
 .wave {
   display: inline-flex;

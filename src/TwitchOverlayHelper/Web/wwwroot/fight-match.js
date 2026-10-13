@@ -4,7 +4,7 @@
 
    A match is a character select (when the app has it switched on), a short "versus" card, and then
    rounds until one fighter has won as many as the app asks for – at which point the winner is
-   crowned and it is back to the select. With no limit the rounds simply go on, as they always did.
+   crowned and it is back to the select. With no limit the rounds simply go on.
 
      select → versus → intro → fight → ko → win → fade → intro …
                                              ↘ champion → select (or straight into a new match) */
@@ -50,7 +50,7 @@ function matchOver() {
   return target > 0 && winner && winner.wins >= target;
 }
 
-/* ------------------------------------------------------------------ the flow */
+/* The flow */
 
 function rosterEntry(id) {
   return setup.roster.find(f => f.id === id) || null;
@@ -141,7 +141,7 @@ function fighterAlpha() {
   return 1;
 }
 
-/* ------------------------------------------------------------------ HUD */
+/* HUD */
 
 /* A slanted bar, drawn in the left corner's frame; the right corner is the same bar mirrored. */
 function slantedBar(w, h, slant, draw) {
@@ -373,7 +373,7 @@ function drawNotice(text) {
   inkText(text, W / 2, H / 2, 40, "#fff", "#111", 7);
 }
 
-/* ------------------------------------------------------------------ the app */
+/* The app */
 
 function sameFighter(a, b) {
   return !!a && !!b && a.id === b.id && a.outfit === b.outfit && a.sprite === b.sprite;
@@ -392,8 +392,8 @@ function applySetup(s) {
   const arena = s.arena || null;
   if (!setup.arena || !arena || setup.arena.id !== arena.id || setup.arena.image !== arena.image) {
     arenaImage = arena && arena.image ? cachedImage(arena.image) : null;
-    // The floor moves with the new picture once it has loaded. The round goes on – a K.O. on screen
-    // is not undone by a change of scenery – and the walls simply close in on whoever is outside.
+    // The floor moves with the picture once it has loaded. The round goes on, and the walls close in
+    // on whoever is outside.
     const img = arenaImage;
     if (img && !imgReady(img)) img.addEventListener("load", () => { if (img === arenaImage) stage = stageLayout(); });
   }
@@ -457,7 +457,7 @@ function connect() {
 }
 connect();
 
-/* ------------------------------------------------------------------ loop */
+/* Loop */
 
 let last = performance.now();
 function tick(now) {

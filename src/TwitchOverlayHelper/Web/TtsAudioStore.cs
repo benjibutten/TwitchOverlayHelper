@@ -4,17 +4,12 @@ using System.Security.Cryptography;
 namespace TwitchOverlayHelper.Web;
 
 /// <summary>
-/// Hands out a short-lived address for one audio file, so the browser source can fetch a reading
-/// without the server ever taking a path from the page.
+/// Hands out a random token for one audio file, so the browser source can fetch a reading
+/// without the server ever taking a path from the page. A token can only name a file the app
+/// itself synthesised, which rules out path traversal.
 ///
-/// <para><b>Why not just serve the file by name.</b> The page asking for the audio sits in OBS on
-/// the streaming machine, and an endpoint that took a file path – even one under a fixed folder –
-/// is one traversal bug away from serving anything on the disk. A token minted here can only ever
-/// name a file the app itself synthesised, which makes the whole question go away.</para>
-///
-/// <para>Tokens are kept rather than expired on a clock: a reading can sit approved behind a long
-/// one, and a token that timed out mid-queue would be a reading that silently failed. The oldest
-/// go once there are more than a stream's worth.</para>
+/// <para>Tokens do not expire on a clock, because a reading can wait in the queue behind a long
+/// one. The oldest are dropped once there are more than the limit.</para>
 /// </summary>
 public sealed class TtsAudioStore
 {
@@ -23,7 +18,7 @@ public sealed class TtsAudioStore
     private readonly ConcurrentDictionary<string, string> _files = new(StringComparer.Ordinal);
     private readonly ConcurrentQueue<string> _order = new();
 
-    /// <summary>Mints an address for this file, or returns the one it already has.</summary>
+    /// <summary>Mints a new token for this file.</summary>
     public string Publish(string filePath)
     {
         string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(12)).ToLowerInvariant();

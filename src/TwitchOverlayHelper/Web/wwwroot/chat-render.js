@@ -1,22 +1,17 @@
 "use strict";
 
-/* What one chat line looks like, for both pages that draw one: the dock the streamer reads and the
-   overlay the viewers see. Only the inside of a message lives here – the words, the emotes, the
-   links, the small markers – because that is the part that must look the same in both places and is
-   the part that is fiddly enough to be worth having exactly one of.
+/* Draws the inside of a chat line (words, emotes, links, markers) for both pages that show one:
+   the dock and the stream overlay, so a message looks the same in both.
 
-   Everything here is a pure function of a message and a settings object. Nothing reaches for the
-   page, the socket or any shared state: the two views hold different settings, different chrome and
-   different opinions about what a name is for, and the moment this file knew about either of them it
-   would stop being usable by both.
+   Everything here is a pure function of a message and a settings object; nothing touches the page,
+   the socket or shared state.
 
    The settings object needs five things: calmShouting, showEmotes, showGifs, giantEmotes and
-   collapseLinks. Both views' settings carry them under those names, so neither has to translate. */
+   collapseLinks. Both views' settings carry them under those names. */
 
-/* Nobody in chat types "https://". A link is written the way it is read – "linktr.ee/perralinks" –
-   and a pattern that only knows schemes leaves most of them lying there as dead text. So a bare
-   host counts too, but only when its last part is a suffix we recognise: that is what keeps
-   "t.ex", "3.5" and "kl.20" out of the link list. */
+/* Links in chat are mostly written without a scheme ("linktr.ee/perralinks"), so a bare host
+   counts too, but only when its last part is a recognised suffix: that keeps "t.ex", "3.5" and
+   "kl.20" out. */
 const URL_PATTERN =
   /(?:https?:\/\/|www\.)[^\s]+|[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)*\.[a-z]{2,24}(?::\d{2,5})?(?:\/[^\s]*)?/gi;
 
@@ -58,10 +53,8 @@ function isShouting(text) {
   return upper / letters.length > 0.7;
 }
 
-/* Collapsing is about how much room a link takes, not about whether it is one: an address stays
-   clickable either way, and only the label changes. On the stream overlay nothing is clickable at
-   all, but the anchor is harmless there and the chip is the point – a readable address on a
-   broadcast is somebody else's advertisement. */
+/* Collapsing only changes the label; the address stays clickable. On the stream overlay nothing
+   is clickable, but the chip keeps a readable address off the broadcast. */
 function appendLink(target, raw, collapse) {
   const anchor = document.createElement("a");
   anchor.className = collapse ? "link-chip" : "link";
@@ -86,19 +79,16 @@ function appendText(target, text, calm, collapse) {
   if (cursor < source.length) target.appendChild(document.createTextNode(source.slice(cursor)));
 }
 
-/* "default" rather than "static" so an animated emote animates where the browser can play it, which
-   is the same choice the picker makes – the two must never show different pictures of one emote. */
+/* "default" rather than "static" so an animated emote animates, the same choice the picker makes. */
 const emoteUrl = (id, size) => `https://static-cdn.jtvnw.net/emoticons/v2/${encodeURIComponent(id)}/default/dark/${size}`;
 
 /* The same ceiling the desktop overlay puts on a chat GIF – see MaxGifBytes in OverlayWindow.
-   Whoever picked the GIF is a stranger with a tier 2 sub, and a browser source is the last place
-   that should be talked into pulling down a hundred megabytes: the CSS only decides how big the
-   picture is drawn, not how much of it comes over the wire. */
+   The GIF is picked by a viewer, and CSS only limits how big it is drawn, not how much is
+   downloaded. */
 const MAX_GIF_BYTES = 6 * 1024 * 1024;
 
-/* Reads the body and gives up the moment it goes past the ceiling, rather than trusting the length
-   the server declared – the header is a claim, and the bytes are what actually arrive. Cancelling
-   the reader closes the connection, so an oversized GIF stops costing anything at that point. */
+/* Reads the body and throws once it passes the limit, without trusting the declared length.
+   Cancelling the reader closes the connection. */
 async function readWithinLimit(response, limit) {
   const type = response.headers.get("content-type") || "image/gif";
   if (!response.body) {
@@ -123,10 +113,9 @@ async function readWithinLimit(response, limit) {
   return new Blob(chunks, { type });
 }
 
-/* Fetched rather than handed straight to the img element, because that is the only way a page gets
-   to see the size before the picture is on screen. Giphy, which is where the power-up takes them
-   from, answers with "access-control-allow-origin: *", so this reads the same bytes an img would
-   have – the address is still Twitch's own and still goes out unrewritten, signed query and all. */
+/* Fetched rather than set on the img, which is the only way to see the size before the picture
+   is shown. Giphy, where the power-up takes them from, answers with
+   "access-control-allow-origin: *"; the address goes out unrewritten, signed query and all. */
 async function loadGifWithinLimit(url) {
   const response = await fetch(url, { mode: "cors", credentials: "omit", referrerPolicy: "no-referrer" });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -147,15 +136,13 @@ function appendGif(target, gif, description) {
   image.title = description;
   target.appendChild(image);
 
-  /* Falling back to the words, which is the same thing the overlay does: an image that failed is a
-     broken-picture icon, and the sentence Twitch wrote is better than that. Too big falls back the
-     same way, and for the same reason it does there – the line still reads without the picture. */
+  /* An image that failed to load, or was too big, falls back to the description Twitch wrote. */
   const fallBackToDescription = () => image.replaceWith(document.createTextNode(description));
   image.addEventListener("error", fallBackToDescription, { once: true });
 
   loadGifWithinLimit(gif.url).then((objectUrl) => {
-    // Handed back as soon as the picture is decoded; the drawn image, animation and all, lives on
-    // without it. A stream runs for hours, and every GIF held onto here would be held until it ends.
+    // Released once the picture is decoded; the drawn image lives on without it. A stream runs for
+    // hours, so nothing is held longer than needed.
     const release = () => URL.revokeObjectURL(objectUrl);
     image.addEventListener("load", release, { once: true });
     image.addEventListener("error", release, { once: true });
@@ -163,9 +150,8 @@ function appendGif(target, gif, description) {
   }, fallBackToDescription);
 }
 
-/* The emotes and the GIFs are two lists of ranges over the same text, and a line can carry both –
-   "hej Kappa [Yes GIF by Someone]". Merged into one list in reading order so the walk below stays a
-   single pass with a single cursor, which is what keeps overlapping ranges from drawing twice. */
+/* Merges emotes and GIFs, two lists of ranges over the same text, into one list in reading order
+   so renderBody walks the text in a single pass. */
 function spansOf(emotes, gifs) {
   const spans = [];
   for (let i = 0; i < emotes.length; i++) spans.push({ kind: "emote", value: emotes[i], index: i });
@@ -182,14 +168,11 @@ function renderBody(message, view) {
   // Lower-casing preserves length, so emote spans stay valid after calming a shout.
   const calm = view.calmShouting && isShouting(message.text);
   const collapse = view.collapseLinks;
-  /* Including our own lines, which Twitch sends no emote spans for – it decides which words were
-     emotes on the way to the viewers and tells everyone except the sender. The app fills those in
-     before either view sees the message, so the overlay over the game and the dock agree, and this
-     stays one branch rather than two. */
+  /* Twitch sends no emote spans for our own lines; the app fills them in before either view sees
+     the message. */
   const emotes = view.showEmotes ? message.emotes : [];
-  /* Which span the Gigantify an Emote power-up blew up. The desktop app decides it, so every view
-     enlarges the same emote; showing it big is a setting of its own, because a three-line-tall image
-     is exactly the kind of thing a narrow column – or a corner of a broadcast – wants to tame. */
+  /* Which span the Gigantify an Emote power-up enlarged. The desktop app decides it, so every view
+     enlarges the same emote; showing it big is a setting of its own. */
   const giant = view.giantEmotes ? message.giantEmote : undefined;
   const gifs = view.showGifs !== false ? (message.gifs || []) : [];
 
@@ -229,12 +212,10 @@ function tag(text, kind) {
   return span;
 }
 
-/* The badges Twitch has no image for, said in a word instead. Shared because a "mod" that reads as
-   "mod" in one view and as nothing in the other would be the same badge telling two stories. */
+/* The badges Twitch has no image for, shown as a word instead. */
 const BADGE_WORDS = { broadcaster: "live", moderator: "mod", lead_moderator: "mod", vip: "vip", subscriber: "sub" };
 
-/* One row of badges, as far as we can draw them. Twitch hands out an image for almost all of them;
-   the handful it does not are the roles above, which are worth a word. */
+/* Draws a row of badges: the image where Twitch has one, otherwise the word for a known role. */
 function appendBadges(head, badges) {
   for (const badge of badges) {
     if (badge.imageUrl) {
@@ -250,8 +231,7 @@ function appendBadges(head, badges) {
   }
 }
 
-/* Icons carry the type at a glance, but never alone: the headline says the same thing in words,
-   because an icon is one more thing to decode. */
+/* Icons show the type at a glance; the headline always says the same thing in words. */
 const EVENT_ICONS = {
   subscription: "★", subGift: "🎁", communityGift: "🎁", subUpgrade: "★",
   raid: "🚚", unraid: "↩", announcement: "📣", bitsBadge: "💎",

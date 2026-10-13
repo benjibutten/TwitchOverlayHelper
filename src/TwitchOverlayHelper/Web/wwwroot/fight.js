@@ -1,14 +1,13 @@
 "use strict";
 
-/* The wait screen: the streamer's two characters fighting each other, round after round, while the
-   stream waits for something – a character lying unconscious, a streamer gone to fetch coffee. It is
-   meant to be watched rather than played, so the fighters run on a small brain of their own and the
-   rounds stay close: either of them can win, and nobody wins every time.
+/* The wait screen: the streamer's two characters fight each other, round after round, while the
+   stream waits. It is watched rather than played: the fighters run on a small brain of their own
+   and the rounds stay close.
 
    The app decides who stands in which corner, where they fight and what the banner says, and tells
-   the page over the socket – so a new fighter or arena reaches OBS without touching the source. The
-   chat can take sides: a viewer cheers a corner on, which fills that player's super meter, or patches
-   it up for a little health. Corners, not characters: player 1 is player 1 whoever is in the ring.
+   the page over the socket. The chat can take sides: a cheer fills that corner's super meter, a
+   heal gives back a little health. Corners, not characters: player 1 is player 1 whoever is in
+   the ring.
 
    Every fighter strip holds the same eight frames in the same order, each cell the same size with the
    feet on one baseline and the torso on the cell's centre line – so placing a fighter is one point,
@@ -46,8 +45,7 @@ const setup = {
   arena: null
 };
 
-/* Images are asked for once per address, however many places draw them – the select screen alone
-   can want every fighter on the roster at once. */
+/* Images are loaded once per address, however many places draw them. */
 const imageCache = new Map();
 function cachedImage(src) {
   if (!src) return null;
@@ -79,7 +77,7 @@ layer.width = CELL_W;
 layer.height = CELL_H;
 const layerCtx = layer.getContext("2d");
 
-/* ------------------------------------------------------------------ arena */
+/* Arena */
 
 let arenaImage = null;
 
@@ -113,7 +111,7 @@ function drawArena() {
     ctx.drawImage(arenaImage, stage.x, stage.y, stage.w, stage.h);
 }
 
-/* ------------------------------------------------------------------ fighters */
+/* Fighters */
 
 class Fighter {
   constructor(player, side) {
@@ -467,7 +465,7 @@ class Fighter {
   }
 }
 
-/* ------------------------------------------------------------------ effects */
+/* Effects */
 
 const effects = [];
 let shakeAmount = 0;
@@ -516,7 +514,7 @@ function strike(attacker, target, move) {
   }
 }
 
-/* ------------------------------------------------------------------ specials */
+/* Specials */
 
 /* The special's name, big over the fighter, and the screen tinted in its colour for a moment. */
 function announceSpecial(f, viaMeter) {
@@ -590,7 +588,7 @@ function throwProp(f) {
   });
 }
 
-/* How long a confusion lasts. */
+/* Seconds a confusion lasts. */
 const CONFUSE_TIME = 3.2;
 
 /* A confusion: a stream of question marks spirals from the hand to the other fighter, and when it
@@ -772,19 +770,16 @@ function drawEffects() {
   }
 }
 
-/* ------------------------------------------------------------------ the chat */
+/* The chat */
 
-/* What one viewer's help is worth in a corner, by how many are helping it. Worth the same to
-   everyone, a corner the whole chat is behind patches up faster than the other one can punch, while
-   the two viewers opposite never show on the bar at all – so the fewer there are, the harder each
-   one counts, and a corner's support grows with the square root of its crowd rather than with it.
-   The app sets what a viewer alone is worth. */
+/* What one viewer's help is worth in a corner. A corner's support grows with the square root of
+   its crowd, so a few viewers still count against a corner the whole chat is behind. The app sets
+   what a viewer alone is worth. */
 function assistPower(player) {
   return Math.max(CROWDED_ASSIST, setup.commands.soloAssist / Math.sqrt(Math.max(1, crowd.helping(player))));
 }
 
-/* A viewer took a side. The effect lands on the fighter so the stream sees it happen, and the
-   viewer's name rides along – being seen on screen is half the point of typing it. */
+/* A viewer took a side. The effect lands on the fighter with the viewer's name beside it. */
 function assist(a) {
   const f = a.player === 2 ? p2 : a.player === 1 ? p1 : null;
   if (!f) return;

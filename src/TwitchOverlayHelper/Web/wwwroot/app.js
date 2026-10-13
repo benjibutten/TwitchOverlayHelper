@@ -54,15 +54,14 @@ const state = {
   emoteOwner: null,    // the account and room that answer belongs to, so a change can invalidate it
 };
 
-/* Whether a kind of event card is switched on in the app. Each event arrives carrying the name of
-   the group it belongs to, so this never has to know what a submysterygift is. An older app that
-   sends no list at all means everything shows, which is what the dock did before the switches. */
+/* Whether this kind of event card is switched on in the app. An app that sends no group list means
+   everything shows. */
 function showsEvent(chatEvent) {
   const groups = state.settings && state.settings.events;
   return !groups || groups[chatEvent.group] !== false;
 }
 
-/* ------------------------------------------------------------------ transport */
+/* Transport */
 
 function api(path, options = {}) {
   const separator = path.includes("?") ? "&" : "?";
@@ -97,23 +96,20 @@ function handle(frame) {
   if (frame.type === "hello") {
     state.mentionName = frame.mentionName || "";
     state.speech = frame.speechEnabled === true;
-    // Before the history is drawn: the names have to be on the lines the moment they appear, not
-    // one repaint later.
+    // Before the history is drawn, so the names are on the lines the moment they appear.
     applyNicknameBook(frame.nicknames);
     applySettings(frame.settings);
     applyAuth(frame.auth);
     setStatus(frame.status.text, frame.status.state);
 
-    // A hello is a fresh start, and after a reconnect the history already contains whatever was
-    // still queued here. Anything left over would be shown a second time.
+    // After a reconnect the history already contains whatever was queued here; leftovers would show
+    // twice.
     el.chat.replaceChildren();
     clearPins();
-    // A pin belongs to the chat it was made in, so the claim is only picked back up when the dock
-    // has come back to the same channel. A reload is the whole reason it is written down at all.
+    // A pin belongs to the chat it was made in, so the claim is only recalled for the same channel.
     state.channel = frame.channel || "";
     state.sharedPin = recallSharedPin(state.channel);
-    // Before the history is replayed, because replaying it is what fills these back up: a hello is
-    // the one frame that says which room the dock is in.
+    // Before the history is replayed, because replaying it is what fills these back up.
     forgetChannel();
     state.queue.length = 0;
     state.missed = 0;
@@ -126,11 +122,8 @@ function handle(frame) {
     drawHistory(frame.history);
     return;
   }
-  /* The whole timeline again, because the app rebuilt it: lines fetched from before we connected
-     have been woven in above the live ones, or an earlier sitting was just put away. Sent as one
-     frame rather than as messages so it lands at once – dropped into the pacer it would trickle back
-     onto the page for a minute at the reader's chosen speed. Pins are left alone: the channel has
-     not changed, so a line somebody nailed to the strip is still worth keeping. */
+  /* The app rebuilt the whole timeline. Drawn at once: through the pacer it would trickle back at
+     the reader's speed. Pins stay, because the channel has not changed. */
   if (frame.type === "history") {
     el.chat.replaceChildren();
     state.queue.length = 0;
@@ -138,9 +131,7 @@ function handle(frame) {
     drawHistory(frame.payload);
     return;
   }
-  /* The made-up lines the app shows while nothing is connected. Drawn at once rather than pushed
-     through the pacer, because they did not arrive one after another – they are a picture of what
-     the reading settings do, and a picture should not assemble itself over the next few seconds. */
+  /* The made-up lines shown while nothing is connected, drawn at once rather than paced. */
   if (frame.type === "samples") {
     el.chat.replaceChildren();
     state.queue.length = 0;
@@ -149,20 +140,16 @@ function handle(frame) {
     return;
   }
   if (frame.type === "message") { state.queue.push(msg(frame.payload)); return; }
-  // Dropped here rather than at render, so a hidden card never counts as something the reader is
-  // behind on: the jump button counts what is waiting in the queue.
+  // Dropped here rather than at render, so a hidden card never counts toward the jump button.
   if (frame.type === "event") { if (showsEvent(frame.payload)) state.queue.push(evt(frame.payload)); return; }
   if (frame.type === "messageUpdate") { applyMessageUpdate(frame.payload); return; }
-  // No payload means there is no train. Deliberately not folded into the clear frame below: that
-  // one also fires when the first real line replaces the samples, which says nothing about a train.
+  // No payload means there is no train. Kept apart from the clear frame, which also fires when the
+  // first real line replaces the samples.
   if (frame.type === "hypeTrain") { applyHypeTrain(frame.payload || null); return; }
-  // The whole queue every time, not a delta: a bar showing a reading that has already been answered
-  // is how a viewer's points get handed back twice, or not at all.
+  // The whole queue every time, not a delta, so the bar never shows a reading already answered.
   if (frame.type === "tts") { applyTts(frame.payload || []); return; }
-  // Both things that send a clear – switching channel, and the first real line replacing the
-  // samples – take the whole column with them, and every pin is a copy of a line that was in it.
-  // Leaving the strip alone would nail the previous channel's messages above a chat they are not
-  // from. Deliberately unlike the hype train, which is a state of its own and has its own frame.
+  // A clear (a channel switch, or the first real line replacing the samples) empties the column, and
+  // every pin is a copy of a line that was in it.
   if (frame.type === "clear") {
     el.chat.replaceChildren();
     clearPins();
@@ -177,16 +164,13 @@ function handle(frame) {
   if (frame.type === "settings") { applySettings(frame.payload); return; }
   if (frame.type === "auth") { applyAuth(frame.payload); return; }
   if (frame.type === "speech") { applySpeech(frame.payload.enabled); return; }
-  // Every dock hears it, including the one that made the change: a nickname belongs to the chatter
-  // rather than to a message, so it has to reach the lines that are already on screen.
+  // Every dock gets it, including the one that made the change, so lines already on screen update.
   if (frame.type === "nickname") { rememberNickname(frame.payload); redrawNicknames(); return; }
   if (frame.type === "badgesLoaded") { location.reload(); }
 }
 
-/* Lines the app has already read, drawn at once rather than trickled through the pacer: they are
-   history, not something arriving now. The app keeps every event in its timeline, so a kind switched
-   back on is here again after a reload even though the cards already on screen were not brought back
-   when it was switched on. */
+/* Draws lines the app has already read at once, skipping the pacer and any event kind that is
+   switched off. */
 function drawHistory(items) {
   items
     .filter((item) => item.type !== "event" || showsEvent(item.event))
@@ -196,7 +180,7 @@ function drawHistory(items) {
   scrollToEnd();
 }
 
-/* ------------------------------------------------------ pacing and scrolling */
+/* Pacing and scrolling */
 
 let lastRelease = 0;
 
@@ -257,9 +241,7 @@ el.jump.addEventListener("click", () => {
   updateJump();
 });
 
-/* A pause is for reading one line properly, not for leaving the chat behind. A dock left paused
-   looks exactly like a dock that has gone quiet – same still column, no sign of which of the two it
-   is – so the pause lets go by itself rather than waiting to be noticed. */
+/* A paused dock looks exactly like a quiet one, so the pause lets go by itself. */
 const AUTO_RESUME_MS = 2 * 60 * 1000;
 let resumeTimer = 0;
 
@@ -272,7 +254,7 @@ function setPaused(paused) {
   if (paused) {
     resumeTimer = setTimeout(() => {
       setPaused(false);
-      // Said out loud: the column starting to move on its own is otherwise a small mystery.
+      // Announced, so the column starting to move on its own is not a mystery.
       toast("Pausen släpptes automatiskt efter två minuter.", "info");
     }, AUTO_RESUME_MS);
   }
@@ -281,31 +263,25 @@ function setPaused(paused) {
 
 el.pause.addEventListener("click", () => setPaused(!state.paused));
 
-/* OBS gives no easy way to reload a dock, and a browser source that has been running for hours is
-   the one place where "start over" is the shortest fix. Reloading replays the history from the app,
-   so nothing is lost by pressing it. */
+/* OBS gives no easy way to reload a dock. Reloading replays the history from the app, so nothing
+   is lost. */
 el.refresh.addEventListener("click", () => location.reload());
 
-/* --------------------------------------------------------------- rendering */
+/* Rendering */
 
-/* The chat column holds two kinds of card. Tagging each line as it arrives keeps the pacer, the
-   history replay and the re-render from having to guess which of the two they are holding. */
+/* The chat column holds two kinds of card; each line is tagged as it arrives. */
 const msg = (data) => { remember(data); return { kind: "message", data }; };
 const evt = (data) => { remember(data); return { kind: "event", data }; };
 
-/* Everything the composer needs to offer is learned from the chat going past: who is here to be
-   named, and which emotes we have used ourselves. Wired into the two factories rather than into the
-   renderer, so a line that is paced, hidden or scrolled off still counts – the list of people in
-   chat should not depend on which reading settings are switched on. */
+/* Learns chatters and emotes for the composer. Called from the two factories rather than the
+   renderer, so a line that is paced, hidden or scrolled off still counts. */
 function remember(data) {
   rememberChatter(data);
   rememberEmotes(data);
 }
 
-/* The inside of a message – words, emotes, links, markers – is drawn by chat-render.js, which the
-   stream overlay loads as well: a link chip or a gigantified emote that looked one way here and
-   another way on the broadcast would be the same message telling two stories. What stays in this
-   file is everything around it, which is the half that is the dock's alone. */
+/* The inside of a message is drawn by chat-render.js, shared with the stream overlay so both show
+   a message the same way. */
 
 function isMention(message) {
   const name = state.mentionName.toLowerCase();
@@ -315,9 +291,7 @@ function isMention(message) {
   return message.text.toLowerCase().includes(`@${name}`);
 }
 
-/* One line that says this is an answer rather than a fresh thought. It is context for the sentence
-   below it, so it stays on a single row and gives way with an ellipsis instead of growing: a reply
-   to a wall of text must not be taller than the reply itself. */
+/* The line saying this message is an answer. Stays on a single row and truncates with an ellipsis. */
 function buildReply(reply) {
   const line = document.createElement("button");
   line.className = "msg-reply";
@@ -334,8 +308,7 @@ function buildReply(reply) {
   name.className = "msg-reply-name";
   name.textContent = reply.displayName;
 
-  // The answered message is often from someone whose Twitch name says nothing, and the reply line
-  // is exactly where you are trying to remember who that was.
+  // The reply line is where you try to remember who that was, so the nickname shows here too.
   const nickname = nicknameOf(null, reply.login);
   if (nickname) {
     const nickNode = document.createElement("span");
@@ -353,8 +326,7 @@ function buildReply(reply) {
   return line;
 }
 
-/* The answered message is usually a few rows up, and finding it by eye means leaving the newest
-   line. Tapping the reply line goes there and marks it, so the way back is the jump button. */
+/* Scrolls to the answered message and flashes it; the jump button is the way back. */
 function revealMessage(messageId) {
   const target = [...el.chat.children].find((node) => node.dataset.id === messageId);
   if (!target) { toast("Det meddelandet har redan rullat förbi.", "info"); return; }
@@ -406,11 +378,11 @@ function build(message) {
   if (node.dataset.mention === "true") head.appendChild(tag("till dig", "mention"));
   // A cheer is a normal message that came with bits, so it gets a marker rather than its own card.
   if (message.bits) head.appendChild(tag(`${message.bits} bits`, "bits"));
-  // Same for a redemption that asked the viewer to type something: the words are the message, and
-  // the reward is a marker on it – which is how Twitch's own chat shows it too.
+  // Same for a redemption with typed text: the reward is a marker on the message, as in Twitch's
+  // own chat.
   if (message.rewardLabel) head.appendChild(tag(`🔮 ${message.rewardLabel}`, "reward"));
-  // Power-ups. A message effect is an animation we do not reproduce, so it is always a marker; a
-  // gigantified emote speaks for itself when it is shown big, and only needs saying when it is not.
+  // A message effect is an animation we do not reproduce, so it is always a marker. A gigantified
+  // emote only needs one when it is not shown big.
   if (message.messageEffect) head.appendChild(tag("⚡ effekt", "powerup"));
   if (message.giantEmote != null && !state.settings.giantEmotes) head.appendChild(tag("⚡ förstorad", "powerup"));
 
@@ -449,9 +421,7 @@ function buildEvent(chatEvent) {
   headline.textContent = chatEvent.headline;
   head.appendChild(headline);
 
-  // "NyTittare prenumererar" says nothing about who that is; the name you gave them does. The
-  // headline is worded in the app and names the chatter, so the chip goes after it rather than
-  // inside it.
+  // The headline is worded in the app and names the chatter, so the nickname chip goes after it.
   const nickname = nicknameOf(chatEvent.userId, chatEvent.login);
   if (nickname) head.appendChild(nickChip(chatEvent, nickname));
 
@@ -478,16 +448,13 @@ function markRemoved(node, note) {
 }
 
 function rerender(preserveReadingPosition = false) {
-  // Switching a kind of event off takes the cards that are up down with it – leaving them would say
-  // the switch only applies to a chat that has not happened yet. Switching it back on cannot put
-  // them back, so the promise is the honest half of that: off now, on from here.
+  // Cards of a kind that is switched off are dropped; switching it back on does not restore them.
   const wasFollowing = state.stick && !state.paused;
   const previousScrollTop = el.chat.scrollTop;
   const items = [...el.chat.children].map((node) => node.item)
     .filter((item) => item && (item.kind !== "event" || showsEvent(item.data)));
   el.chat.replaceChildren(...items.map(buildItem));
-  // The marker between two sittings is not one of the items, so a rebuild drops it. It belongs to
-  // where the lines are rather than to the lines themselves, and is put back from them.
+  // The session marker is not an item, so a rebuild drops it; it is placed again from the lines.
   syncSessionSplit();
   if (!preserveReadingPosition || wasFollowing) scrollToEnd();
   else {
@@ -503,23 +470,17 @@ function appendItem(item, isHistory) {
 
   const lines = trimToLimit();
 
-  // Replayed lines are drawn in a run, so their marker is placed once at the end of the run instead.
-  // A live line needs the check of its own: the first "hej" of the evening is exactly the line that
-  // turns everything above it into an earlier sitting. Handed what the trim just counted – nothing
-  // touches the column in between, so walking it a second time would find the same thing.
+  // Replayed lines get their marker once at the end of the run; a live line may itself start a new
+  // sitting. The trimmed lines are passed on so the column is not walked twice.
   if (!isHistory) syncSessionSplit(lines);
 
   if (!isHistory && node.dataset.mention === "true" && state.settings.pinMentions) pinMessage(item.data, "mention");
   if (follow) scrollToEnd(); else if (!isHistory) state.missed++;
 }
 
-/* Cuts the column back to the reading limit. Counts lines rather than elements, because the marker
-   between two sittings shares the column with them: a limit of 200 that quietly means 199 messages
-   and a signpost is the setting saying one thing and doing another. Event cards do count – they are
-   lines in the same column and take up the same room. A marker left with nothing above it is not
-   removed here but by syncSessionSplit, which is the one place that decides where it belongs.
-
-   Returns the lines that survived, so the caller does not have to count the column a second time. */
+/* Cuts the column back to the reading limit and returns the lines that survived. Counts lines,
+   event cards included, but not the session marker; a marker left with nothing above it is removed
+   by syncSessionSplit. */
 function trimToLimit() {
   const lines = chatLines();
   const excess = lines.length - state.settings.maxMessages;
@@ -528,33 +489,24 @@ function trimToLimit() {
   return lines.slice(excess);
 }
 
-/* The cards in the column, without the session marker that shares it. Walked fresh each time rather
-   than kept: the column is changed from a dozen places, and a stale copy here would be a card that
-   is off the page but still in the reckoning – which is how the marker would end up pointing at
-   nothing. Passed from caller to caller instead, but only across steps that touch nothing. */
+/* The cards in the column, without the session marker. Walked fresh each time: the column is
+   changed from many places and a kept copy would go stale. */
 function chatLines() {
   const lines = [];
   for (const node of el.chat.children) if (node.item) lines.push(node);
   return lines;
 }
 
-/* --------------------------------------------------------- earlier sittings */
+/* Earlier sittings */
 
-/* The chat survives a restart now, which means a dock can open onto this morning's lines sitting
-   above tonight's first "hej". Nothing tells us where one sitting ended and the next began – Twitch
-   has no notion of a stream in its chat, and neither has the app – so the quiet between two lines is
-   the only honest signal there is: after six hours nobody is still in the same conversation.
-
-   Where such a gap is found the column gets a marker at that exact point, and the marker carries the
-   button. That is the whole reason it is drawn in the column rather than put up in the top bar: a
-   button that offers to hide "older" chat is worth nothing unless the reader can see where the line
-   is being drawn and how long the quiet was, and then decide. */
+/* Chat survives a restart, so a dock can open onto an earlier sitting's lines. Neither Twitch nor
+   the app marks where a stream ended, so six hours of quiet counts as the boundary. The marker sits
+   in the column at that point and carries the hide button, so the reader sees what it would hide. */
 const SESSION_GAP_MS = 6 * 60 * 60 * 1000;
 
 const itemTime = (item) => (item.kind === "event" ? item.data.at : item.data.sentAt);
 
-/* The newest gap only. Two restarts in one day would otherwise leave several boundaries in the
-   column and no way to tell which one "hide the earlier chat" meant. */
+/* The newest gap only, so "hide the earlier chat" has one meaning after several restarts. */
 function sessionBoundary(lines = chatLines()) {
   for (let i = lines.length - 1; i > 0; i--) {
     const quiet = itemTime(lines[i].item) - itemTime(lines[i - 1].item);
@@ -563,9 +515,7 @@ function sessionBoundary(lines = chatLines()) {
   return null;
 }
 
-/* Rebuilt from where the lines now are rather than remembered, so it cannot drift: the marker has to
-   survive a reading setting changing, follow the oldest lines as they scroll out of the column, and
-   take itself away when nothing is left above it to hide. */
+/* Places, updates or removes the session marker from where the lines are. */
 function syncSessionSplit(lines) {
   const existing = el.chat.querySelector(".session-split");
   const boundary = sessionBoundary(lines ?? chatLines());
@@ -598,11 +548,9 @@ function buildSessionSplit() {
   return split;
 }
 
-/* Asked of the app rather than solved by dropping the nodes here. The same lines are on the overlay
-   the viewers see and in the file that puts the chat back after a restart, so hiding them in this one
-   browser would mean meeting them again at the next reload. The app answers with the trimmed timeline
-   for every open dock, and with a count of its own – usually higher than what was on screen, because
-   it keeps more lines than the dock shows. */
+/* Asks the app to trim, because the same lines are on the viewers' overlay and in the saved
+   history. The app answers every dock with the trimmed timeline and its own count, usually higher
+   than what was on screen. */
 function hideEarlierSession(split) {
   const cutoff = Number(split.dataset.cutoff);
   if (!cutoff) return;
@@ -621,16 +569,12 @@ function quietText(ms) {
   return days === 1 ? "ett dygn" : `${days} dygn`;
 }
 
-/* ------------------------------------------------------------ pinned strip */
+/* Pinned strip */
 
-/* Two kinds of pin share the shelf, and they are not the same promise. A mention put itself there
-   because it named you, so it takes itself away again after a while – nobody asked for it. A manual
-   pin is a decision, "I want to come back to this", and letting a timer overrule that would be the
-   dock quietly deciding the reader was done. So it stays until it is taken down by hand.
+/* A mention pins itself and expires on a timer; a manual pin stays until taken down by hand.
 
-   Held as a list rather than as nodes, because everything that touches a pinned line – a power-up
-   arriving late, a reading setting changing in the app – has to reach the strip as well as the
-   column, and a rebuild from state is the only version of that which cannot drift apart. */
+   Held as a list rather than as nodes, so a late update to a pinned line reaches the strip through
+   a rebuild from state. */
 const PIN_GROUPS = [
   { kind: "manual", label: "Fastnålat" },
   { kind: "mention", label: "Till dig" },
@@ -643,8 +587,7 @@ function findPin(messageId) {
 function pinMessage(message, kind) {
   const existing = findPin(message.id);
   if (existing) {
-    // Pinning a mention by hand promotes it: the timer would otherwise pull it away under the
-    // reader who just said they wanted to keep it.
+    // Pinning a mention by hand promotes it, so the timer does not pull it away.
     if (kind === "manual" && existing.kind === "mention") {
       clearTimeout(existing.timer);
       existing.kind = "manual";
@@ -717,22 +660,19 @@ function buildPin(pin) {
   return item;
 }
 
-/* ------------------------------------------------------------- hype train */
+/* Hype train */
 
-/* A hype train is the one thing here that is a state rather than a line: it runs for minutes and
-   changes while it does. So it gets a strip that stays put, and every frame is the whole current
-   picture – rendering is a straight replace, never a merge. */
+/* A hype train is a state rather than a line, so it gets a strip that stays put. Every frame is
+   the whole current picture: rendering replaces, never merges. */
 
-/* How long a finished train stays up so the level it reached can be read. Matches
-   HypeTrainState.EndedLinger in the app, which is what decides whether a reconnecting dock is
-   handed the train at all. */
+/* How long a finished train stays up. Matches HypeTrainState.EndedLinger in the app, which decides
+   whether a reconnecting dock is handed the train at all. */
 const HYPE_LINGER_MS = 12000;
 let hypeTimer = 0;
 
 function applyHypeTrain(train) {
   clearTimeout(hypeTimer);
-  // Held on to because the strip is a state, not a line: turning hype trains back on mid-train has
-  // to be able to put it up again, and nothing else would arrive until the next progress frame.
+  // Kept so the strip can come back when hype trains are switched on mid-train.
   state.hypeTrain = train;
   if (!train || !showsEvent({ group: "hypeTrain" })) { el.hype.hidden = true; return; }
 
@@ -751,30 +691,24 @@ function applyHypeTrain(train) {
   el.hypeBar.setAttribute("aria-valuenow", String(Math.round(share * 100)));
   el.hypeBar.setAttribute("aria-label", train.detail || train.headline);
 
-  /* Two ways the strip leaves on its own. A finished train has been read after a few seconds; and a
-     running one whose deadline passes is a train we have lost contact with, because Twitch would
-     have sent a level-up or an end otherwise. Without the second one, a dropped connection mid-train
-     would leave a frozen bar sitting there for the rest of the stream. */
+  /* A finished train leaves after a short linger. A running one leaves when its deadline passes:
+     Twitch would have sent a level-up or an end otherwise, so contact was lost. */
   const linger = train.phase === "ended"
     ? HYPE_LINGER_MS
     : Math.max(0, (train.expiresAt || 0) - Date.now());
   if (train.phase === "ended" || train.expiresAt) {
-    // Forgotten as well as hidden: a train the strip has already retired must not come back up
-    // because some unrelated reading setting was changed half an hour later.
+    // Forgotten as well as hidden, so a later settings change does not put a retired train back up.
     hypeTimer = setTimeout(() => { el.hype.hidden = true; state.hypeTrain = null; }, linger);
   }
 }
 
-/* --------------------------------------------------------- paid readings */
+/* Paid readings */
 
-/* Someone spent bits or channel points to have something read out loud, and the app is holding it
-   until the streamer says yes. The bar shows one at a time – the oldest, which is the one whose
-   viewer has waited longest – with a count of what is behind it. Deciding on six at once is not a
-   thing anybody does well, and the queue is answered in the order it arrived either way.
+/* Readings paid for with bits or channel points wait in the app until the streamer answers. The
+   bar shows the oldest one, with a count of the rest.
 
-   The list is whole every time it arrives, so this is a straight replace and never a merge: the
-   app's queue is the only version of what is still unanswered, and a bar that kept its own copy
-   would eventually offer a button for a reading that had already been paid back. */
+   Each frame carries the whole queue and replaces what is shown: the app's queue is the only
+   version of what is still unanswered. */
 
 let ttsTimer = 0;
 
@@ -785,8 +719,7 @@ function applyTts(list) {
 
 function renderTts() {
   clearTimeout(ttsTimer);
-  // The one being read out loud outranks the ones waiting: it is what the viewers are hearing right
-  // now, and the only one the stop button belongs to.
+  // The one being read aloud outranks the ones waiting: the stop button belongs to it.
   const current = state.tts.find((entry) => entry.state === "speaking")
     || state.tts.find((entry) => entry.state === "pending")
     || state.tts.find((entry) => entry.state === "queued");
@@ -810,11 +743,9 @@ function renderTts() {
   el.ttsApprove.disabled = false;
   el.ttsReject.hidden = !pending;
   el.ttsReject.disabled = false;
-  /* Worded from what a refusal can actually do, and there are three answers rather than two. Not
-     being refundable has two quite different causes: bits, which nothing can hand back, and a
-     channel points reward the app did not create, where the points are perfectly refundable – just
-     not from here. Telling a streamer their channel points are bits would send them looking for a
-     limitation that is not the one they have. */
+  /* Not refundable has two causes: bits, which nothing can hand back, and a channel points reward
+     the app did not create, which is refundable only from Twitch's own queue. The tooltip says
+     which. */
   el.ttsReject.textContent = current.refundable ? "↩ Refundera" : "🚫 Neka";
   el.ttsReject.title = current.refundable
     ? "Nekar uppläsningen och ger tillbaka poängen"
@@ -827,9 +758,8 @@ function renderTts() {
   showTtsCountdown(current);
 }
 
-/* Counts down to the moment the app lets an unanswered reading go, so a bar that has been sitting
-   there for ten minutes says how long is left rather than merely that something is waiting. Its own
-   ticker rather than one that runs all the time: nothing here changes while nothing is pending. */
+/* Shows how long is left before the app lets an unanswered reading go. Ticks only while something
+   is pending. */
 function showTtsCountdown(entry) {
   if (entry.state === "speaking") { el.ttsLeft.textContent = "Läses upp …"; return; }
   if (entry.state === "queued") { el.ttsLeft.textContent = "Godkänd – väntar på tur"; return; }
@@ -839,13 +769,12 @@ function showTtsCountdown(entry) {
   const minutes = Math.floor(left / 60000);
   const seconds = Math.floor((left % 60000) / 1000);
   el.ttsLeft.textContent = minutes > 0 ? `${minutes} min kvar` : `${seconds} s kvar`;
-  // Slower than a clock once there are minutes left: the number would not change anyway, and this
-  // page is redrawn by every message that arrives.
+  // Slower once there are minutes left: the number would not change anyway.
   ttsTimer = setTimeout(() => showTtsCountdown(entry), minutes > 0 ? 15000 : 1000);
 }
 
-/* The buttons answer the app rather than the bar. Nothing is taken off screen here: the app sends
-   the queue back the moment it has acted, and the reading is only really answered once it has. */
+/* Sends the decision to the app. Nothing is taken off screen here: the app sends the queue back
+   once it has acted. */
 function decideTts(path) {
   const id = el.ttsBar.dataset.id;
   if (!id) return;
@@ -863,10 +792,8 @@ el.ttsStop.addEventListener("click", () => {
     .catch((error) => { toast(error.message, "error"); renderTts(); });
 });
 
-/* A line we have already been given, changed: a Gigantify power-up that reached the desktop app
-   after the message it belongs to. It may still be waiting in the pacer or already be a card on
-   screen, so both are checked – and a line that has scrolled past its limit is simply gone, which
-   is the right answer for a marker nobody can see any more. */
+/* A message already delivered has changed: a Gigantify power-up reached the app after its
+   message. The line may be waiting in the pacer or already on screen, so both are checked. */
 function applyMessageUpdate(payload) {
   // Still in the pacer, so it has not been built yet: swapping the payload is the whole job.
   const queued = state.queue.find((item) => item.kind === "message" && item.data.id === payload.id);
@@ -879,8 +806,7 @@ function applyMessageUpdate(payload) {
     if (state.stick) scrollToEnd();
   }
 
-  // The pinned strip keeps a copy of its own. A marker that landed on only one of the two would
-  // make a single message say different things depending on where in the dock it is read.
+  // The pinned strip keeps its own copy of the message.
   const pinned = findPin(payload.id);
   if (pinned) { pinned.message = payload; renderPins(); }
 }
@@ -903,14 +829,9 @@ function applyModeration(payload) {
   }
 }
 
-/* Why a note is kept at all: a re-render rebuilds every card from the message it came from, and the
-   strike-through is not part of that message – without this, changing a reading setting would quietly
-   un-delete every line a moderator had dealt with.
-
-   Why it is capped: only lines still in the column can ever be rebuilt, and the column holds at most
-   a few hundred. The map used to grow for as long as the page was open, which for a dock in OBS is
-   the whole stream, so an evening of bot waves left thousands of ids nothing could ever ask for
-   again. The oldest go first – they name lines that scrolled off long ago. */
+/* A re-render rebuilds every card from its message, and the strike-through is not part of the
+   message, so removal notes are kept here. Capped because only lines still in the column can be
+   rebuilt; the oldest ids go first. */
 const REMOVED_LIMIT = 500;
 
 function rememberRemoved(id, note) {
@@ -933,11 +854,10 @@ function setStatus(text, level) {
   el.statusDot.dataset.state = level;
 }
 
-/* ------------------------------------------------------- name pronunciation */
+/* Name pronunciation */
 
-/* Twitch names are written to be looked at, not said: decorative x-es, doubled letters and
-   shouted abbreviations. The app turns the name into speakable text and reads it out loud,
-   so a name never has to be decoded before it can be used. */
+/* Twitch names are written to be looked at, not said. The app turns the name into speakable text
+   and reads it out loud. */
 function speakButton(message) {
   const button = document.createElement("button");
   button.className = "msg-say";
@@ -962,16 +882,13 @@ function speakName(message, button) {
     .finally(() => { button.dataset.busy = "false"; });
 }
 
-/* ---------------------------------------------------------------- nicknames */
+/* Nicknames */
 
-/* A Twitch name is chosen to look a certain way, not to be recognised: xXx-padding, deliberate
-   misspellings, three regulars whose names all start the same. So a chatter can be given a name of
-   your own, shown next to theirs and nowhere else – it never leaves this machine and no viewer ever
-   sees it.
+/* A chatter can be given a name of your own, shown next to their Twitch name. It never leaves this
+   machine and no viewer sees it.
 
-   Held as a book of its own rather than as a field on each message: the name belongs to the person,
-   so giving one has to reach every line they have already written, including the ones replayed from
-   the history. The app owns the book and saves it; this is a copy for drawing. */
+   Held as a book rather than a field on each message, so a name reaches every line the person has
+   already written. The app owns and saves the book; this is a copy for drawing. */
 const nick = { entries: [], byId: new Map(), byLogin: new Map() };
 
 function applyNicknameBook(list) {
@@ -1012,8 +929,8 @@ function nicknameOf(userId, login) {
   return "";
 }
 
-/* Names are baked into the markup next to the one Twitch gave, so a change has to rebuild what is
-   already on screen – the pinned strip included, or one line would keep saying the old name. */
+/* Names are baked into the markup, so a change rebuilds what is on screen, the pinned strip
+   included. */
 function redrawNicknames() {
   if (!state.settings) return;
   rerender(true);
@@ -1033,8 +950,7 @@ function nickChip(message, nickname) {
   return chip;
 }
 
-/* Takes anything carrying a login and a name: a chat message, or a row in the list of every
-   nickname – where the Twitch name is all that was written down. */
+/* Takes anything carrying a login and a name: a chat message, or a row in the nickname list. */
 function openNickSheet(target) {
   state.nickTarget = { userId: target.userId || "", login: target.login || "", displayName: target.displayName || target.login || "" };
   const current = nicknameOf(state.nickTarget.userId, state.nickTarget.login);
@@ -1047,8 +963,7 @@ function openNickSheet(target) {
   el.nickRemove.hidden = !current;
   updateNickCount();
   openSheet("nickSheet");
-  // The sheet exists only to type in, so it opens with the caret already there and the old name
-  // selected: replacing it is then one keystroke rather than a hunt for the end of the field.
+  // Caret in the field and the current name selected, so replacing it is one keystroke.
   el.nickInput.focus();
   el.nickInput.select();
 }
@@ -1072,9 +987,8 @@ el.sheetNick.addEventListener("click", () => {
   if (state.target) openNickSheet(state.target);
 });
 
-/* Blank text is how a nickname is taken back – the same call, so there is one thing that can fail
-   and one place it is answered. The undo in the notice is the reason the previous name is read
-   before the call rather than after it. */
+/* Saves a nickname; blank text removes it. The previous name is read before the call so the
+   notice can offer an undo. */
 function saveNickname(text) {
   const target = state.nickTarget;
   if (!target) return;
@@ -1086,8 +1000,8 @@ function saveNickname(text) {
     body: JSON.stringify({ userId: target.userId, login: target.login, text }),
   })
     .then((saved) => {
-      // The app tells every dock, this one included. Applying the answer here as well means the
-      // name still lands if the socket happens to be reconnecting at this exact moment.
+      // The app tells every dock, this one included. Applied here as well so the name lands even if
+      // the socket is reconnecting.
       rememberNickname(saved || { userId: target.userId, login: target.login, text: "" });
       redrawNicknames();
 
@@ -1113,8 +1027,7 @@ function restoreNickname(target, text) {
     .catch((error) => toast(error.message, "error"));
 }
 
-/* Every nickname in one list. Without it, a name given months ago can only be found again by
-   waiting for its owner to say something. */
+/* Every nickname in one list, so a name can be found without waiting for its owner to speak. */
 el.nickBtn.addEventListener("click", () => {
   openSheet("nickPanel");
   renderNickList();
@@ -1154,7 +1067,7 @@ function renderNickList() {
   }));
 }
 
-/* ------------------------------------------------------------ user actions */
+/* User actions */
 
 const SHEETS = ["userSheet", "raidPanel", "nickSheet", "nickPanel"];
 
@@ -1170,8 +1083,7 @@ function openSheet(id) {
 function openUserSheet(message) {
   state.target = message;
   const nickname = nicknameOf(message.userId, message.login);
-  // The name you gave them leads here too, for the same reason it does in the column: the sheet is
-  // about a person, and the Twitch name is the half that was hard to place.
+  // The nickname leads here too, as it does in the column.
   el.sheetName.textContent = nickname ? `${nickname} · ${message.displayName}` : message.displayName;
   el.sheetQuote.textContent = message.text;
   el.sheetConfirm.hidden = true;
@@ -1181,10 +1093,8 @@ function openUserSheet(message) {
     ? "📌 Ta bort tittarnas nål"
     : "📌 Nåla fast för tittarna";
 
-  /* A line of our own that Twitch never gave an id to carries a local one instead, so it can be a
-     message like any other here. The two buttons that would hand that id to Twitch are the ones it
-     cannot answer, and a button that can only fail is worse than no button. Everything else on the
-     sheet – the local pin, the nickname, the profile – works on a name rather than on a message. */
+  /* A line of our own that Twitch never gave an id carries a local one, which Twitch cannot act on,
+     so the two buttons that would send it are hidden. */
   const addressable = message.localEcho !== true;
   el.sheetPinChat.hidden = !addressable;
   el.sheetDelete.hidden = !addressable;
@@ -1194,14 +1104,11 @@ function openUserSheet(message) {
   openSheet("userSheet");
 }
 
-/* Nailing a line to this dock's strip is a reading aid, not a moderation action: it changes nothing
-   on Twitch and nobody but this reader sees it. So it sits outside the row a logout takes away, and
-   works in any channel – which is the whole reason stage five was built from this end rather than
-   from polling Twitch for what the streamer pinned. */
-/* Three states, not two. A mention is already on the strip but on a clock, so the useful thing to
-   offer is to stop the clock – and offering "remove" instead was what made the promotion the strip
-   is built around unreachable from the one place anybody would look for it. Getting rid of a pin is
-   the ✕ on the card, in both cases; this button never needs to be a second way to do that. */
+/* The local pin is a reading aid, not a moderation action: it changes nothing on Twitch, so it
+   works logged out and in any channel.
+
+   Three states: a mention is already on the strip but on a timer, so the button offers to keep
+   it. Removing a pin is the ✕ on the card. */
 function pinLabel(message) {
   const pin = findPin(message.id);
   if (!pin) return "📌 Nåla fast här";
@@ -1217,16 +1124,12 @@ el.sheetPin.addEventListener("click", () => {
   else pinMessage(target, "manual");
 });
 
-/* The other half: the same line in front of everyone watching. Twitch keeps one mod-pinned message
-   per channel and pushes nothing back when it changes, so the only pin this dock can honestly speak
-   for is the one it made itself.
+/* Pins the line for everyone watching. Twitch keeps one mod-pinned message per channel and pushes
+   nothing back when it changes, so the dock only tracks the pin it made itself.
 
-   That claim is written down rather than kept in memory, because an OBS dock gets reloaded and a
-   forgotten claim is a pin nobody can take down again without going to Twitch by hand. It can go
-   stale – Twitch drops the pin at the end of a stream, and another moderator can replace it – and
-   the cost of that is a button offering to remove a pin that is already gone, which answers with a
-   readable error and then stops claiming it. Knowing for certain would mean asking Twitch, and
-   that needs a scope this app does not hold. */
+   The claim is saved in localStorage so it survives a dock reload. It can go stale (Twitch drops
+   the pin at stream end, another moderator can replace it); removing a pin that is gone answers
+   with an error and ends the claim. Asking Twitch would need a scope this app does not hold. */
 const SHARED_PIN_KEY = "toh.sharedPin";
 
 function rememberSharedPin(messageId) {
@@ -1262,9 +1165,7 @@ function unpinForViewers(target) {
   api("/api/chat/unpin", { method: "POST", body: JSON.stringify({ messageId: target.id }) })
     .then(() => toast("Nålen är borttagen för tittarna.", "info"))
     .catch((error) => toast(error.message, "error"))
-    // Either answer ends the claim. A refusal means Twitch does not agree this dock owns the
-    // channel's pin, and a button that keeps offering to take down a pin that is not there is a
-    // dead end the reader can only get out of by guessing.
+    // Either answer ends the claim: a refusal means Twitch does not agree this dock owns the pin.
     .finally(() => { if (state.sharedPin === target.id) forgetSharedPin(); });
 }
 
@@ -1277,8 +1178,7 @@ el.sheetActions.addEventListener("click", (event) => {
     el.userSheet.hidden = true;
     if (state.sharedPin === target.id) { unpinForViewers(target); return; }
     pinForViewers(target);
-    // Kept in reach here too: the line the whole channel is looking at is the one worth having
-    // where it can be read, and nothing comes back from Twitch that would put it there for us.
+    // Pinned locally as well: nothing comes back from Twitch that would put it on the strip.
     pinMessage(target, "manual");
     return;
   }
@@ -1323,7 +1223,7 @@ function undoBan(target) {
     `${target.displayName} är släppt igen.`);
 }
 
-/* -------------------------------------------------------------------- raid */
+/* Raid */
 
 el.raidBtn.addEventListener("click", async () => {
   openSheet("raidPanel");
@@ -1393,35 +1293,31 @@ $("raidCancel").addEventListener("click", () => {
   run(api("/api/raid/cancel", { method: "POST" }), "Raiden avbröts.");
 });
 
-/* ---------------------------------------------------------------- composer */
+/* Composer */
 
-/* Twitch's own limit on one chat line. Enforced here as well as on the way out, so a message is
-   stopped while it is being written rather than quietly cut in half after it was sent. */
+/* Twitch's limit on one chat line, enforced while typing as well as on the way out. */
 const MAX_MESSAGE = 480;
 
-/* The field holds two kinds of node and nothing else: text, and an <img> standing in for an emote
-   whose name is written on it. That is the whole contract – everything below reads or writes the
-   field through these two functions, so "what is in the box" and "what gets sent" cannot drift. */
+/* The field holds only text nodes and <img> emotes carrying their name. Everything reads the
+   field through these functions, so what is shown and what is sent cannot drift. */
 function composerText() {
   return textOfNodes(el.composerInput.childNodes);
 }
 
-/* What a run of those nodes says, as the chat would read it. Split out from composerText because
-   what a paste is about to replace has to be measured the same way the whole field is. */
+/* What a run of composer nodes says, as the chat would read it. */
 function textOfNodes(nodes) {
   let text = "";
   for (const node of nodes) {
     if (node.nodeType === Node.TEXT_NODE) text += node.nodeValue;
     else if (node.nodeName === "IMG") text += node.dataset.emote || "";
-    // A browser leaves a <br> behind when the last character is deleted, and pasted markup can
-    // arrive as anything at all; both are worth exactly their text.
+    // A stray <br> or pasted markup is worth exactly its text.
     else text += node.textContent;
   }
   return text;
 }
 
-/* How many characters may still be added: what is left of the limit, plus whatever the caret has
-   selected – that text is on its way out and its room comes back with it. */
+/* How many characters may still be added: what is left of the limit plus the current selection,
+   which typing would replace. */
 function composerRoom() {
   const selection = window.getSelection();
   let selected = 0;
@@ -1433,8 +1329,7 @@ function composerRoom() {
   return Math.max(0, MAX_MESSAGE - composerText().length + selected);
 }
 
-/* Text back into the field, with any emote name in it drawn as the emote again. Used when a refused
-   message is handed back: it went in as pictures and should not come back as words. */
+/* Puts text back into the field with emote names drawn as emotes, for a refused message. */
 function setComposerText(text) {
   el.composerInput.replaceChildren(...composerNodes(text));
   updateComposerEmpty();
@@ -1464,8 +1359,8 @@ function emoteImage(name, id) {
   return image;
 }
 
-/* An empty editor is not empty markup – there is usually a stray <br> in it – so the placeholder is
-   driven from what the field actually says rather than from CSS's idea of emptiness. */
+/* An empty editor usually holds a stray <br>, so the placeholder follows the field's text rather
+   than CSS emptiness. */
 function updateComposerEmpty() {
   el.composerInput.dataset.empty = String(composerText().length === 0);
 }
@@ -1484,7 +1379,7 @@ el.composer.addEventListener("submit", (event) => {
     });
 });
 
-// The field is no longer an <input>, so nothing submits the form on its own.
+// The field is not an <input>, so nothing submits the form on its own.
 el.composerInput.addEventListener("keydown", (event) => {
   if (event.key !== "Enter" || event.shiftKey || mention.open) return;
   event.preventDefault();
@@ -1496,9 +1391,8 @@ el.composerInput.addEventListener("keydown", (event) => {
 el.composerInput.addEventListener("paste", (event) => {
   event.preventDefault();
   const pasted = (event.clipboardData?.getData("text/plain") || "").replace(/\s+/g, " ");
-  // Cut to what is left, and said out loud. Typing stops at the limit and the picker refuses an
-  // emote that will not fit, so a paste going straight past it is the one way over – and the send
-  // path cuts at the same limit without a word, which loses the end of the line after it was sent.
+  // Cut to what is left, with a notice: a paste is the one way past the limit, and the send path
+  // cuts at the same limit silently.
   const text = pasted.slice(0, composerRoom());
   if (text.length < pasted.length) toast(`Bara de första ${MAX_MESSAGE} tecknen får plats.`, "error");
   if (text) insertAtCaret(document.createTextNode(text));
@@ -1516,11 +1410,10 @@ el.composerInput.addEventListener("beforeinput", (event) => {
 
 el.composerInput.addEventListener("input", updateComposerEmpty);
 
-/* ------------------------------------------------------------ caret */
+/* Caret */
 
-/* The caret, as the two things everything here needs: which text node it sits in and how far along.
-   Null when it is not in the field at all, or is resting against an emote rather than inside words –
-   neither an @-name nor a search term can begin there. */
+/* The text node the caret sits in and its offset. Null when the caret is outside the field or
+   resting against an emote. */
 function caretInText() {
   const selection = window.getSelection();
   if (!selection || !selection.isCollapsed || selection.rangeCount === 0) return null;
@@ -1538,8 +1431,7 @@ function placeCaret(node, offset) {
   selection.addRange(range);
 }
 
-/* Inserts at the caret, or at the very end when the field has never been focused – which is where a
-   reader who has only clicked the picker would expect their first emote to land. */
+/* Inserts at the caret, or at the end when the field has never been focused. */
 function insertAtCaret(node) {
   const selection = window.getSelection();
   let range;
@@ -1558,11 +1450,10 @@ function insertAtCaret(node) {
   selection.addRange(range);
 }
 
-/* ------------------------------------------------------- who is in chat */
+/* Who is in chat */
 
-/* Deep enough to hold a quiet evening's regulars, short enough that a raid cannot turn the list into
-   a thousand strangers. The map is keyed by login and rewritten on every line, so its insertion
-   order is recency – which is the order the suggestions want, and costs nothing to keep. */
+/* Holds an evening's regulars without a raid filling the list with strangers. The map is rewritten
+   on every line, so its insertion order is recency, which is the order the suggestions want. */
 const CHATTER_LIMIT = 400;
 
 function rememberChatter(data) {
@@ -1573,19 +1464,16 @@ function rememberChatter(data) {
   if (state.chatters.size > CHATTER_LIMIT) state.chatters.delete(state.chatters.keys().next().value);
 }
 
-/* The names of the emotes we have used ourselves, so the picker can open on what this account keeps
-   reaching for rather than on an alphabetical wall. Only the name is kept: which of them may be sent
-   is Twitch's answer, and the picker only shows the ones that appear in both lists. */
+/* Names of the emotes we have used ourselves, for the picker's top row. Only names are kept; the
+   picker shows those that are also in Twitch's list of what may be sent. */
 const SEEN_EMOTE_LIMIT = 40;
 
 function rememberEmotes(data) {
   const emotes = data.emotes;
   const text = data.text || data.message || "";
   if (!emotes || !emotes.length || !text) return;
-  // Our own lines only. What the room is using is not the same as what we may send: a subscriber
-  // emote scrolling past belongs to whoever wrote it, and putting it in the top row of our own
-  // picker is an invitation to send something that reaches the chat as loose words. An emote we
-  // have already used is one Twitch has already accepted from this account.
+  // Our own lines only: an emote someone else used may not be ours to send, while one we have used
+  // is one Twitch has accepted from this account.
   const me = (state.auth.login || "").toLowerCase();
   if (!me || (data.login || "").toLowerCase() !== me) return;
 
@@ -1599,24 +1487,21 @@ function rememberEmotes(data) {
   if (state.seenEmotes.length > SEEN_EMOTE_LIMIT) state.seenEmotes.length = SEEN_EMOTE_LIMIT;
 }
 
-/* A channel switch takes the people and the emotes with it: the names in the old room are not who
-   is here now, and offering them would be the one way this list could put the wrong @ in a message. */
+/* A channel switch takes the people and the emotes with it, so the old room's names are never
+   offered. */
 function forgetChannel() {
   state.chatters.clear();
   state.seenEmotes.length = 0;
-  // The notes belong to lines from the old room, and every caller of this has just emptied the
-  // column those lines were in. Nothing left can ask for them.
+  // The notes belong to lines every caller has just emptied from the column.
   state.removed.clear();
-  // The @-list is gone with the people in it, so it cannot stay up. The emote picker can: it refills
-  // itself in place, and closing it here would have shut it under the reader every time the sample
-  // lines were replaced by the first real message – which is a clear frame like any other.
+  // The @-list closes with the people in it. The emote picker stays open and refills in place: a
+  // clear frame also arrives when the first real message replaces the samples.
   closeMentions();
   forgetEmotes();
 }
 
-/* Which fetch is the current one. An emote list is asked for once and then held, so a switch of
-   channel or account has to invalidate both what is held and whatever is still on its way – a reply
-   landing afterwards would quietly install the previous room's emotes over the new room's. */
+/* Which fetch is the current one. A switch of channel or account invalidates both the held list
+   and any reply still on its way. */
 let emoteRequest = 0;
 
 function forgetEmotes() {
@@ -1627,9 +1512,8 @@ function forgetEmotes() {
   if (!el.emotePanel.hidden) loadEmotes();
 }
 
-/* Emote names in a line, for drawing what is being typed into the composer. Whole words only, the
-   way Twitch matches them: "Kappa" inside "Kappagrejen" is five more letters and nothing else.
-   Messages in the column need none of this – they arrive with their spans already worked out. */
+/* Emote names in a line being typed into the composer. Whole words only, the way Twitch matches
+   them. Messages in the column arrive with their spans already worked out. */
 function emoteSpansIn(text) {
   if (!state.emoteIndex || !text) return [];
   const spans = [];
@@ -1640,16 +1524,15 @@ function emoteSpansIn(text) {
   return spans;
 }
 
-/* --------------------------------------------------------- @-suggestions */
+/* @-suggestions */
 
 /* An @ that starts a word. Deliberately not \w: display names carry å, ä and ö, and a reader who
    types the name they see should meet the same list as one who types the login. */
 const MENTION_PATTERN = /(?:^|\s)@([^\s@]{0,25})$/u;
 const MENTION_LIMIT = 8;
 
-/* Where the half-typed name is: the text node holding it and the offsets of its "@" and its end.
-   A node rather than a position in the whole field, because a name cannot run across an emote – so
-   the one run of text the caret is in is the whole of what has to be read and replaced. */
+/* The half-typed name: the text node holding it and the offsets of its "@" and its end. A name
+   cannot run across an emote, so one text node is all that is read and replaced. */
 const mention = { open: false, matches: [], index: 0, node: null, at: 0, end: 0 };
 
 function mentionQuery() {
@@ -1660,9 +1543,8 @@ function mentionQuery() {
   return { term: found[1], node: caret.node, at: caret.offset - found[1].length - 1, end: caret.offset };
 }
 
-/* Three tiers rather than one: a name that starts with what was typed is nearly always the one
-   meant, and a nickname match is worth having but should never outrank the Twitch name someone is
-   halfway through typing. Sorting is stable, so recency decides inside each tier. */
+/* Ranked in three tiers: name starts with the term, nickname starts with it, then any contains.
+   The sort is stable, so recency decides inside each tier. */
 function chattersMatching(term) {
   const needle = term.toLowerCase();
   const found = [];
@@ -1692,8 +1574,7 @@ function updateMentions() {
   const matches = chattersMatching(query.term);
   if (!matches.length) return closeMentions();
 
-  // The two panels hang in the same place above the field, so one opening puts the other away.
-  // Typing an @ is the more specific thing to be doing, so it wins.
+  // The two panels hang in the same place above the field, so one opening closes the other.
   closeEmotePanel();
   mention.open = true;
   mention.matches = matches;
@@ -1726,8 +1607,7 @@ function renderMentions() {
     name.textContent = chatter.displayName;
     row.appendChild(name);
 
-    // The name you gave them is the half you recognise, so it is in the list too – the whole reason
-    // nicknames exist is that three regulars can start with the same four letters.
+    // The nickname is the half you recognise, so it is in the list too.
     const nickname = nicknameOf(chatter.userId, chatter.login);
     if (nickname) {
       const chip = document.createElement("span");
@@ -1736,8 +1616,7 @@ function renderMentions() {
       row.appendChild(chip);
     }
 
-    // Only when it says something the display name does not: for most accounts the two are the
-    // same word in different case, and repeating it would be noise on every row.
+    // Only when it differs from the display name by more than case.
     if (chatter.login !== chatter.displayName.toLowerCase()) {
       const login = document.createElement("span");
       login.className = "suggest-login";
@@ -1760,9 +1639,8 @@ function moveMention(step) {
   renderMentions();
 }
 
-/* Twitch notices a mention by the login, and for an account whose display name is written in another
-   script the two are different words – so the login is what goes in unless the display name is the
-   same name with capitals, which is the case for nearly everyone. */
+/* Twitch notices a mention by the login, so the login goes in unless the display name is the same
+   name with capitals. */
 function acceptMention(chatter) {
   const name = chatter.displayName.toLowerCase() === chatter.login ? chatter.displayName : chatter.login;
   const inserted = `@${name} `;
@@ -1795,12 +1673,10 @@ el.composerInput.addEventListener("keydown", (event) => {
   else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeMentions(); }
 });
 
-/* -------------------------------------------------------- emote picker */
+/* Emote picker */
 
-/* Reading order, closest first. Which of the three groups an emote belongs to is settled in the app
-   before it gets here – a name the channel owns and the global set also uses is the channel's – so
-   this list only has to decide where each group is drawn. "Recent" is the exception and deliberately
-   repeats: it is a shortcut to the ones we keep using, not a fourth place to look. */
+/* Reading order, closest first. The app decides which group an emote belongs to. "Recent" repeats
+   emotes from the other groups on purpose: it is a shortcut. */
 const EMOTE_GROUPS = [
   { key: "recent", label: "Nyligen använda" },
   { key: "channel", label: "Kanalens emotes" },
@@ -1808,9 +1684,8 @@ const EMOTE_GROUPS = [
   { key: "global", label: "Globala" },
 ];
 
-/* Someone subscribed to a hundred channels has more emotes than anyone can look through, and every
-   one of them is an image request. The cap is a reading limit, not a fetch limit: the whole list is
-   still searchable, it is only the wall of pictures that stops. */
+/* Caps the pictures drawn per section, each of which is an image request. The whole list stays
+   searchable. */
 const EMOTE_SECTION_LIMIT = 200;
 
 function toggleEmotePanel() {
@@ -1823,8 +1698,7 @@ function openEmotePanel() {
   el.emotePanel.hidden = false;
   el.emoteBtn.setAttribute("aria-expanded", "true");
   renderEmotes();
-  // Only ever asked for once per channel: the answer cannot change while a chat is open, and the
-  // picker should feel like a panel rather than like a page load every time it is opened.
+  // Asked for once per channel: the answer cannot change while a chat is open.
   if (!state.emotes) loadEmotes();
 }
 
@@ -1844,8 +1718,7 @@ function loadEmotes() {
   el.emoteNote.hidden = true;
   api("/api/emotes")
     .then((data) => {
-      // The channel or the account changed while this was in flight: it is an answer about a room
-      // the dock has already left.
+      // The channel or the account changed while this was in flight.
       if (request !== emoteRequest) return;
       state.emotes = data;
       state.emoteIndex = new Map(data.emotes.map((emote) => [emote.name, emote]));
@@ -1869,13 +1742,12 @@ function renderEmotes() {
   if (!state.emotes) return;
   const term = el.emoteSearch.value.trim().toLowerCase();
 
-  // Held against the list as well as collected from our own lines: an emote used before a channel
-  // switch or a sub running out is one this account may no longer send, and it would go into the
-  // box as a picture and reach the chat as plain words.
+  // Checked against the list: an emote used before a channel switch or a lapsed sub may no longer
+  // be sendable and would reach the chat as plain words.
   const recent = state.seenEmotes.map((name) => state.emoteIndex.get(name)).filter(Boolean);
 
   const sections = term
-    // A search is a search: sections would only put distance between a name and the match for it.
+    // A search shows one flat list without sections.
     ? [{ label: "", emotes: state.emotes.emotes.filter((emote) => emote.name.toLowerCase().includes(term)) }]
     : EMOTE_GROUPS.map((group) => ({
       label: group.label,
@@ -1901,8 +1773,7 @@ function renderEmotes() {
 
   el.emoteBody.replaceChildren(...(drawn.length ? drawn : [emoteNote(term ? "Ingen emote heter så." : "Inga emotes att visa.")]));
 
-  /* A section that is missing has to say so where it would have been, not stay quiet: the picker
-     otherwise looks like a channel with no emotes, which is a different and unfixable thing. */
+  /* A missing section is explained, so the picker does not look like a channel with no emotes. */
   const missing = state.emotes.missingScope
     ? "Kanalens och dina egna emotes visas inte: appen får inte veta vilka du får skicka. "
       + "Välj Logga in igen i appen, så kommer de hit."
@@ -1913,8 +1784,7 @@ function renderEmotes() {
   el.emoteNote.textContent = missing;
 }
 
-/* Where an emote comes from, for the tooltip. Worth saying because a search shows one flat list with
-   no headings above it, and "which of my four hundred emotes is this" is a fair question. */
+/* Where an emote comes from, for the tooltip: a search shows one flat list with no headings. */
 const EMOTE_SOURCES = { channel: "kanalens", yours: "din", global: "global" };
 
 function emoteButton(emote) {
@@ -1934,12 +1804,8 @@ function emoteButton(emote) {
   return button;
 }
 
-/* Goes in as the picture it is, not as its name. The two are the same message – what is sent is
-   read back off the image – but a name in the box tells the reader nothing about whether they
-   picked the right one, which is the whole reason for having a picker.
-
-   Twitch only reads an emote that stands alone, so the space after it is part of inserting one, and
-   the panel stays open on purpose: picking two or three in a row is the normal case. */
+/* Inserts the emote as its picture; what is sent is read back off the image. Twitch only reads an
+   emote that stands alone, so a space follows it. The panel stays open for picking several. */
 function insertEmote(emote) {
   // The name is what counts against the limit; the picture is only how it is shown here.
   if (composerText().length + emote.name.length + 1 > MAX_MESSAGE) {
@@ -1948,8 +1814,7 @@ function insertEmote(emote) {
   }
 
   el.composerInput.focus();
-  // "hej" + Kappa must not send "hejKappa": Twitch would read that as one word and neither half
-  // would mean anything.
+  // "hej" + Kappa must not send "hejKappa", which Twitch would read as one word.
   if (needsLeadingSpace()) insertAtCaret(document.createTextNode(" "));
   // The trailing space is what keeps the next one from being typed onto the end of this name.
   const spacer = document.createTextNode(" ");
@@ -1976,7 +1841,7 @@ el.emoteSearch.addEventListener("keydown", (event) => {
   if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeEmotePanel(); el.composerInput.focus(); }
 });
 
-/* ------------------------------------------------------------------- toast */
+/* Toast */
 
 function toast(text, kind, action) {
   clearTimeout(state.toastTimer);
@@ -1999,10 +1864,9 @@ function run(promise, successText, action) {
   promise.then(() => toast(successText, "info", action)).catch((error) => toast(error.message, "error"));
 }
 
-/* --------------------------------------------------- appearance and auth */
+/* Appearance and auth */
 
-/* Reading settings are owned by the desktop app: the dock is a reading surface, not a
-   settings screen, and space here is scarce. The server pushes the current values. */
+/* Reading settings are owned by the desktop app; the server pushes the current values. */
 function applySettings(settings) {
   const isChange = state.settings !== null;
   state.settings = settings;
@@ -2019,10 +1883,8 @@ function applySettings(settings) {
 
   trimToLimit();
 
-  // Badges, timestamps, link chips and shouting are baked into the markup, so changing them
-  // from the app has to rebuild what is already on screen – not just swap CSS variables.
-  // The pinned strip holds cards of its own and would otherwise be the one place in the dock
-  // still showing the old setting.
+  // Badges, timestamps, link chips and shouting are baked into the markup, so a change rebuilds
+  // what is on screen, the pinned strip included.
   if (isChange) { rerender(); renderPins(); applyHypeTrain(state.hypeTrain); }
 }
 
@@ -2030,22 +1892,17 @@ function applyAuth(auth) {
   state.auth = auth;
   el.raidBtn.hidden = !auth.canRaid;
   el.composer.hidden = !auth.canSend;
-  // A logout takes the field away mid-sentence; the panels hanging above it would otherwise be
-  // left floating over the chat with nothing under them.
+  // A logout takes the field away; the panels above it would be left floating over the chat.
   if (el.composer.hidden) closeComposerPanels();
 
-  /* An emote list belongs to one account in one channel, and this frame is the only thing that says
-     when either changes: a login, a logout, a channel switch, and – the one that is easy to miss –
-     the room id arriving after the picker has already been opened and filled from the global list
-     alone. Comparing the pair is what makes all four the same case. */
+  /* An emote list belongs to one account in one channel. This frame reports every change to
+     either, including the room id arriving after the picker was filled from the global list alone. */
   const owner = `${auth.login}@${auth.room || ""}`;
   if (owner !== state.emoteOwner) {
     state.emoteOwner = owner;
     forgetEmotes();
-    /* Fetched before anyone asks for it, once the room is known. The list is not only the picker's:
-       a line of our own arrives with no emote spans, and this is what turns its words back into
-       pictures – which has to be ready by the time the message is written, not by the time somebody
-       thinks to open the picker. Waiting for the room means one call instead of two. */
+    /* Fetched as soon as the room is known: a line of our own arrives with no emote spans, and this
+       list is what turns its words back into pictures. */
     if (auth.canSend && auth.room) loadEmotes();
   }
 }
@@ -2058,11 +1915,10 @@ function applySpeech(enabled) {
   if (state.settings) rerender();
 }
 
-/* ------------------------------------------------------------------ chrome */
+/* Chrome */
 
 document.addEventListener("click", (event) => {
-  // The emote panel has no backdrop of its own – it is a small thing above a field, not a dialog –
-  // so anything pressed outside the composer is what closes it.
+  // The emote panel has no backdrop, so a press outside the composer closes it.
   if (!el.emotePanel.hidden && !event.target.closest("#composer")) closeEmotePanel();
 
   const closer = event.target.closest("[data-close]");

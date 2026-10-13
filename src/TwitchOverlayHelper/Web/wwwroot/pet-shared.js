@@ -1,9 +1,8 @@
 "use strict";
 
 /* What the overlay and the pet inspector have to agree about: how a drawing is made safe to show,
-   how a spritesheet is measured, and which row of it a behavior is drawn from. Kept in one file
-   because the inspector's whole job is to show a pet exactly as the overlay will – a second copy of
-   this arithmetic would drift, and the day it did the inspector would be quietly lying.
+   how a spritesheet is measured, and which row of it a behavior is drawn from. Shared so the
+   inspector shows a pet exactly as the overlay will.
 
    A plain script rather than a module: both pages load it before their own, and everything here is
    a global they then share. */
@@ -30,24 +29,18 @@ const SPRITE_CELL_H = 208;
 const UNSAFE_TAGS = new Set(["script", "foreignobject", "iframe", "object", "embed"]);
 const URL_ATTRS = new Set(["href", "xlink:href", "src"]);
 
-/* CSS fetches every bit as readily as an attribute does – a background, a mask, a filter, a font,
-   an @import at the top of a stylesheet – and a request leaving the page is the streamer's address
-   handed to whoever wrote the pet. So the declarations are scrubbed rather than dropped: a drawing
-   animated by a <style> block of its own is precisely the kind of pet this all exists for, and only
-   the outbound half of it has to go.
+/* CSS can fetch too (a background, a mask, a filter, a font, an @import), and a request leaving
+   the page hands the streamer's address to whoever wrote the pet. Declarations are scrubbed rather
+   than dropped, so a drawing animated by its own <style> block keeps working.
 
-   Comments and backslashes are taken out before anything is looked for, because both are how a
-   reference hides from a reader that is not a CSS parser: a comment in the middle of the word and a
-   hex escape in place of its first letter are the same word to the browser and three different ones
-   to a search. Neither survives as something the browser will act on, and neither belongs in a
-   drawing – the only loss is a stray escape in a `content` string. */
+   Comments and backslashes are removed first, because both can hide a reference from a pattern
+   match: a comment inside the word, or a hex escape for a letter. The only loss is a stray escape
+   in a `content` string. */
 const CSS_COMMENT = /\/\*[\s\S]*?\*\//g;
 const CSS_BACKSLASH = /\\/g;
 const CSS_AT_RULE = /@(import|namespace)[^;{}]*;?/gi;
-/* A reference to somewhere inside this drawing is the one kind worth keeping – a gradient, a
-   mask, a filter the pet points at itself – and it is the one kind that fetches nothing. The
-   quote is part of what is looked past rather than something to match up, so `url("#grad")` is
-   read as the local reference it is. */
+/* A reference to somewhere inside the drawing (a gradient, a mask, a filter) fetches nothing and
+   is kept. The optional quote is skipped by the lookahead, so `url("#grad")` counts as local. */
 const CSS_URL = /url\((?!\s*['"]?\s*#)[^)]*\)/gi;
 
 function sanitizeCss(text) {
@@ -61,10 +54,9 @@ function sanitizeCss(text) {
     .replace(CSS_URL, "url(#)");
 }
 
-/* One attribute's CSS made safe, or null when there was nothing in it to make safe. Shared so the
-   inspector counts exactly what the overlay takes out, and asked of anything that could be read as
-   CSS at all: the style attribute, and any value naming an address or hiding one behind an escape –
-   fill, filter, mask and clip-path all reach the network the same way style does. */
+/* One attribute's CSS made safe, or null when nothing in it needed changing. Applies to the style
+   attribute and to any value with a url( or a backslash: fill, filter, mask and clip-path reach
+   the network the same way. */
 function safeCssAttr(name, value) {
   if (name !== "style" && !value.includes("url(") && !value.includes("\\")) return null;
   const safe = sanitizeCss(value);
@@ -98,8 +90,7 @@ function scrub(el) {
   for (const child of [...el.children]) {
     const tag = child.tagName.toLowerCase();
     if (UNSAFE_TAGS.has(tag)) { child.remove(); continue; }
-    // A stylesheet is text rather than markup, so the scrub has to reach inside it; the attributes
-    // on the <style> element itself are the recursion's business as usual.
+    // A stylesheet is text rather than markup, so the scrub has to reach inside it.
     if (tag === "style") child.textContent = sanitizeCss(child.textContent);
     scrub(child);
   }
@@ -114,8 +105,8 @@ function scopeIds(svg, species) {
     .replace(/href="#([^"]*)"/g, `href="#${species}--$1"`);
 }
 
-/* Which halo a species wears. The tiers are the app's own words, written by hand into pet.json, so
-   anything unrecognised – and every common pet – is left plain rather than guessed at. */
+/* Which halo a species wears. The tiers are written by hand into pet.json, so anything
+   unrecognised, and every common pet, is left plain. */
 const RARITY_CLASSES = {
   "ovanlig": "rarity-uncommon",
   "sällsynt": "rarity-rare",
@@ -158,13 +149,11 @@ function measureSprite(img, fallbackRows) {
 }
 
 /* What a behavior does to a spritesheet: the row it draws from, the pace that row is played at, and
-   whether it runs for as long as the behavior lasts or plays through once and holds its last frame.
-   First match wins, so the order is the order the overlay's own classes take precedence in.
+   whether it loops or plays through once and holds its last frame. First match wins, so the order
+   is the precedence of the overlay's classes.
 
-   A pace left out is the sheet's own fps, which is what everything that moves at a natural speed
-   wants – a walk, a fight, a dance. The three that name one are the ones a single sheet-wide speed
-   reads as frantic: a wave and a slump are gestures and a wait is a pause, so they run at roughly
-   half pace. These are the defaults every pet gets without saying anything in its pet.json. */
+   A pace left out is the sheet's own fps. The three that name one (a wave, a slump, a wait) run
+   at roughly half pace. These are the defaults for every pet. */
 const SPRITE_BEHAVIORS = [
   { cls: "sleep", row: 6, fps: 4, loop: true },
   { cls: "sad", row: 5, fps: 4 },
@@ -178,8 +167,8 @@ const SPRITE_BEHAVIORS = [
   { cls: "cook", row: 8, loop: true },
 ];
 
-/* Standing still is not a class, so it cannot be found by one – but the frame arithmetic still
-   needs something to ask about pace and looping, and so does a row that falls back to idle. */
+/* Standing still has no class, so idle is a behavior of its own; rows that fall back to idle use
+   it too. */
 const IDLE_BEHAVIOR = { cls: "", row: 0, loop: true };
 
 const SPRITE_BEHAVIOR_BY_CLASS = new Map(SPRITE_BEHAVIORS.map((entry) => [entry.cls, entry]));
@@ -189,8 +178,8 @@ function spriteBehaviorFor(classList) {
   return IDLE_BEHAVIOR;
 }
 
-/* The row a behavior is drawn from. Takes the classes rather than a pet, so the inspector can ask
-   the same question about a creature that has no lifetime, no position and no lawn to stand on. */
+/* The row a behavior is drawn from. Takes the classes rather than a pet, so the inspector can
+   call it too. */
 function spriteRowFor(classList, facingLeft) {
   const behavior = spriteBehaviorFor(classList);
   if (behavior.cls === "walk") return facingLeft ? 2 : 1;
@@ -199,30 +188,22 @@ function spriteRowFor(classList, facingLeft) {
 
 /* Which frame of a row is on screen.
 
-   Everything is counted from the moment the behavior began rather than from the page's own clock.
-   That is what lets a one-shot start on frame 0 instead of wherever the clock happened to stand,
-   and it is also what keeps a lawn full of the same creature from walking in step: two pets that
-   began idling a second apart are a second apart in their idle.
-
-   The difference between the two kinds is only what happens at the end of the row. A loop wraps
-   round for as long as the behavior lasts; a one-shot holds its last frame, so a wave waves once
-   and a slump lands on the slump. */
+   Counted from the moment the behavior began, so a one-shot starts on frame 0 and pets of the same
+   species do not animate in step. A loop wraps round; a one-shot holds its last frame. */
 function spriteFrameAt(behavior, frames, sheetFps, nowMs, startedMs, speed) {
   const count = Math.max(1, frames || 1);
   const step = Math.floor((Math.max(0, nowMs - (startedMs || 0)) / 1000) * spriteFps(behavior, sheetFps, speed));
   return behavior.loop ? step % count : Math.min(count - 1, step);
 }
 
-/* The pace a row is actually played at: the behavior's own if it has one, the sheet's otherwise,
-   scaled by the streamer's animation speed. Kept to a floor so a settings file asking for zero
-   leaves the creatures moving rather than frozen mid-step. */
+/* The pace a row is played at: the behavior's own if it has one, the sheet's otherwise, scaled by
+   the streamer's animation speed. Never below 0.5 fps, so no setting can freeze a pet mid-step. */
 function spriteFps(behavior, sheetFps, speed) {
   return Math.max(0.5, (behavior.fps || sheetFps || 10) * (speed > 0 ? speed : 1));
 }
 
-/* How long one pass of a row takes at the pace that row is played at. A one-shot behavior is left
-   on screen for exactly this, so its class comes off as the animation lands rather than part way
-   through a second pass nobody asked for. */
+/* How long one pass of a row takes, in milliseconds. A one-shot behavior keeps its class for
+   exactly this long. */
 function spriteRunMs(behavior, frames, sheetFps, speed) {
   return Math.round((Math.max(1, frames || 1) / spriteFps(behavior, sheetFps, speed)) * 1000);
 }

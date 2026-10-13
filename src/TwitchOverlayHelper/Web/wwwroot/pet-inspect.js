@@ -1,14 +1,11 @@
 "use strict";
 
 /* The pet inspector: one creature, alone, on a background you choose, playing whichever animation
-   you point at. Nothing here talks to the overlay, the chat or Twitch – it opens the app's own
-   catalog over HTTP, draws the pet with the overlay's stylesheet and its own frame arithmetic, and
-   then stays out of the way. Closing the tab is all it takes to be rid of it.
+   you point at. It reads the app's catalog over HTTP and draws the pet with the overlay's
+   stylesheet and frame arithmetic; nothing here talks to the overlay, the chat or Twitch.
 
-   It exists because a pet is a folder somebody assembles by hand, and the mistakes that folder can
-   hold – a row left empty, a drawing sitting half a cell off, a sheet the app reads as nine rows
-   when it was drawn as eleven – are invisible on a lawn where six creatures walk past each other
-   at 90 pixels tall. */
+   It surfaces mistakes a hand-assembled pet folder can hold: an empty row, a drawing half a cell
+   off, a sheet read as nine rows that was drawn as eleven. */
 
 const KEY = new URLSearchParams(location.search).get("key") || "";
 const WANTED = new URLSearchParams(location.search).get("pet") || "";
@@ -17,8 +14,7 @@ const stage = document.getElementById("stage");
 const stageFrame = document.getElementById("stageFrame");
 const statusText = document.getElementById("status");
 
-/* Rows in a hatch-pet sheet, in the app's words rather than the format's: what the overlay reaches
-   for each one to do is the useful half when a row turns out to be empty. */
+/* Rows in a hatch-pet sheet, named by what the overlay uses each one for. */
 const ROW_NAMES = [
   "Idle – står still",
   "Springer höger",
@@ -33,8 +29,7 @@ const ROW_NAMES = [
   "Blickar 8–15",
 ];
 
-/* The behaviors the overlay can put a pet in, as the classes it actually sets. Same classes, same
-   stylesheet, same sprite rows – that is the whole point of the view. */
+/* The behaviors the overlay can put a pet in, as the classes it sets. */
 const BEHAVIORS = [
   { id: "idle", label: "Står still", classes: [] },
   { id: "walk", label: "Går", classes: ["walk"] },
@@ -123,15 +118,10 @@ const ui = {
   preview: document.getElementById("previewBtn"),
 };
 
-/* ------------------------------------------------------------------ the catalog */
+/* The catalog */
 
-/* The same list the overlay is given, over plain HTTP: this page has no socket and no business on
-   one. A refused answer is almost always the app's server being off, so it is said in those words
-   rather than as a status code. */
-
-/* The overlay's animation speed, which is a slider in the app rather than anything the sheet knows
-   about. Fetched once: the inspector is opened to look at a pet, not to watch the settings change,
-   and a speed that could not be read is simply the unscaled one – the same pace the app ships. */
+/* Reads the overlay's animation speed from the app, once. A speed that could not be read stays at
+   the unscaled default. */
 async function loadSpeed() {
   try {
     const response = await fetch(`/api/pets/settings?key=${encodeURIComponent(KEY)}`);
@@ -142,8 +132,7 @@ async function loadSpeed() {
   applySpeed();
 }
 
-/* The same variable the overlay sets, for the same reason: an SVG pet is animated by pets.css, so
-   the speed has to reach the stylesheet rather than only the frame arithmetic. */
+/* SVG pets are animated by pets.css, so the speed has to reach the stylesheet as well. */
 function applySpeed() {
   stage.style.setProperty("--pet-anim-speed", state.animationSpeed);
 }
@@ -194,10 +183,10 @@ function showPet(id) {
   renderReport();
 }
 
-/* ------------------------------------------------------------------ the creature
+/* The creature
 
-   The same markup the overlay builds for a pet, so every selector in pets.css lands the same way
-   here. The guide box is the one addition, and it is a sibling nothing in the stylesheet reaches. */
+   The same markup the overlay builds for a pet, so every selector in pets.css applies the same
+   way. The guide box is the one addition. */
 function buildPet() {
   const def = state.def;
   const previous = stage.querySelector(".pet");
@@ -224,9 +213,8 @@ function buildPet() {
     const rows = def.spriteVersion === 2 ? 11 : 9;
     setSpriteRows(rows);
     state.spriteEl.style.setProperty("--sprite-mask", `url('${url}')`);
-    // Emptied before the new sheet is asked for rather than when it lands: a sheet that never
-    // arrives lands never, and the map left standing would be the last pet's picture and the last
-    // pet's cells sitting under this one's name.
+    // Emptied before the sheet is requested: a sheet that never arrives would leave the previous
+    // pet's map standing under this one's name.
     clearSheetMap();
     loadSheet(url, rows);
     ui.sheetCard.style.display = "";
@@ -243,18 +231,15 @@ function buildPet() {
   applyLook();
   applyBehavior();
   applyRarityTier();
-  // An SVG pet has no frames to step through – the stylesheet animates it – so the transport is
-  // taken away rather than left there doing nothing.
+  // An SVG pet has no frames to step through, so the transport is disabled.
   const framed = state.spriteEl !== null;
   for (const control of [ui.playBtn, ui.prevBtn, ui.nextBtn, ui.frameSlider]) control.disabled = !framed;
-  // The toggles are the view's, not the pet's: a creature swapped in under them keeps whatever was
-  // already switched on rather than quietly resetting the panel.
+  // The toggles belong to the view, so a pet swapped in keeps what was switched on.
   el.querySelector(".shadow").style.display = ui.showShadow.checked ? "" : "none";
   place();
 }
 
-/* An accent of the pet's own, the same way the overlay derives one when a pet has no colour: the
-   name plate and the fallback drawing both use it. */
+/* Derives an accent from the id the way the overlay does for a pet with no colour. */
 function accentFor(id) {
   let hash = 0;
   for (const ch of id) hash = (hash * 31 + ch.codePointAt(0)) >>> 0;
@@ -268,14 +253,13 @@ function setSpriteRows(rows) {
   state.spriteEl.style.setProperty("--sprite-size", `800% ${rows * 100}%`);
 }
 
-/* The drawing, fetched and made safe exactly as the overlay does it – and then looked over, since
-   an SVG that renders is not the same thing as an SVG the overlay can animate. */
+/* Fetches and sanitizes the drawing as the overlay does, then reviews what the overlay can
+   animate in it. */
 function loadDrawing(def, wrap) {
   const url = `${def.bodyUrl || `/pets/body/${encodeURIComponent(def.id)}`}?g=${state.generation}`;
   const forPet = def.id;
-  // The pet on screen is not enough to know this answer is still wanted: "Ladda om" on the pet you
-  // are already looking at asks for the same id again, and the drawing that lands second is not
-  // necessarily the one that was asked for second. The generation says which request this was.
+  // The pet id alone cannot tell requests apart: "Ladda om" asks for the same id again and the
+  // responses can land out of order. The generation identifies the request.
   const started = state.generation;
   fetch(url)
     .then((response) => (response.ok ? response.text() : ""))
@@ -300,8 +284,7 @@ function reviewDrawing(markup, safe) {
   for (const el of svg.querySelectorAll("*")) {
     const tag = el.tagName.toLowerCase();
     if (UNSAFE_TAGS.has(tag)) { stripped++; continue; }
-    // A stylesheet counts once however much came out of it: the number is meant to say that the
-    // drawing held something the overlay will not run, not to tally declarations.
+    // A stylesheet counts once, however much was removed from it.
     if (tag === "style" && sanitizeCss(el.textContent) !== el.textContent) stripped++;
     for (const attr of el.attributes) {
       const name = attr.name.toLowerCase();
@@ -327,15 +310,14 @@ function reviewDrawing(markup, safe) {
   };
 }
 
-/* ------------------------------------------------------------------ the sheet
+/* The sheet
 
-   Measured the way the overlay measures it, plus a cell-by-cell reading of its own. The overlay
-   only ever needs to know how many frames a row carries; the inspector wants to point at the third
-   cell of the fourth row and say that this one is empty. */
+   Measured the way the overlay measures it, plus a cell-by-cell reading so the report can point
+   at individual empty cells. */
 function loadSheet(url, fallbackRows) {
   const forPet = state.def.id;
-  // As in loadDrawing: a reload of the same pet is a second request for the same id, and the older
-  // image finishing last would otherwise overwrite the newer sheet, its map and its report.
+  // As in loadDrawing: the generation keeps an older image that finishes last from overwriting
+  // the newer sheet.
   const started = state.generation;
   const img = new Image();
   img.onload = () => {
@@ -345,8 +327,7 @@ function loadSheet(url, fallbackRows) {
       state.grid = readGrid(img, state.meta.rows);
       setSpriteRows(state.meta.rows);
     } catch {
-      // A sheet the browser will not let us read pixel by pixel still animates; only the map and
-      // the warnings are lost, so the view carries on with what pet.json claimed.
+      // A sheet whose pixels cannot be read still animates; only the map and the warnings are lost.
       state.meta = null;
       state.grid = null;
     }
@@ -358,8 +339,7 @@ function loadSheet(url, fallbackRows) {
   };
   img.onerror = () => {
     if (state.def?.id !== forPet || started !== state.generation) return;
-    // Nothing was read, so nothing is shown: the map stays empty and the report says the sheet is
-    // missing rather than reading for ever.
+    // The map stays empty and the report says the sheet is missing.
     state.sheetError = true;
     clearSheetMap();
     renderReport();
@@ -391,9 +371,8 @@ function readGrid(img, rows) {
   return grid;
 }
 
-/* The map belongs to the one sheet it was read from. Whenever another sheet is asked for – or the
-   one asked for turns out not to be there – it goes, rather than being left to be overwritten by a
-   picture that may never come. */
+/* The map belongs to the sheet it was read from, so it is cleared whenever another sheet is
+   requested or fails to load. */
 function clearSheetMap() {
   ui.sheetImg.removeAttribute("src");
   ui.sheetGrid.innerHTML = "";
@@ -425,8 +404,7 @@ function buildSheetMap(url) {
       cell.title = `Rad ${row}, ruta ${col}`;
       cell.dataset.row = String(row);
       cell.dataset.col = String(col);
-      // Clicking a cell is the quickest way to ask "what is actually drawn here" – so it freezes
-      // the pet on exactly that frame rather than merely selecting the row.
+      // Clicking a cell freezes the pet on exactly that frame.
       cell.addEventListener("click", () => {
         state.manualRow = row;
         ui.rowPick.value = String(row);
@@ -439,7 +417,7 @@ function buildSheetMap(url) {
   }
 }
 
-/* ------------------------------------------------------------------ controls */
+/* Controls */
 
 function buildBehaviorPicker() {
   for (const behavior of BEHAVIORS) {
@@ -482,8 +460,7 @@ function applyLook() {
   ui.lookRead.textContent = state.lookDir < 0 ? "av" : `${state.lookDir * 22.5}°`;
 }
 
-/* The classes the overlay would have set, and nothing else: a behavior is not re-implemented here,
-   it is played. */
+/* Sets the classes the overlay would have set; the behavior itself is not re-implemented. */
 function applyBehavior() {
   const el = state.petEl;
   if (!el) return;
@@ -493,10 +470,8 @@ function applyBehavior() {
   state.animStart = performance.now();
 }
 
-/* One-shot animations – a wave, an entrance – have played out by the time anyone looks at them
-   twice. Taking the class off and putting it back is what the overlay's own replays do, and on a
-   spritesheet it is applyBehavior's restarted clock that makes the row play from its first frame
-   again rather than the stylesheet. */
+/* Restarts a one-shot animation by removing and re-adding its class. On a spritesheet it is
+   applyBehavior's restarted clock that makes the row play from its first frame. */
 function replay() {
   const el = state.petEl;
   if (!el) return;
@@ -513,8 +488,8 @@ function setPlaying(playing) {
 function place() {
   const el = state.petEl;
   if (!el) return;
-  // Centred by hand rather than with a transform: the entrance and exit animations own .pet's
-  // transform, and a translate here would be thrown away the moment one of them plays.
+  // Centred with left rather than a transform: the entrance and exit animations own .pet's
+  // transform.
   el.style.left = `${Math.round(stageFrame.clientWidth / 2 - 45 * state.scale)}px`;
 }
 
@@ -553,17 +528,11 @@ function buildSwatches() {
   applyBackground(BACKGROUNDS[0]);
 }
 
-/* ------------------------------------------------------------------ the report
+/* The report
 
-   The report is built as markup, and half of what goes in it comes out of a pet.json and an SVG
-   somebody else wrote: a name, a rarity, a handful of emoji, the viewBox off a drawing. A pet is
-   downloaded and dropped in a folder, so those are a stranger's strings, and this page carries the
-   dock key in its own URL – markup smuggled through a display name would be running here with it.
-
-   So every value is escaped on its way in. The `html` tag is what makes that the default rather
-   than something to remember: the literal parts of the template are markup, everything interpolated
-   into it is text. Composing one tagged result inside another works, because what comes back is
-   already escaped. */
+   The report is built as markup from strings in a downloaded pet's pet.json and SVG, and this page
+   carries the dock key in its URL, so every value is escaped on its way in. The `html` tag makes
+   that the default: literal template parts are markup, interpolated values are text. */
 
 function escapeHtml(value) {
   return String(value)
@@ -678,11 +647,11 @@ function renderReport() {
 
 function round(value) { return Math.round(value * 10) / 10; }
 
-/* ------------------------------------------------------------------ the frame loop
+/* The frame loop
 
-   The same arithmetic as the overlay's updateSprite, with the manual controls layered on top: a
-   chosen row wins over the behavior's, a chosen look direction wins over both, and a paused view
-   shows the frame the slider is on. */
+   The same arithmetic as the overlay's updateSprite, with the manual controls on top: a chosen row
+   wins over the behavior's, a chosen look direction wins over both, and a paused view shows the
+   frame the slider is on. */
 function tick() {
   requestAnimationFrame(tick);
   const sprite = state.spriteEl;
@@ -695,8 +664,7 @@ function tick() {
 
   const meta = state.meta;
   const rows = meta ? meta.rows : state.rows;
-  // A row picked by hand is looked at rather than acted out, so it is played at the sheet's own pace
-  // on a loop – holding the last frame of a row nobody chose a behavior for would just look stuck.
+  // A row picked by hand loops at the sheet's own pace, like idle.
   let behavior = state.manualRow >= 0 ? IDLE_BEHAVIOR : spriteBehaviorFor(state.petEl.classList);
   let row = state.manualRow >= 0 ? state.manualRow : spriteRowFor(state.petEl.classList, state.facingLeft);
   if (state.manualRow < 0 && meta && row < meta.frames.length && !meta.frames[row]) {
@@ -725,15 +693,14 @@ function tick() {
   sprite.style.setProperty("--sprite-pos", position);
 
   const drawn = state.grid && state.grid[row] ? state.grid[row][frame] : true;
-  // The pace is worth saying out loud: a row with a pace of its own is the reason a wave looks
-  // slower here than the sheet's own number suggests, and it should not have to be guessed at.
+  // Shown because a row with a pace of its own plays slower than the sheet's fps suggests.
   const pace = `${round1(spriteFps(behavior, state.fps, state.animationSpeed))} b/s${behavior.loop ? "" : " · en gång"}`;
   ui.frameRead.textContent = `rad ${row} · ruta ${frame + 1}/${frames} · ${pace}${drawn ? "" : " · TOM"}`;
   highlightCell(row, frame);
 }
 
-/* The scaled pace lands on numbers like 4.5; a whole one where there is one keeps the readout from
-   saying "5.0 b/s" for a sheet that plainly runs at five. */
+/* Rounds to one decimal, so a scaled pace such as 4.5 shows and a whole number prints without
+   a trailing ".0". */
 function round1(value) {
   return Math.round(value * 10) / 10;
 }
@@ -747,13 +714,12 @@ function highlightCell(row, frame) {
   state.litCell = index;
 }
 
-/* ------------------------------------------------------------------ wiring */
+/* Wiring */
 
 ui.petPick.addEventListener("change", () => showPet(ui.petPick.value));
 
 ui.reload.addEventListener("click", async () => {
-  // A reload here is the same reload the app does: the folder is read again and the pictures are
-  // fetched past whatever the browser is holding.
+  // Re-reads the folder and fetches the pictures past the browser cache, like the app's reload.
   state.generation++;
   const current = state.def?.id || WANTED;
   await loadCatalog();

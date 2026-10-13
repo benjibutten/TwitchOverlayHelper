@@ -37,21 +37,20 @@ const loginsIn = (text) => new Set(
 
 let ignored = new Set();
 
-/* How far back a replay may reach when the page opens or the server redraws the timeline. A scene
-   switch in OBS reloads this page, and chat from before the switch coming back as though it were
-   new is the kind of thing viewers notice. With a fade time set, that time is the honest answer –
-   anything older would have faded already; without one, a few minutes. */
+/* How far back a replay may reach when the page opens or the server redraws the timeline. An OBS
+   scene switch reloads this page, and old chat must not come back as though it were new. With a
+   fade time set, that time is the window; without one, a few minutes. */
 const REPLAY_FALLBACK_MS = 5 * 60 * 1000;
 const replayWindow = () => (settings.fadeAfterSeconds > 0 ? settings.fadeAfterSeconds * 1000 : REPLAY_FALLBACK_MS);
 
-/* ------------------------------------------------------------------ transport */
+/* Transport */
 
 let socket = null;
 let reconnectDelay = 1000;
 
 function connect() {
-  // Saying which page this is keeps the private half of the fan-out – the nicknames above all – from
-  // ever being sent to a socket that lives on the broadcast.
+  // view=stream keeps the private half of the fan-out, the nicknames above all, off a socket that
+  // lives on the broadcast.
   socket = new WebSocket(`ws://${location.host}/ws?view=stream&key=${encodeURIComponent(KEY)}`);
   socket.onopen = () => { reconnectDelay = 1000; };
   socket.onmessage = (event) => handle(JSON.parse(event.data));
@@ -94,12 +93,9 @@ function handle(frame) {
       drawHistory(frame.payload);
       return;
     case "badgesLoaded":
-      /* A badge's image address is resolved on the app's side as each message is serialised, so the
-         lines already here cannot grow badges by being rebuilt – they would be rebuilt from the same
-         payload, which says there was no image. Only asking again helps, which is what the dock does
-         by reloading. Here a reload is a blink on the broadcast, so it happens only when there is
-         nothing to blink. That is the ordinary case: the catalogue lands seconds after the app
-         connects, and every line after it carries its badges either way. */
+      /* Badge image addresses are resolved by the app as each message is serialised, so rebuilding
+         the lines already here cannot give them badges; only a reload can. A reload blinks on the
+         broadcast, so it happens only while nothing is on screen. */
       if (chat.children.length === 0 && pending.length === 0) location.reload();
       return;
     default:
@@ -107,13 +103,11 @@ function handle(frame) {
   }
 }
 
-/* ------------------------------------------------------------------ the queue
+/* The queue
 
-   A raid or a hype train can push hundreds of lines through in a second, and appending each one the
-   moment it lands means hundreds of layouts in that second. They are drained a few per frame
-   instead, which is both smoother and – on a machine that is also encoding video – considerably
-   cheaper. Anything still waiting that could never reach the screen is dropped rather than drawn:
-   the column holds a dozen lines, so a backlog three times that deep is already history. */
+   A raid can push hundreds of lines through in a second. They are drained a few per frame, which
+   keeps layout cheap on a machine that is also encoding video. A backlog deeper than three
+   columns' worth is dropped rather than drawn. */
 
 const pending = [];
 const PER_FRAME = 4;
@@ -140,13 +134,12 @@ function append(node) {
   startSweeping();
 }
 
-/* ------------------------------------------------------------------ what is shown */
+/* What is shown */
 
 const timeOf = (item) => (item.kind === "event" ? item.data.at : item.data.sentAt);
 
-/* Both halves of "not on the stream": the accounts the streamer never wants quoted, and the command
-   traffic aimed at them. The dock dims commands rather than hiding them, because there the point is
-   to see who asked for what; here they are noise with a bot answer coming right behind. */
+/* Hides the accounts the streamer never wants quoted, and command traffic. The dock only dims
+   commands; here they are noise with a bot answer coming right behind. */
 function shows(item) {
   const login = (item.data.login || "").toLowerCase();
   if (login && ignored.has(login)) return false;
@@ -157,8 +150,7 @@ function shows(item) {
 
 function buildItem(item) {
   const node = item.kind === "event" ? buildEvent(item.data) : buildMessage(item.data);
-  // Kept on the node so a settings change can rebuild what is already on screen, and so the sweeper
-  // can ask how old a line is without parsing anything back out of the markup.
+  // Kept on the node so a settings change can rebuild it and the sweeper can read its age.
   node.item = item;
   return node;
 }
@@ -190,8 +182,7 @@ function buildMessage(message) {
   if (settings.useTwitchNameColors && message.color) name.style.color = message.color;
   head.appendChild(name);
 
-  // A first-time chatter is the one marker that is for the viewers as much as for the streamer:
-  // it is what makes a chat greet somebody.
+  // A first-time chatter marker is for the viewers too: it lets the chat greet them.
   if (message.isFirstMessage) head.appendChild(tag("ny", "new"));
   if (message.bits) head.appendChild(tag(`${message.bits} bits`, "bits"));
   if (message.rewardLabel) head.appendChild(tag(`🔮 ${message.rewardLabel}`, "reward"));
@@ -205,8 +196,8 @@ function buildMessage(message) {
   return node;
 }
 
-/* One quiet row saying this is an answer. A span rather than the dock's button: there is nothing to
-   jump to on a stream, and nothing on this page is ever pressed. */
+/* One quiet row saying this is an answer. A span rather than the dock's button: nothing on this
+   page is ever pressed. */
 function buildReply(reply) {
   const line = document.createElement("span");
   line.className = "msg-reply";
@@ -252,9 +243,7 @@ function buildEvent(chatEvent) {
   return node;
 }
 
-/* Rebuilds what is on screen. Anything a changed setting has since hidden – a newly ignored account,
-   an event kind switched off – goes with it, because a switch that only applied to chat that has not
-   happened yet would be half a switch. */
+/* Rebuilds what is on screen, dropping anything a changed setting hides. */
 function rerender() {
   const items = [...chat.children].map((node) => node.item).filter((item) => item && shows(item));
   chat.replaceChildren(...items.map(buildItem));
@@ -262,8 +251,7 @@ function rerender() {
 
 const itemOf = (item) => (item.type === "event" ? { kind: "event", data: item.event } : { kind: "message", data: item.message });
 
-/* A replay: the page opening, or the server redrawing the timeline after the streamer put an earlier
-   sitting away. Never animated – these lines are not arriving, they are already here. */
+/* A replay: the page opening, or the server redrawing the timeline. Never animated. */
 function drawHistory(items) {
   if (!items) return;
   const oldest = Date.now() - replayWindow();
@@ -277,15 +265,12 @@ function drawHistory(items) {
   startSweeping();
 }
 
-/* The made-up lines the app shows while nothing is connected, so the overlay can be aimed at
-   something when it is dragged into place in OBS.
+/* The made-up lines the app shows while nothing is connected, so the overlay can be positioned in
+   OBS.
 
-   They are not chat and neither rule for chat applies to them. The replay window is skipped because
-   they all carry the moment the app started: half an hour into a session they are older than any
-   window we would honestly allow, and reloading the source – which is most of what placing one
-   consists of – would leave a blank page that only restarting the whole app could fill. The fade is
-   skipped for the same reason from the other end: a preview that has quietly swept itself away is a
-   preview of nothing. Real chat takes them down, and so does connecting to a channel. */
+   The replay window and the fade are both skipped: the samples carry the app's start time, so
+   they would be filtered out or swept away and leave nothing to position. Real chat takes them
+   down, and so does connecting to a channel. */
 function drawSamples(items) {
   if (!items) return;
   const kept = items.map(itemOf).filter(shows).slice(-settings.maxMessages);
@@ -295,12 +280,11 @@ function drawSamples(items) {
   chat.replaceChildren(...kept.map(buildItem));
 }
 
-/* ------------------------------------------------------------------ leaving
+/* Leaving
 
-   Two ways off the screen. Old age is swept once a second from a single timer – a timer per message
-   would mean a dozen of them running at all times, each holding a node alive. Moderation is the
-   other way, and it is immediate and unanimated: a line the streamer just deleted must not spend
-   half a second sliding out in front of the viewers. */
+   Old age is swept once a second from a single timer rather than a timer per message. Moderation
+   removes a line immediately and unanimated, so a deleted line never slides out in front of the
+   viewers. */
 
 let sweepHandle = 0;
 
@@ -323,24 +307,22 @@ function sweep() {
     if (node.dataset.leaving === "true" || !node.item || node.item.sample) continue;
     if (timeOf(node.item) <= cutoff) retire(node);
   }
-  // Nothing left that can ever age – an empty column, or one holding only the preview – so there is
-  // nothing for the timer to come back for. Every arriving line starts it again.
+  // Nothing left that can age (empty, or only the preview), so the timer stops. The next line to
+  // arrive starts it again.
   if (![...chat.children].some((node) => node.item && !node.item.sample)) stopSweeping();
 }
 
 function retire(node) {
   if (!settings.animate) { node.remove(); return; }
   node.dataset.leaving = "true";
-  // Whichever comes first. The animation is the nice ending; the timer is what guarantees the node
-  // actually goes when the page is in a background tab and no animation ever finishes.
+  // Whichever comes first: no animation ever finishes while the page is in a background tab.
   const drop = () => node.remove();
   node.addEventListener("animationend", drop, { once: true });
   setTimeout(drop, 1000);
 }
 
-/* The one thing that lands here is a Gigantify power-up arriving after the line it enlarged. The
-   queue is searched first: during a burst the line it belongs to may not be drawn yet, and an
-   update applied only to the page would be undone a frame later by the version still waiting. */
+/* A Gigantify power-up arrived after the line it enlarged. The queue is searched first: an
+   update applied only to the page would be undone by the version still waiting to be drawn. */
 function applyMessageUpdate(message) {
   for (const item of pending) {
     if (item.kind === "message" && item.data.id === message.id) { item.data = message; return; }
@@ -367,7 +349,7 @@ function affected(message, payload) {
     || (payload.login && (message.login || "").toLowerCase() === payload.login.toLowerCase());
 }
 
-/* ------------------------------------------------------------------ appearance */
+/* Appearance */
 
 function applySettings(next) {
   if (!next) return;
@@ -388,8 +370,8 @@ function applySettings(next) {
   body.nameline = String(settings.nameOnOwnLine);
   body.top = String(settings.newestOnTop);
 
-  // Badges, timestamps, link chips and the reply line are baked into the markup, so changing one of
-  // them from the app has to rebuild what is on screen rather than only swap a variable.
+  // Badges, timestamps, link chips and the reply line are baked into the markup, so a change
+  // rebuilds what is on screen.
   if (!first) {
     rerender();
     while (chat.children.length > settings.maxMessages) chat.firstElementChild.remove();

@@ -1,12 +1,10 @@
-/* How a pet looks and moves. Its own file because two pages draw the same creatures: the overlay in
-   OBS, and the inspector a pet is set up in – and a pet that behaves differently in the two of them
-   is an inspector nobody can trust. Nothing here places the stage on the page; each page owns that,
-   one of them being a transparent full-screen source and the other a panel with controls beside it. */
+/* How a pet looks and moves. Shared by the two pages that draw pets, the OBS overlay and the
+   inspector, so both show the same thing. Nothing here places the stage on the page; each page
+   owns that. */
 
-  /* Size and pace, both set by the app and both read from here rather than from JavaScript that
-     would have to reach into every creature. The pace divides the durations below, so a sheet-less
-     SVG pet slows down with the same slider that slows a spritesheet's frames – and the fallback of
-     1 keeps the animations running for any page that draws a pet without setting it. */
+  /* Size and pace, both set by the app. The pace divides the durations below, so an SVG pet slows
+     down with the same slider that slows a spritesheet's frames; the fallback of 1 keeps the
+     animations running on a page that does not set it. */
   #stage { --pet-scale: 1; --pet-anim-speed: 1; }
   #stage.disabled { display: none; }
   #stage.hide-names .name { display: none; }
@@ -105,7 +103,7 @@
   }
   .bubble.show { animation: bubblePop 1.6s ease-out forwards; }
 
-  /* ------------------------------------------------------------ behaviors */
+  /* Behaviors */
   .pet.walk .body-wrap { animation: walkBob calc(0.34s / var(--pet-anim-speed, 1)) ease-in-out infinite; }
   .pet.walk .leg-a { animation: legSwing calc(0.34s / var(--pet-anim-speed, 1)) ease-in-out infinite; }
   .pet.walk .leg-b { animation: legSwing calc(0.34s / var(--pet-anim-speed, 1)) ease-in-out infinite reverse; }
@@ -148,7 +146,7 @@
     filter: drop-shadow(0 1px 2px rgba(0,0,0,.5));
   }
 
-  /* ------------------------------------------------------------ lyckosnurren
+  /* Lyckosnurren
 
      A reel of portraits that slides in from a configurable edge, loops through everything winnable
      and lands on the winner. Sized against --pet-scale like the pets themselves, so it stays a
@@ -263,20 +261,18 @@
     animation: spinConfetti 1.5s ease-out forwards;
   }
 
-  /* ------------------------------------------------------------ sällsynthet
+  /* Sällsynthet
 
-     How rare a pet is, told with light instead of a label: a halo in the tier's colour behind the
-     creature, and for the two rarest a sheen that sweeps across its own silhouette. Common pets are
-     deliberately left plain – an effect everyone wears is one nobody notices – and everything here
-     hangs off #stage.rarity-fx, so the checkbox in the app takes all of it away at once.
+     Rarity is shown with light instead of a label: a halo in the tier's colour behind the creature,
+     and for the two rarest a sheen that sweeps across its silhouette. Common pets are left plain.
+     Everything hangs off #stage.rarity-fx, so the checkbox in the app removes all of it at once.
 
-     The sheen is masked with the pet's own spritesheet, at the very cell pets.js is showing this
-     frame, so the light lands on the creature and not on the transparent square around it. SVG pets
-     have no image to mask with and brighten in the same rhythm instead. */
-  /* How much of the whole flourish is showing. Everything below multiplies its opacity by this one
-     number, so the fade after a pet's entrance is a single transition rather than one per effect –
-     and a browser too old to register the property still reads it as a plain 1 or 0, losing the
-     transition and nothing else. */
+     The sheen is masked with the pet's own spritesheet, at the cell pets.js is showing this frame,
+     so the light lands on the creature and not on the transparent square around it. SVG pets have
+     no image to mask with and brighten in the same rhythm instead. */
+  /* How much of the effect is showing. Everything below multiplies its opacity by this number, so
+     the fade after a pet's entrance is a single transition. A browser that cannot register the
+     property reads it as a plain 1 or 0 and only loses the transition. */
   @property --rarity-fade {
     syntax: "<number>";
     initial-value: 1;
@@ -382,7 +378,7 @@
   #stage.rarity-fx .spin.landed.is-win.rarity-rare .spin-window { box-shadow: 0 0 calc(24px * var(--pet-scale)) rgba(185, 140, 255, 0.75); }
   #stage.rarity-fx .spin.landed.is-win.rarity-legendary .spin-window { box-shadow: 0 0 calc(30px * var(--pet-scale)) rgba(255, 209, 102, 0.9); }
 
-  /* ------------------------------------------------------------ keyframes */
+  /* Keyframes */
   @keyframes auraBreath {
     0%, 100% { opacity: calc(var(--aura-peak) * 0.5 * var(--rarity-fade)); transform: translateX(-50%) scale(0.94); }
     50% { opacity: calc(var(--aura-peak) * var(--rarity-fade)); transform: translateX(-50%) scale(1.05); }
