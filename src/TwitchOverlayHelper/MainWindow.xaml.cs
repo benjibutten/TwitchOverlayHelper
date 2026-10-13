@@ -1339,6 +1339,12 @@ public partial class MainWindow : Window
     /// Creates the spin's reward in Twitch. The same conditions as a pet reward – our own channel,
     /// logged in, with the scope that lets a redemption be answered – because they are the same
     /// conditions Twitch imposes, and each of them is a different thing to put right.
+    private void SupportLink_RequestNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
+    {
+        OpenInBrowser(e.Uri.AbsoluteUri);
+        e.Handled = true;
+    }
+
     /// </summary>
     private async Task<string> CreateSpinRewardAsync(string title, int cost)
     {
