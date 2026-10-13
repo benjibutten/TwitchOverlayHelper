@@ -7,15 +7,15 @@ public sealed record PetState(string Id, string Name, string? Color, string Spec
 public sealed record PetSpawnResult(PetState Pet, string? RemovedId, bool Extended);
 
 /// <summary>
-/// The pets currently on screen. Kept on the server rather than in the browser so an overlay that
-/// reloads (OBS restart, scene change) gets its pets back instead of an empty lawn.
+/// The pets currently on screen. Kept on the server so an overlay that reloads (OBS restart, scene
+/// change) gets its pets back.
 /// </summary>
 public sealed class PetRegistry
 {
     private readonly Lock _lock = new();
     private readonly List<PetState> _pets = new();
 
-    /// <summary>Live pets, oldest first. Expired ones are dropped on the way out.</summary>
+    /// <summary>Live pets, oldest first. Also removes the expired ones.</summary>
     public IReadOnlyList<PetState> Snapshot()
     {
         long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -27,15 +27,12 @@ public sealed class PetRegistry
     }
 
     /// <summary>
-    /// Spawns a pet, or extends it when the same viewer redeems again: a second redemption buying
-    /// a twin would only halve the attention each one gets. Naming another species on the second
-    /// redemption transforms the pet, so paying again always changes something on screen.
+    /// Spawns a pet, or when the same viewer redeems again extends the one they have, changing it
+    /// to the newly named species.
     /// </summary>
     /// <param name="evictWhenFull">
-    /// What a full lawn means. True is the old behaviour: the oldest pet goes home so the newest
-    /// redemption always gets one. False refuses instead, and is what a reward that can pay back
-    /// asks for – sending someone else's pet home early to make room is a poor answer when handing
-    /// the points back is available.
+    /// What a full lawn means. True sends the oldest pet home to make room; false refuses the
+    /// spawn, which is what a reward that can pay back asks for.
     /// </param>
     /// <returns>The spawn, or null when the lawn was full and eviction was not allowed.</returns>
     public PetSpawnResult? Spawn(string id, string name, string? color, string species, TimeSpan lifetime, int maxPets, bool evictWhenFull = true)
@@ -69,8 +66,8 @@ public sealed class PetRegistry
     }
 
     /// <summary>
-    /// Takes one pet off the lawn early – a redemption paid back, whether by this app or by the
-    /// streamer in Twitch's own queue. Answers whether there was one to take.
+    /// Takes one pet off the lawn early, as when its redemption is paid back. Returns whether there
+    /// was one to take.
     /// </summary>
     public bool Remove(string id)
     {

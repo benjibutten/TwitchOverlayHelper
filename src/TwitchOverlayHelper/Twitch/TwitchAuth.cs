@@ -25,12 +25,8 @@ public sealed class TwitchAuthTransientException(string message) : TwitchAuthExc
 /// </summary>
 public sealed class TwitchAuth(HttpClient httpClient, IReadOnlyList<string>? scopes = null)
 {
-    /// <summary>
-    /// What this instance asks Twitch for. Handed in rather than fixed, because the app now logs in
-    /// twice: once as the streamer, who needs everything below, and once as a chat bot, who needs to
-    /// read and write in chat and nothing else. Asking a bot account for permission to ban people and
-    /// answer redemptions would be a consent screen nobody should be shown, let alone agree to.
-    /// </summary>
+    // Per instance because the app logs in twice: as the streamer with RequiredScopes, and as a
+    // chat bot that must not be asked for more than BotScopes.
     private readonly IReadOnlyList<string> _scopes = scopes is { Count: > 0 } ? scopes : RequiredScopes;
 
     /// <summary>Channel point redemptions, in your own channel only.</summary>
@@ -40,10 +36,8 @@ public sealed class TwitchAuth(HttpClient httpClient, IReadOnlyList<string>? sco
     /// Creating channel point rewards and answering their redemptions – fulfilled, or cancelled,
     /// which is what hands the viewer their points back.
     ///
-    /// <para>Twitch only lets an app answer redemptions of rewards that same app created, so this
-    /// scope alone buys nothing: the reward has to be made from here as well. A reward set up by
-    /// hand in the creator dashboard can never be refunded from this app, whatever the token says.
-    /// </para>
+    /// <para>Twitch only lets an app answer redemptions of rewards that same app created, so a
+    /// reward set up by hand in the creator dashboard can never be refunded from this app.</para>
     /// </summary>
     public const string ManageRedemptionsScope = "channel:manage:redemptions";
 
@@ -57,17 +51,14 @@ public sealed class TwitchAuth(HttpClient httpClient, IReadOnlyList<string>? sco
     public const string HypeTrainScope = "channel:read:hype_train";
 
     /// <summary>
-    /// The emotes this account may send anywhere – subscriber and follower emotes above all. Without
-    /// it the picker still has the channel's own emotes and the global ones, which need no scope at
-    /// all; what is missing is the half that is personal to the logged-in user.
+    /// The emotes this account may send anywhere – subscriber and follower emotes above all. The
+    /// channel's own emotes and the global ones need no scope.
     /// </summary>
     public const string EmotesScope = "user:read:emotes";
 
     /// <summary>
-    /// What the app asks Twitch for at login. "Required" is about the request, not about running:
-    /// every one of these is optional at run time. A login granted before a scope existed keeps
-    /// working and the feature behind the missing scope simply stays off, so nothing here can lock
-    /// a reader out of a chat they could already watch.
+    /// What the app asks Twitch for at login. Every one of these is optional at run time: a login
+    /// that lacks a scope keeps working with the feature behind that scope switched off.
     /// </summary>
     public static readonly string[] RequiredScopes =
     [
@@ -86,24 +77,21 @@ public sealed class TwitchAuth(HttpClient httpClient, IReadOnlyList<string>? sco
     ];
 
     /// <summary>
-    /// All a chat bot ever needs: read the room it is in, and write in it. Deliberately nothing
-    /// else – a second account exists to say things, not to be a second set of moderator powers
-    /// lying around with a token on disk.
+    /// All a chat bot needs: read the room it is in, and write in it. Deliberately nothing else,
+    /// so the bot's stored token carries no moderator powers.
     /// </summary>
     public static readonly string[] BotScopes = ["chat:read", "chat:edit"];
 
     public static string ScopeString => string.Join(' ', RequiredScopes);
 
     /// <summary>
-    /// Which of the scopes we ask for a stored login does not have. A refresh hands back the scopes
-    /// the token was granted, never the ones we have started asking for since, so this is the only
-    /// way to notice – and the app says "log in again to switch X on" instead of letting the user
-    /// meet a silent 403 from Twitch weeks later.
+    /// Which of <see cref="RequiredScopes"/> a stored login does not have. A refresh only hands
+    /// back the scopes the token was originally granted, so a login can lack scopes added later.
     /// </summary>
     public static IReadOnlyList<string> MissingScopes(IEnumerable<string>? granted) =>
         MissingScopes(granted, RequiredScopes);
 
-    /// <summary>The same question for a login that was never meant to carry every scope – the bot's.</summary>
+    /// <summary>Which of <paramref name="wanted"/> a login does not have; used for the bot's narrower set.</summary>
     public static IReadOnlyList<string> MissingScopes(IEnumerable<string>? granted, IReadOnlyList<string> wanted)
     {
         var have = new HashSet<string>(granted ?? [], StringComparer.OrdinalIgnoreCase);
@@ -175,8 +163,7 @@ public sealed class TwitchAuth(HttpClient httpClient, IReadOnlyList<string>? sco
             string message = DescribeError(json, string.Empty);
             // "authorization_pending" simply means the user has not finished on twitch.tv yet.
             if (response.StatusCode == HttpStatusCode.BadRequest && message.Contains("pending", StringComparison.OrdinalIgnoreCase)) continue;
-            // Twitch reports this the OAuth way, with an underscore; the spaced form is only what a
-            // human-readable variant would look like, so both are accepted.
+            // Twitch reports this the OAuth way, with an underscore; the spaced form is accepted too.
             if (message.Contains("slow_down", StringComparison.OrdinalIgnoreCase)
                 || message.Contains("slow down", StringComparison.OrdinalIgnoreCase)) { delay += TimeSpan.FromSeconds(2); continue; }
             throw new TwitchAuthException(message.Length > 0 ? message : "Inloggningen avbröts av Twitch.");

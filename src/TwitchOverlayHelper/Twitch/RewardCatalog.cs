@@ -4,12 +4,9 @@ using TwitchOverlayHelper.Models;
 namespace TwitchOverlayHelper.Twitch;
 
 /// <summary>
-/// Names for the reward ids IRC hands out. IRC only ever carries a redemption's GUID, so without
-/// this a redeemed message can say nothing about which reward it was. Filled from Helix when we are
-/// allowed to read the channel's rewards, and topped up from every redemption that comes past.
-///
-/// It is deliberately allowed to be empty: in someone else's channel we will never learn the names,
-/// and a message then shows a neutral marker rather than nothing at all.
+/// Names for the reward ids IRC hands out; IRC only carries a redemption's GUID. Filled from Helix
+/// when we are allowed to read the channel's rewards, and topped up from every redemption that
+/// comes past. Stays empty in someone else's channel, where the names cannot be read.
 /// </summary>
 public sealed class RewardCatalog
 {

@@ -6,9 +6,8 @@
         Background="{StaticResource PageBrush}" Foreground="{StaticResource TextBrush}" WindowStartupLocation="CenterScreen"
         FontSize="14">
     <Window.Resources>
-        <!-- The settings used to be one endless scroll of two columns; a rail turns it into six short
-             pages you can point at instead of hunt through. TabControl keeps every control alive in
-             the name scope even while its page is hidden, so the code-behind never has to know. -->
+        <!-- A rail of short pages. TabControl keeps every control alive in the name scope even while
+             its page is hidden, so the code-behind can reach them all. -->
         <Style x:Key="NavRail" TargetType="TabControl">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
@@ -65,8 +64,8 @@
         </Style>
 
         <!-- Every page is the same frame: scroll region, generous gutter, two columns inside.
-             BasedOn is load-bearing: a keyed style replaces the implicit one outright rather than
-             adding to it, so without this the pages would fall back to the stock scroll template. -->
+             BasedOn is load-bearing: a keyed style replaces the implicit one outright, so without
+             it the pages fall back to the stock scroll template. -->
         <Style x:Key="Page" TargetType="ScrollViewer" BasedOn="{StaticResource {x:Type ScrollViewer}}">
             <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
             <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
@@ -78,11 +77,8 @@
         <Style x:Key="StackedCard" TargetType="Border" BasedOn="{StaticResource Card}">
             <Setter Property="Margin" Value="0,16,0,0" />
         </Style>
-        <!-- A field holding a number rather than a sentence. Narrower padding than the ordinary
-             input, because what it holds is three or four characters and the padding was eating
-             most of the box: at the settings window's smallest size the value being typed was
-             scrolled out of sight by the caret. Centred for the same reason a price is – there is
-             nothing to line up with on either side. -->
+        <!-- A field holding a number. Narrower padding than the ordinary input, so three or four
+             characters stay visible at the settings window's smallest size. -->
         <Style x:Key="NumberField" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
             <Setter Property="Padding" Value="8,9" />
             <Setter Property="TextAlignment" Value="Center" />
@@ -97,8 +93,7 @@
     <Grid>
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
 
-        <!-- The connection state used to live inside the first card, which meant it vanished the
-             moment you scrolled past it. Up here it is true on every page. -->
+        <!-- Outside the tabs, so the connection state shows on every page. -->
         <Border Grid.Row="0" Background="#111521" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="0,0,0,1" Padding="26,15">
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
@@ -121,7 +116,7 @@
                 <Style TargetType="TabItem" BasedOn="{StaticResource NavItem}" />
             </TabControl.Resources>
 
-            <!-- ============================== Anslut ============================== -->
+            <!-- Anslut -->
             <TabItem Header="Anslut" Tag="🔗">
                 <ScrollViewer Style="{StaticResource Page}">
                     <Grid>
@@ -197,7 +192,7 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- ============================== Overlay ============================== -->
+            <!-- Overlay -->
             <TabItem Header="Overlay" Tag="🖥">
                 <ScrollViewer Style="{StaticResource Page}">
                     <Grid>
@@ -280,7 +275,7 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- ============================== Kantljus ============================== -->
+            <!-- Kantljus -->
             <TabItem Header="Kantljus" Tag="💡">
                 <ScrollViewer Style="{StaticResource Page}">
                     <StackPanel>
@@ -361,7 +356,7 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- ============================== OBS-dock ============================== -->
+            <!-- OBS-dock -->
             <TabItem Header="OBS-dock" Tag="🌐">
                 <ScrollViewer Style="{StaticResource Page}">
                     <Grid>
@@ -433,7 +428,7 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- ============================== Pets ============================== -->
+            <!-- Pets -->
             <TabItem Header="Pets" Tag="🐾">
                 <ScrollViewer Style="{StaticResource Page}">
                     <StackPanel>
@@ -536,8 +531,7 @@
                         </Grid>
 
                         <!-- Hela sidans bredd, inte en av kolumnerna: raden är en tabell med sex fält,
-                             och ett Twitch-ID är 36 tecken. I en halv kolumn blev varje ruta så smal
-                             att siffran man skrev in låg utanför den synliga delen av fältet. -->
+                             och ett Twitch-ID är 36 tecken. I en halv kolumn ryms inte fältens innehåll. -->
                         <Border Style="{StaticResource StackedCard}">
                             <StackPanel>
                                 <TextBlock Text="Belöningar som ger pets" Style="{StaticResource SubTitle}" />
@@ -558,8 +552,7 @@
                                                 <TextBox Grid.Column="2" Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
                                                          ToolTip="Namnet belöningen får i Twitch när du skapar den härifrån. Används annars bara som din egen anteckning." />
                                                 <!-- Låst när appen skapat belöningen: ID:t är det enda som binder raden till den belöning
-                                                     Twitch låter oss svara på, och ett ändrat ID skulle lämna 🔒 kvar på en rad som inte
-                                                     längre kan återbetala. Peka om en rad genom att ta bort den och skapa en ny. -->
+                                                     Twitch låter oss svara på. En rad pekas om genom att ta bort den och skapa en ny. -->
                                                 <TextBox Grid.Column="4" Text="{Binding RewardId, UpdateSourceTrigger=PropertyChanged}" TextChanged="PetReward_Changed"
                                                          FontFamily="Consolas" FontSize="13" Padding="9,10"
                                                          IsReadOnly="{Binding Managed}"
@@ -596,7 +589,7 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- ============================== Fajt ============================== -->
+            <!-- Fajt -->
             <TabItem Header="Fajt" Tag="🥊">
                 <ScrollViewer Style="{StaticResource Page}">
                     <StackPanel>
@@ -773,7 +766,7 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- ============================== Uppläsning ============================== -->
+            <!-- Uppläsning -->
             <TabItem Header="Uppläsning" Tag="🗣">
                 <ScrollViewer Style="{StaticResource Page}">
                     <StackPanel>
@@ -934,7 +927,7 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- ============================== Bot ============================== -->
+            <!-- Bot -->
             <TabItem Header="Bot" Tag="🤖">
                 <ScrollViewer Style="{StaticResource Page}">
                     <StackPanel>
@@ -1055,7 +1048,7 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- ============================== Program ============================== -->
+            <!-- Program -->
             <TabItem Header="Program" Tag="⚙">
                 <ScrollViewer Style="{StaticResource Page}">
                     <Grid>
@@ -1120,8 +1113,16 @@
                         Background="#232A3B" Foreground="#C9C5D8" FontSize="13" FontWeight="Normal"
                         Padding="12,6" Margin="12,0,0,0" VerticalAlignment="Center"
                         ToolTip="Öppnar mappen med dina inställningar, smeknamn och pets. backups innehåller daterade kopior av varje fil, snapshots en zip av hela mappen från varje version appen har kört." />
-                <TextBlock Text="Tips: lås overlayen när den ligger rätt – då blir den helt klickigenom och stjäl aldrig fokus från spelet."
-                           Foreground="#A8A3B8" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Tips: lås overlayen när den ligger rätt – då blir den helt klickigenom och stjäl aldrig fokus från spelet."
+                               Foreground="#A8A3B8" FontSize="13" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Foreground="#A8A3B8" FontSize="13" Margin="0,4,0,0" TextTrimming="CharacterEllipsis">
+                        <Run Text="Gillar du appen? Ge gärna bort en sub till "/>
+                        <Hyperlink NavigateUri="https://www.twitch.tv/pixlexi"
+                                   RequestNavigate="SupportLink_RequestNavigate"
+                                   Foreground="#B4A7FF" FontWeight="SemiBold">Pixlexi</Hyperlink><Run Text=" på Twitch."/>
+                    </TextBlock>
+                </StackPanel>
             </DockPanel>
         </Border>
     </Grid>

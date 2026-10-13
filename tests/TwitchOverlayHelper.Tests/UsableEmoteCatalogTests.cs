@@ -5,10 +5,9 @@ using TwitchOverlayHelper.Twitch;
 namespace TwitchOverlayHelper.Tests;
 
 /// <summary>
-/// Twitch decides which words in a message were emotes on its way to the viewers and tells everyone
-/// except the sender, so a line we wrote arrives with none. These are the sums that put them back –
-/// and they run in the app rather than in one of the views, because the overlay over the game and
-/// the dock have to draw the same message.
+/// Twitch tells everyone except the sender which words in a message were emotes, so a line we wrote
+/// arrives with none. These are the sums that put them back – in the app rather than in one of the
+/// views, because the overlay and the dock have to draw the same message.
 /// </summary>
 public sealed class UsableEmoteCatalogTests
 {
@@ -67,8 +66,7 @@ public sealed class UsableEmoteCatalogTests
     }
 
     /// <summary>
-    /// Nothing fetched yet is not the same as "no emotes here": the honest answer is to leave the
-    /// line as it was typed, which is how it read before any of this existed.
+    /// Nothing fetched yet is not the same as "no emotes here": the line is left as it was typed.
     /// </summary>
     [Fact]
     public void SaysNothingBeforeAnythingHasBeenFetched()
@@ -94,10 +92,9 @@ public sealed class UsableEmoteCatalogTests
     }
 
     /// <summary>
-    /// Forgetting is what a channel switch and a logout both do, and both happen on the UI thread –
-    /// while a fetch started by the dock's picker may still be waiting on Twitch. Waiting for that
-    /// fetch here would hold the window still for as long as Twitch takes to answer, which on a
-    /// connection that has gone quiet is the whole HTTP timeout.
+    /// Forgetting is what a channel switch and a logout both do, on the UI thread, while a fetch
+    /// started by the dock's picker may still be waiting on Twitch. Waiting for that fetch would
+    /// freeze the window for up to the whole HTTP timeout.
     /// </summary>
     [Fact]
     public async Task ForgettingDoesNotWaitForAFetchThatIsStillRunning()
@@ -117,8 +114,7 @@ public sealed class UsableEmoteCatalogTests
 
         handler.Release();
         await fetch;
-        // The answer that was on its way is about the room we just left, and drawing another room's
-        // emotes onto our own lines is exactly what forgetting was for.
+        // The answer that was on its way is about the room we just left.
         Assert.Empty(catalog.SpansIn("Kappa"));
     }
 

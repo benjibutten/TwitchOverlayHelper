@@ -13,10 +13,8 @@ public sealed record EventSubCoverage(bool Redemptions, bool Shoutouts, bool Pow
     public static readonly EventSubCoverage Nothing = new(false, false, false, false, []);
 
     /// <summary>
-    /// Whether the channel's own bits Power-ups are being delivered. Written as an init property
-    /// rather than squeezed into the positional list, which every caller of this record spells out.
-    /// It rides on the same scope as <see cref="PowerUps"/> but is asked for on its own, so the two
-    /// can honestly differ.
+    /// Whether the channel's own bits Power-ups are being delivered. Needs the same scope as
+    /// <see cref="PowerUps"/> but is a subscription of its own, so the two can differ.
     /// </summary>
     public bool CustomPowerUps { get; init; }
 
@@ -25,9 +23,8 @@ public sealed record EventSubCoverage(bool Redemptions, bool Shoutouts, bool Pow
 
 /// <summary>
 /// EventSub over WebSocket: the things IRC never sends. Sibling to <see cref="TwitchChatClient"/>
-/// and deliberately optional – it needs a login, and most of what it carries only works in your own
-/// channel. When it cannot run, nothing else changes: the chat keeps reading over IRC exactly as it
-/// does for a logged-out viewer.
+/// and optional – it needs a login, and most of what it carries only works in your own channel.
+/// When it cannot run, the chat keeps reading over IRC.
 /// </summary>
 public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient api) : IAsyncDisposable
 {
@@ -42,9 +39,8 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
     private EventSubPlan _plan = EventSubPlan.Nothing;
     private EventSubCoverage _covered = EventSubCoverage.Nothing;
 
-    // During a reconnect Twitch keeps delivering on the old socket while the new one comes up, so
-    // for a moment both are live and the same notification arrives twice. Without this guard one
-    // redemption would print two cards and spawn two pets.
+    // During a reconnect Twitch delivers on both the old and the new socket for a moment, so the
+    // same notification arrives twice.
     private readonly RecentMessageIds _seen = new();
 
     public event Action<ChatEvent>? EventReceived;
@@ -53,29 +49,26 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
     public event Action<RewardRedemption>? RedemptionReceived;
 
     /// <summary>
-    /// Raised when a redemption's status changed – fulfilled or cancelled. Mostly this is the app's
-    /// own answer coming back to it, which nothing acts on; what it exists for is the other case,
-    /// where the streamer works the queue in Twitch's dashboard and a pet has to come down.
+    /// Raised when a redemption's status changed – fulfilled or cancelled. This includes the app's
+    /// own answers as well as changes the streamer makes in Twitch's dashboard queue.
     /// </summary>
     public event Action<RedemptionStatusChange>? RedemptionUpdated;
 
     /// <summary>
-    /// Raised when a Gigantify an Emote power-up was used. It is not an event card of its own: it
-    /// belongs to a chat line, and the app's job is to find that line and mark it.
+    /// Raised when a Gigantify an Emote power-up was used. It belongs to a chat line, which
+    /// arrives separately over IRC.
     /// </summary>
     public event Action<GigantifiedEmote>? GigantifyReceived;
 
     /// <summary>
-    /// Raised when a viewer redeemed one of the channel's own custom Power-ups – the bits answer to
-    /// a channel points reward. Its own topic rather than a case in <c>channel.bits.use</c>: that
-    /// event carries the Power-up's title but not what the viewer typed, and the typed text is the
-    /// whole point of a Power-up that has something read out loud.
+    /// Raised when a viewer redeemed one of the channel's own custom Power-ups, with the text the
+    /// viewer typed.
     /// </summary>
     public event Action<CustomPowerUpRedemption>? CustomPowerUpReceived;
 
     /// <summary>
-    /// Raised on every step of a hype train. Not an event card: a train is a state that lives for
-    /// minutes, so each notification is the whole current picture and replaces the last one.
+    /// Raised on every step of a hype train. Each notification is the train's whole current state
+    /// and replaces the last one.
     /// </summary>
     public event Action<HypeTrainState>? HypeTrainChanged;
 
@@ -87,9 +80,9 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
     public bool IsRunning => _runTask is { IsCompleted: false };
 
     /// <summary>
-    /// Decides what is worth even trying in this channel, before a socket is opened. Being logged
-    /// out, missing a scope, or watching someone else's channel are all ordinary answers here – they
-    /// mean "fewer events", never "something is broken".
+    /// Decides what is worth subscribing to in this channel, before a socket is opened. Being
+    /// logged out, missing a scope, or watching someone else's channel yields a smaller plan, not
+    /// an error.
     /// </summary>
     public EventSubPlan Plan(string broadcasterId)
     {
@@ -97,13 +90,11 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
 
         // Redemptions are readable in your own channel only, whatever the scope says.
         bool ownChannel = string.Equals(broadcasterId, session.UserId, StringComparison.Ordinal);
-        // Either scope opens this topic – Twitch accepts the manage scope in place of the read one,
-        // and a login granted only the manage half would otherwise lose its redemptions over a
-        // permission it already holds.
+        // Twitch accepts the manage scope in place of the read one for this topic.
         bool canReadRedemptions = session.HasScope(TwitchAuth.RedemptionsScope) || session.HasScope(TwitchAuth.ManageRedemptionsScope);
         bool redemptions = ownChannel && canReadRedemptions;
-        // Shoutouts need the mod role in that channel, which Twitch will not tell us up front. We
-        // ask, and treat a refusal as "not a moderator here" rather than as an error.
+        // Shoutouts need the mod role in that channel, which Twitch will not tell us up front, so a
+        // refused subscription means "not a moderator here".
         bool shoutouts = session.HasScope(TwitchAuth.ShoutoutsScope);
         // Power-ups are spent in a channel, and only its broadcaster may read them.
         bool powerUps = ownChannel && session.HasScope(TwitchAuth.BitsScope);
@@ -111,9 +102,7 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
         bool hypeTrain = ownChannel && session.HasScope(TwitchAuth.HypeTrainScope);
 
         var missing = new List<string>();
-        // Reported as the one thing that is actually missing rather than as both halves: a login
-        // holding the manage scope can already read redemptions, so naming the read scope there
-        // would send the user off to fix something that is not broken.
+        // The read scope is only missing when the manage scope cannot stand in for it.
         if (ownChannel && !canReadRedemptions) missing.Add(TwitchAuth.RedemptionsScope);
         if (ownChannel && !session.HasScope(TwitchAuth.ManageRedemptionsScope)) missing.Add(TwitchAuth.ManageRedemptionsScope);
         if (!session.HasScope(TwitchAuth.ShoutoutsScope)) missing.Add(TwitchAuth.ShoutoutsScope);
@@ -143,8 +132,8 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
 
 
     /// <summary>
-    /// Says that nothing is covered any more. Everything that can fall back to another route has to
-    /// hear this, or an outage would leave those events handled by nobody at all.
+    /// Raises <see cref="CoverageChanged"/> with nothing covered, so that listeners with another
+    /// route, such as IRC for redemptions, fall back to it.
     /// </summary>
     private void ReportNothingCovered()
     {
@@ -199,10 +188,8 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
             }
             finally
             {
-                // However a session ended, its events now reach nobody. Anything with a second route
-                // has to be told to use it – redemptions that carry text still arrive over IRC, and
-                // the pets pick them up again the moment coverage drops. In a finally rather than in
-                // each catch, so no exit path can quietly leave the fallback switched off.
+                // In a finally so every exit path tells listeners to fall back: redemptions that
+                // carry text still arrive over IRC, and the pets use that route once coverage drops.
                 ReportNothingCovered();
             }
         }
@@ -238,8 +225,7 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
                 }
 
                 // Twitch keeps sending on the old socket until the replacement is established, so the
-                // old one is left reading until the new one has welcomed. That overlap is exactly why
-                // notifications are de-duplicated: for a moment both sockets carry the same events.
+                // old one is left reading until the new one has welcomed.
                 EventSubSocket next = await OpenAsync(await current.Reconnect.Task.ConfigureAwait(false), token).ConfigureAwait(false);
                 try { await next.Welcomed.Task.WaitAsync(token).ConfigureAwait(false); }
                 catch { await next.DisposeAsync().ConfigureAwait(false); throw; }
@@ -285,8 +271,8 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
                         case "session_keepalive":
                             break;
                         case "notification":
-                            // Only notifications are worth remembering: welcome and reconnect are
-                            // already idempotent, and keepalives would crowd real ids out of the buffer.
+                            // Only notifications are de-duplicated: welcome and reconnect are
+                            // idempotent, and keepalives would crowd real ids out of the buffer.
                             if (_seen.IsNew(ReadString(metadata, "message_id")))
                                 Dispatch(ReadString(metadata, "subscription_type"), Payload(frame));
                             break;
@@ -303,8 +289,7 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
         }
         catch (Exception ex)
         {
-            // Anyone waiting on a welcome that will now never come has to be let go, or the session
-            // loop would wait on it forever.
+            // Releases the session loop if it is waiting on a welcome that will never come.
             socket.Welcomed.TrySetException(ex);
             throw;
         }
@@ -312,8 +297,8 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
 
     /// <summary>
     /// Twitch revoked a subscription: the app was removed, a scope was withdrawn, or the version
-    /// went away. Retrying does not help, so the feature is reported as off – which is what hands
-    /// redemptions back to the IRC route instead of leaving them unhandled by both.
+    /// went away. Retrying does not help, so the feature is reported as off, which hands
+    /// redemptions back to the IRC route.
     /// </summary>
     private void OnRevoked(JsonElement payload)
     {
@@ -333,9 +318,8 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
     }
 
     /// <summary>
-    /// Asks for each topic in the plan on its own. One refusal must not take the others with it:
-    /// not being a moderator is the normal case in someone else's channel, and the redemptions we
-    /// came for should still arrive.
+    /// Asks for each topic in the plan on its own, so one refusal does not take the others with
+    /// it, and reports the result through <see cref="CoverageChanged"/>.
     /// </summary>
     private async Task SubscribeAsync(string broadcasterId, EventSubPlan plan, string sessionId, CancellationToken token)
     {
@@ -351,12 +335,9 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
             redemptions = await TrySubscribeAsync("channel.channel_points_custom_reward_redemption.add", "1",
                 condition, sessionId, token).ConfigureAwait(false);
 
-            // Asked for separately and never allowed to speak for the redemptions themselves: this
-            // one only carries what the streamer does in Twitch's own queue. Losing it costs a pet
-            // left standing after a manual refund – worth having, not worth turning the pets off
-            // over. Gated on the same scopes as the topic above, because Twitch takes either one
-            // here too; asking only when the manage scope is present would turn a permission
-            // Twitch grants into one this app withholds.
+            // Its result does not affect coverage: losing it only costs a pet left standing after a
+            // refund made in Twitch's own queue. Twitch takes either redemption scope here too, so
+            // it is not gated on the manage scope.
             if (redemptions)
                 await TrySubscribeAsync("channel.channel_points_custom_reward_redemption.update", "1",
                     condition, sessionId, token).ConfigureAwait(false);
@@ -369,9 +350,8 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
                 ["broadcaster_user_id"] = broadcasterId,
                 ["moderator_user_id"] = session.UserId
             };
-            // Both halves need the same role and scope, so a refusal on the first answers for both
-            // and there is no point asking twice. But the status may only claim shoutouts work when
-            // both actually got through – half a subscription would mean half the events.
+            // Both halves need the same role and scope, so a refusal on the first answers for both.
+            // Shoutouts only count as covered when both got through.
             shoutouts = await TrySubscribeAsync("channel.shoutout.create", "1", condition, sessionId, token).ConfigureAwait(false)
                 && await TrySubscribeAsync("channel.shoutout.receive", "1", condition, sessionId, token).ConfigureAwait(false);
         }
@@ -381,9 +361,8 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
             var condition = new Dictionary<string, string> { ["broadcaster_user_id"] = broadcasterId };
             powerUps = await TrySubscribeAsync("channel.bits.use", "1", condition, sessionId, token).ConfigureAwait(false);
 
-            // Asked for separately and never allowed to speak for the power-ups above: the two carry
-            // different things, and a channel with no custom Power-ups at all is the ordinary case.
-            // Losing this one costs the paid readings; losing the other costs the enlarged emotes.
+            // Tracked separately from the power-ups above: this one carries the paid readings, the
+            // other the enlarged emotes.
             customPowerUps = await TrySubscribeAsync("channel.custom_power_up_redemption.add", "1",
                 condition, sessionId, token).ConfigureAwait(false);
         }
@@ -393,17 +372,13 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
             var condition = new Dictionary<string, string> { ["broadcaster_user_id"] = broadcasterId };
             // Version 2, not 1: v1 knows nothing about shared trains or the golden Kappa train.
             //
-            // Asked for one at a time rather than chained with &&, because the end is what takes the
-            // strip back down: skipping it when an earlier one happened to fail is exactly how a
-            // strip ends up standing over a train that finished half an hour ago. A subscription
-            // that did get through while another did not is left where it is – websocket
-            // subscriptions belong to the session and go when it does, so a reconnect starts over
-            // from nothing either way.
+            // Not chained with &&: the end topic is what takes the strip down, so it must be asked
+            // for even when an earlier one failed. A partial set is not cleaned up, because
+            // websocket subscriptions go when the session does.
             bool begin = await TrySubscribeAsync("channel.hype_train.begin", "2", condition, sessionId, token).ConfigureAwait(false);
             bool progress = await TrySubscribeAsync("channel.hype_train.progress", "2", condition, sessionId, token).ConfigureAwait(false);
             bool end = await TrySubscribeAsync("channel.hype_train.end", "2", condition, sessionId, token).ConfigureAwait(false);
-            // Only all three add up to a strip that appears, moves and leaves again; anything less
-            // would have the app claim a feature it can only do half of.
+            // Only all three add up to a strip that appears, moves and leaves again.
             hypeTrain = begin && progress && end;
         }
 
@@ -457,9 +432,8 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
                     at);
                 RedemptionReceived?.Invoke(redemption);
 
-                // A redemption that carries text also arrives as a normal chat line over IRC, where
-                // the viewer's words already show. Giving it a card here as well would say the same
-                // thing twice, so only the silent rewards – the ones nothing else can show – get one.
+                // A redemption that carries text also arrives as a normal chat line over IRC, so
+                // only the rewards without text get a card.
                 if (redemption.UserInput is null)
                     EventReceived?.Invoke(redemption.ToChatEvent());
                 return;
@@ -522,9 +496,8 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
     }
 
     /// <summary>
-    /// One hype train notification as the app's whole picture of that train. The end payload carries
-    /// neither progress nor goal – there is no next level to reach – so both read as zero, which is
-    /// what makes the strip drop its bar rather than freeze it mid-climb.
+    /// One hype train notification as the app's whole picture of that train. The end payload
+    /// carries neither progress nor goal, so both read as zero.
     /// </summary>
     private static HypeTrainState ReadHypeTrain(JsonElement data, HypeTrainPhase phase, DateTimeOffset at) => new(
         ReadString(data, "id"),
@@ -542,9 +515,8 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
     };
 
     /// <summary>
-    /// Who is carrying the train, kept in the order Twitch ranked them. Sorting them here would mean
-    /// comparing a bits count against a subscription tier price, which are the same points only
-    /// when a gift batch counts as one subscription – and the payload does not say whether it does.
+    /// Who is carrying the train, in the order Twitch ranked them. Not re-sorted: bits and
+    /// subscription totals are not comparable from the payload alone.
     /// </summary>
     private static IReadOnlyList<HypeTrainContribution> ReadContributions(JsonElement data)
     {
@@ -561,20 +533,16 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
     }
 
     /// <summary>
-    /// Bits were spent. The three built-in power-ups each want something different, and two of the
-    /// four ways to spend bits deliberately produce nothing here:
+    /// Handles channel.bits.use. Only two of the ways to spend bits produce anything here:
     /// <list type="bullet">
-    /// <item>a plain cheer is an ordinary PRIVMSG with a bits tag, already shown by the IRC route –
-    /// giving it a card here would say it twice, and would say it only for the broadcaster;</item>
-    /// <item>a message effect is the one power-up IRC does carry, in the animation-id tag on the
-    /// message it belongs to, so it is read there and needs nothing from us;</item>
-    /// <item>a gigantified emote belongs to a chat line and is handed to the tracker that finds it;</item>
-    /// <item>a celebration is the only one with no message to attach to, so it gets its own card.</item>
+    /// <item>a plain cheer is an ordinary PRIVMSG with a bits tag, already shown by the IRC route;</item>
+    /// <item>a message effect arrives over IRC in the animation-id tag of its message;</item>
+    /// <item>a gigantified emote belongs to a chat line and is raised through <see cref="GigantifyReceived"/>;</item>
+    /// <item>a celebration has no message to attach to, so it gets its own card.</item>
     /// </list>
     /// A channel's own custom Power-up also arrives here, as type <c>custom_power_up</c>, and is
-    /// deliberately ignored: it has a topic of its own that carries the redemption's id and what the
-    /// viewer typed, neither of which this event has. Acting on both would answer one redemption
-    /// twice.
+    /// ignored: its own topic carries the redemption's id and what the viewer typed, and acting on
+    /// both would answer one redemption twice.
     /// </summary>
     private void DispatchBitsUse(JsonElement data, DateTimeOffset at)
     {
@@ -640,9 +608,9 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
         Payload(frame).TryGetProperty("session", out JsonElement session) ? session : default;
 
     /// <summary>
-    /// One socket being read, with the two things the session loop waits on. Kept as its own object
-    /// so a reconnect can hold two of them open at once – which is what the docs require: the old
-    /// connection stays until the new one has welcomed.
+    /// One socket being read, with the two signals the session loop waits on. A reconnect holds
+    /// two of them open at once: Twitch requires the old connection to stay until the new one has
+    /// welcomed.
     /// </summary>
     private sealed class EventSubSocket(ClientWebSocket client) : IAsyncDisposable
     {
@@ -656,11 +624,10 @@ public sealed class TwitchEventSubClient(TwitchSession session, TwitchApiClient 
 
         public async ValueTask DisposeAsync()
         {
-            // Aborting rather than closing politely: the reader is blocked on a receive, and a
-            // handshake we would have to wait for is not worth it when we are leaving anyway.
+            // Aborted rather than closed: the reader is blocked on a receive, and a close handshake
+            // would have to be waited for.
             try { Client.Abort(); } catch (ObjectDisposedException) { }
-            // The read task always ends in an exception once the socket is gone; observing it here
-            // is what keeps it from surfacing as an unobserved task exception later.
+            // Observed here so the read task's exception does not surface as unobserved later.
             try { await Reading.ConfigureAwait(false); } catch (Exception) { }
             Client.Dispose();
         }
@@ -704,19 +671,17 @@ public sealed record EventSubPlan(bool Redemptions, bool Shoutouts, bool PowerUp
 }
 
 /// <summary>
-/// A Gigantify an Emote power-up. The message it enlarged arrives separately over IRC and Twitch
-/// sends nothing that ties the two together, so <see cref="PowerUpTracker"/> pairs them up by who
-/// wrote them and by the text itself.
+/// A Gigantify an Emote power-up. The message it enlarged arrives separately over IRC;
+/// <see cref="PowerUpTracker"/> pairs the two up.
 /// </summary>
 public sealed record GigantifiedEmote(string UserId, string EmoteId, string Text, DateTimeOffset At);
 
 /// <summary>
 /// One redemption of a channel's own bits Power-up.
 ///
-/// <para>Shaped like <see cref="RewardRedemption"/> and answerable in none of the same ways. Twitch
-/// offers no endpoint to fulfil, cancel or refund one of these: the bits are spent the moment the
-/// notification is sent, whatever the streamer decides afterwards. <paramref name="Id"/> is
-/// therefore only ever an identity for this app's own bookkeeping, never something to send back.</para>
+/// <para>Shaped like <see cref="RewardRedemption"/>, but Twitch offers no endpoint to fulfil,
+/// cancel or refund one of these: the bits are spent when the notification is sent.
+/// <paramref name="Id"/> is only an identity for this app's own bookkeeping.</para>
 /// </summary>
 public sealed record CustomPowerUpRedemption(
     string Id,
@@ -731,8 +696,7 @@ public sealed record CustomPowerUpRedemption(
 
 /// <summary>
 /// A redemption that changed status. <paramref name="Status"/> is Twitch's own wording –
-/// FULFILLED or CANCELED – kept as it arrived rather than parsed into something narrower, so an
-/// unexpected value passes through as itself instead of quietly becoming the wrong one.
+/// FULFILLED or CANCELED – passed through unparsed, so an unexpected value stays visible.
 /// </summary>
 public sealed record RedemptionStatusChange(string RedemptionId, string RewardId, string Status);
 

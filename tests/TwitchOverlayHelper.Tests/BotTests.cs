@@ -7,9 +7,8 @@ using TwitchOverlayHelper.Speech;
 namespace TwitchOverlayHelper.Tests;
 
 /// <summary>
-/// Collects what the bot wrote, without a socket. The sender is asynchronous on purpose – it spaces
-/// messages out to stay inside Twitch's allowance – so the tests wait for a line to arrive rather
-/// than assuming it already has.
+/// Collects what the bot wrote, without a socket. The sender spaces messages out to stay inside
+/// Twitch's allowance, so the tests wait for a line rather than assume it has arrived.
 /// </summary>
 internal sealed class ChatSpy
 {
@@ -89,9 +88,8 @@ public sealed class BotTemplateTests
     }
 
     /// <summary>
-    /// A misspelled placeholder stays visible rather than vanishing. The settings window previews
-    /// every template, so a mistake that shows up there is one the streamer fixes before chat sees it
-    /// – whereas a silently dropped word would only be noticed as a sentence that reads oddly.
+    /// A misspelled placeholder stays visible rather than vanishing, so the settings window's
+    /// preview shows the mistake before chat sees it.
     /// </summary>
     [Fact]
     public void Leaves_an_unknown_placeholder_standing()
@@ -110,8 +108,7 @@ public sealed class BotTemplateTests
 
     /// <summary>
     /// The reason on a failed reading is whatever the synthesis threw – an HTTP status, a quota
-    /// message, the word "Unauthorized". None of that is the channel's business, so anything the app
-    /// does not recognise becomes the caller's own wording instead of being passed through.
+    /// message – so anything the app does not recognise becomes the caller's own wording.
     /// </summary>
     [Fact]
     public void An_unrecognised_reason_never_reaches_chat()
@@ -146,9 +143,8 @@ public sealed class BotSettingsTests
     }
 
     /// <summary>
-    /// Unknown is the one flow that must never get a rule: it is what an unrecognised name from the
-    /// settings file becomes, and a default for it would put a message in the list that nothing
-    /// raises and that the window would offer to edit.
+    /// Unknown is what an unrecognised flow name from the settings file becomes, so it must never
+    /// get a default rule: nothing raises it, and the window would offer to edit it.
     /// </summary>
     [Fact]
     public void The_placeholder_flow_never_becomes_a_message()
@@ -297,9 +293,8 @@ public sealed class BotSenderTests
     }
 
     /// <summary>
-    /// Twitch drops a repeat of the same line within thirty seconds without a word, so a bot that
-    /// sent one would look like it had stopped working. It is skipped here instead, where it can be
-    /// written down.
+    /// Twitch silently drops a repeat of the same line within thirty seconds, so the sender skips
+    /// it itself, where it can be logged.
     /// </summary>
     [Fact]
     public async Task Skips_a_repeat_Twitch_would_have_swallowed()
@@ -337,8 +332,7 @@ public sealed class BotSenderTests
 
 /// <summary>
 /// The bot, the queue it writes through and a chat that only remembers – built and torn down as one,
-/// because the queue is a running task and a test that left it behind would have the next test's
-/// lines arriving in its own list.
+/// because the queue is a running task that would otherwise outlive its test.
 /// </summary>
 internal sealed class BotHarness : IAsyncDisposable
 {
@@ -412,9 +406,8 @@ public sealed class BotServiceTests
     }
 
     /// <summary>
-    /// The sweep after a restart answers everything left over from last time, which can be a whole
-    /// stream's redemptions inside a second. One line about all of them, rather than the bot's
-    /// loudest minute of the day about something nobody is waiting on.
+    /// The sweep after a restart can answer a whole stream's leftover redemptions inside a second,
+    /// and gets one line about all of them.
     /// </summary>
     [Fact]
     public async Task Several_refunds_at_once_become_one_line()
@@ -475,11 +468,9 @@ public sealed class BotServiceTests
     }
 
     /// <summary>
-    /// A reading that failed is not announced as a refund unless the points actually went back, and
-    /// the reading queue is not what knows that. It hands the verdict to the ledger, which keeps
-    /// trying until Twitch takes it and can still give up – so a refund announced when the reading
-    /// ended would be a promise made before the call was even attempted, and would stand after it
-    /// had failed for good.
+    /// A failed reading is announced as a refund only once the points actually went back. The ledger
+    /// knows that, not the reading queue: it keeps trying until Twitch takes the refund and can
+    /// still give up.
     /// </summary>
     [Fact]
     public async Task A_refundable_ending_says_nothing_until_the_ledger_says_so()
@@ -501,9 +492,7 @@ public sealed class BotServiceTests
     }
 
     /// <summary>
-    /// The other half of the same rule: nothing went back, so there is nothing to say. Both paths
-    /// staying quiet is what stops the viewer being told twice – which the sender's duplicate guard
-    /// was hiding rather than preventing.
+    /// The other half of the same rule: nothing went back, so there is nothing to say.
     /// </summary>
     [Fact]
     public async Task A_reading_that_could_never_pay_back_is_not_announced_as_a_refund()
@@ -640,8 +629,7 @@ public sealed class BotServiceTests
     }
 
     /// <summary>
-    /// Answered with silence rather than with a refusal: a viewer who was never told the command
-    /// exists does not need telling off for trying it, and a bot that announces every refusal is one
+    /// Answered with silence rather than with a refusal: a bot that announces every refusal is one
     /// chat learns to set off on purpose.
     /// </summary>
     [Fact]
@@ -691,10 +679,9 @@ public sealed class BotServiceTests
     }
 
     /// <summary>
-    /// The spin's collection commands answer with one viewer's own data, so their cooldown must not
-    /// let one viewer's turn eat the next viewer's – that reads as the command being broken for
-    /// whoever asks second. Answered per {viewer}; asked again by the same one before the cooldown
-    /// is up still says nothing.
+    /// The spin's collection commands answer with one viewer's own data, so their cooldown is per
+    /// {viewer}: one viewer's turn must not eat the next viewer's, and the same viewer asking again
+    /// before the cooldown is up gets nothing.
     /// </summary>
     [Fact]
     public async Task A_named_flows_cooldown_is_per_viewer_not_channel_wide()
@@ -816,8 +803,8 @@ public sealed class BotServiceTests
 }
 
 /// <summary>
-/// The six things a review found once the feature worked: each of them a way the bot could say
-/// something that was not true, say it twice, or say it in a channel nobody was in.
+/// Ways the bot could say something that was not true, say it twice, or say it in a channel nobody
+/// was in.
 /// </summary>
 public sealed class BotRegressionTests
 {
@@ -829,9 +816,8 @@ public sealed class BotRegressionTests
         };
 
     /// <summary>
-    /// Two rows answering the same word means only the first can ever fire, so the second is dropped
-    /// rather than left in the list looking as though it works. A row still being filled in has no
-    /// word yet and must survive – otherwise adding a command would delete it again.
+    /// Two rows answering the same word means only the first can ever fire, so the second is
+    /// dropped. A row still being filled in has no word yet and must survive.
     /// </summary>
     [Fact]
     public void A_command_word_claimed_twice_keeps_only_the_first()
@@ -855,10 +841,9 @@ public sealed class BotRegressionTests
     }
 
     /// <summary>
-    /// A flow name this version has never heard of – one an earlier version wrote and this one
-    /// dropped. The stock string converter throws on it, and that exception reaches SettingsStore,
-    /// which answers by handing back a blank AppSettings. Upgrading past a removed flow would
-    /// silently reset the overlay, the channel and everything else in the file.
+    /// A flow name this version does not know, as another version may have written. The stock
+    /// string converter throws on it, and SettingsStore answers that exception with a blank
+    /// AppSettings – resetting the overlay, the channel and everything else in the file.
     /// </summary>
     [Fact]
     public void A_settings_file_naming_a_flow_this_version_dropped_still_loads()
@@ -893,9 +878,8 @@ public sealed class BotRegressionTests
     }
 
     /// <summary>
-    /// A send that never reached Twitch is not one Twitch will swallow as a repeat. Writing it down
-    /// as said would block the same perfectly good sentence for the next thirty seconds – exactly
-    /// when the bot has just reconnected and could finally deliver it.
+    /// A send that never reached Twitch is not one Twitch will swallow as a repeat, so it must not
+    /// block the same sentence once the bot has reconnected.
     /// </summary>
     [Fact]
     public async Task A_failed_send_does_not_block_the_same_line_from_being_tried_again()
@@ -941,9 +925,8 @@ public sealed class BotRegressionTests
     }
 
     /// <summary>
-    /// settings.json is a file a person can open. A null that reached a dereference in Normalize
-    /// would take the app down at startup – SettingsStore only catches malformed JSON – with no way
-    /// out except finding and editing the file by hand.
+    /// settings.json is a file a person can edit. A null that reached a dereference in Normalize
+    /// would take the app down at startup, because SettingsStore only catches malformed JSON.
     /// </summary>
     [Fact]
     public void A_hand_edited_settings_file_full_of_nulls_still_loads()

@@ -26,12 +26,9 @@ public partial class EdgeAlertWindow : Window
     private int _playToken;
 
     /// <summary>
-    /// Whether this window has closed for good. A chat line arriving as the app shuts down can
-    /// already have a <see cref="Play"/> waiting on the dispatcher queue, and that queue keeps being
-    /// pumped while the closing code awaits the network clients – so the call can land after the
-    /// window is gone. <see cref="Window.Show"/> throws on a closed window, which on the dispatcher
-    /// thread means the app falls over on its way out. Hide needs no such guard: WPF makes it a
-    /// no-op once the window has closed.
+    /// Whether this window has closed for good. A <see cref="Play"/> queued on the dispatcher
+    /// during shutdown can land after the window is gone, and <see cref="Window.Show"/> throws on a
+    /// closed window. Hide needs no such guard: WPF makes it a no-op once the window has closed.
     /// </summary>
     private bool _closed;
 
@@ -41,12 +38,11 @@ public partial class EdgeAlertWindow : Window
     }
 
     /// <summary>
-    /// Lights the edges once. Deliberately blind to <see cref="EdgeAlertStyle.Enabled"/> – the chat
-    /// triggers check it, while the settings window's test buttons preview a switched-off alert.
+    /// Lights the edges once. Blind to <see cref="EdgeAlertStyle.Enabled"/>: the chat triggers
+    /// check it, while the settings window's test buttons preview a switched-off alert.
     ///
-    /// <para><paramref name="seconds"/> overrides the style's own length, and is how a glow that is
-    /// being held open runs out its remaining time rather than starting a fresh full-length one on
-    /// top of itself. Omitted by the test buttons, which are previewing the setting itself.</para>
+    /// <para><paramref name="seconds"/> overrides the style's own length, for a glow that is being
+    /// held open and has only its remaining time to run.</para>
     /// </summary>
     public void Play(EdgeAlertStyle style, double edgeWidth, double? seconds = null)
     {
@@ -72,14 +68,13 @@ public partial class EdgeAlertWindow : Window
         EnsureTopmost();
 
         int token = ++_playToken;
-        // Read before the new animation replaces the old one: while a glow is already lit this is
-        // where it currently stands, and starting from there is what turns a second alert into the
-        // light staying on rather than a blink. Zero whenever nothing is playing.
+        // Read before the new animation replaces the old one: starting from the current brightness
+        // makes a second alert hold the light rather than blink. Zero when nothing is playing.
         DoubleAnimationUsingKeyFrames animation = BuildAnimation(
             GlowRoot.Opacity,
             Math.Clamp(style.Intensity, 0.15, 1),
-            // The floor is well under the shortest setting on purpose: a glow one second from its
-            // ceiling should fade out in that second rather than be rounded back up past it.
+            // The floor is well under the shortest setting: a glow one second from its ceiling
+            // fades out in that second rather than being rounded up past it.
             Math.Clamp(seconds ?? style.DurationSeconds, 0.4, 20));
         animation.Completed += (_, _) =>
         {
@@ -92,14 +87,11 @@ public partial class EdgeAlertWindow : Window
     }
 
     /// <summary>
-    /// Fade in quickly enough to be noticed, breathe between full and about two thirds while the
-    /// light stays, and take the longest part of the time fading away – an arrival should be felt,
-    /// a departure should not.
+    /// Fades in quickly, breathes between full and about two thirds while the light stays, and
+    /// takes the longest part of the time fading away.
     ///
-    /// <paramref name="from"/> is where the light already is. Starting from black every time is what
-    /// makes several alerts in a row read as flickering, so a glow that is already up keeps its
-    /// brightness and only has its clock reset: the fade-in shrinks towards nothing the closer the
-    /// light already is to full.
+    /// <para><paramref name="from"/> is the current brightness. The fade-in shrinks the closer the
+    /// light already is to full, so several alerts in a row do not flicker.</para>
     /// </summary>
     private static DoubleAnimationUsingKeyFrames BuildAnimation(double from, double peak, double totalSeconds)
     {

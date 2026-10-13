@@ -156,9 +156,9 @@ public sealed class ProfileVersionGuardTests
         Assert.Equal(ProfileSnapshotOutcome.Written, result.Snapshot.Outcome);
     }
 
-    // The regression this guard exists for: whether there is a profile worth copying is a question
-    // about the folder, and answering it from "did settings.json load" skipped the snapshot on
-    // exactly the start where the settings had gone missing.
+    // Whether there is a profile worth copying is a question about the folder: answering it from
+    // "did settings.json load" would skip the snapshot on exactly the start where the settings
+    // had gone missing.
     [Fact]
     public void TakesACopyEvenWhenTheSettingsFileIsBeyondReading()
     {

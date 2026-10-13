@@ -33,10 +33,7 @@ public partial class MainWindow : Window
     private const int EditHotkeyId = 9002;
 
     private readonly SettingsStore _settingsStore = new();
-    /// <summary>
-    /// What loading the profile ran into, kept until the window is up: it is worked out in the
-    /// constructor, before there is anything on screen to say it with.
-    /// </summary>
+    /// <summary>What loading the profile ran into, held until the window is up to show it.</summary>
     private string? _profileNotice;
     /// <summary>True when the notice is serious enough to stop the user rather than pass them by.</summary>
     private bool _profileNoticeIsLoss;
@@ -51,9 +48,8 @@ public partial class MainWindow : Window
     /// <summary>Which channel the one-shot fetch of older lines has already been done for.</summary>
     private string? _backfilledChannel;
     /// <summary>
-    /// Nicknames are the one thing in the app the user typed by hand and cannot get back from
-    /// Twitch, so they get a file of their own and are written the moment they change – with a
-    /// dated copy kept beside every save.
+    /// Nicknames are typed by hand and cannot be recovered from Twitch, so they have a file of
+    /// their own, written the moment they change with a dated copy beside every save.
     /// </summary>
     private readonly NicknameStore _nicknameStore = new();
     private readonly NicknameBook _nicknames;
@@ -67,30 +63,27 @@ public partial class MainWindow : Window
     private readonly TwitchSession _session;
     private readonly TwitchApiClient _apiClient;
     /// <summary>
-    /// The lines said before we connected. The only thing in the app that asks anyone other than
-    /// Twitch, because Twitch has nothing to ask – see <see cref="RecentMessagesClient"/>.
+    /// The lines said before we connected, from the one service the app asks that is not Twitch –
+    /// see <see cref="RecentMessagesClient"/>.
     /// </summary>
     private readonly RecentMessagesClient _recentMessages;
     /// <summary>
-    /// What we may send in this channel. Asked for once when the room becomes known, because it is
-    /// needed the moment a line is written rather than the moment somebody opens the picker.
+    /// What we may send in this channel. Loaded once when the room becomes known, since it is
+    /// needed the moment a line is written.
     /// </summary>
     private readonly UsableEmoteCatalog _emotes;
     private readonly TwitchEventSubClient _eventSubClient;
     private readonly RewardCatalog _rewards = new();
     private readonly PowerUpTracker _powerUps = new();
     /// <summary>
-    /// Which hype train moments have already been given a card. The strip can refuse an update for
-    /// being out of order and still owe the overlay its card – a begin arriving after the progress
-    /// it started is late, not wrong – so the two are kept apart, and the card is deduplicated on
-    /// the one thing that identifies the moment rather than on whether the strip moved.
+    /// Which hype train moments have already been given a card. Kept apart from the strip's
+    /// ordering: the strip can refuse a late update and still owe the overlay its card.
     /// </summary>
     private readonly RecentMessageIds _hypeCards = new();
     /// <summary>
     /// Keeps a chat line and the power-up marker for it in that order. The two are raised on
-    /// different threads – IRC and EventSub – and the moment the tracker knows about a line, the
-    /// marked copy can go out. If it overtook the line itself, the views would be asked to update a
-    /// message they had never been given.
+    /// different threads – IRC and EventSub – and a marker that overtook its line would ask the
+    /// views to update a message they had never been given.
     /// </summary>
     private readonly System.Threading.Lock _publishGate = new();
     private readonly SpeechSecretStore _speechSecrets = new();
@@ -102,11 +95,8 @@ public partial class MainWindow : Window
     private readonly ChatHub _hub;
     private readonly PetRegistry _petRegistry = new();
     /// <summary>
-    /// Built in the constructor rather than here on purpose. Reading the catalogue writes the
-    /// shipped pets into the profile, and every field initialiser runs before the constructor body
-    /// – so leaving it here meant a new version seeded its own pets into the folder before the
-    /// snapshot was taken, and the copy of "the profile as the previous version left it" quietly
-    /// contained files the previous version had never seen.
+    /// Built in the constructor on purpose: reading the catalogue writes the shipped pets into
+    /// the profile, and a field initialiser would run before the profile snapshot is taken.
     /// </summary>
     private readonly PetCatalog _petCatalog;
     private readonly FightCatalog _fightCatalog;
@@ -114,9 +104,8 @@ public partial class MainWindow : Window
     private readonly PetService _petService;
 
     /// <summary>
-    /// Every lucky spin win on disk. Built in the constructor for the same reason as the catalog:
-    /// its first read can quarantine or restore files, and the version snapshot has to be of the
-    /// profile as the previous version left it.
+    /// Every lucky spin win on disk. Built in the constructor like the catalog: its first read can
+    /// quarantine or restore files, which must not happen before the profile snapshot.
     /// </summary>
     private readonly SpinWinStore _spinWins;
 
@@ -143,8 +132,7 @@ public partial class MainWindow : Window
     private bool _sweeping;
     /// <summary>
     /// The chat bot: a second Twitch account, the queue that spaces its lines out, and the layer
-    /// that decides what is worth saying at all. Everything the app already knew and only told the
-    /// streamer now has somewhere to go.
+    /// that decides what is worth saying at all.
     /// </summary>
     private readonly BotAccount _botAccount;
 
@@ -193,11 +181,11 @@ public partial class MainWindow : Window
         DarkTitleBar.Enable(this);
         VersionText.Text = AppVersion.DisplayText;
         _settings = _settingsStore.Load();
-        // Before anything is written back: a build that reads the old file, understands part of it
-        // and saves is the one way to lose settings that the per-file copies cannot answer for.
+        // Before anything is written back: a build that reads an older file, understands part of
+        // it and saves would lose settings the per-file copies cannot restore.
         GuardProfile();
-        // Only now: reading the catalogue seeds this version's pets into the profile folder, and
-        // the snapshot above has to be of what was there before that happened.
+        // After the guard: reading the catalogue seeds this version's pets into the profile
+        // folder, and the snapshot has to be of what was there before.
         _petCatalog = new PetCatalog();
         _fightCatalog = new FightCatalog();
         _nicknames = _nicknameStore.Load();
@@ -235,11 +223,9 @@ public partial class MainWindow : Window
         _spins = new SpinService(_settings, _petCatalog, _spinWins, _petService, _hub,
             login => _apiClient.GetUserByLoginAsync(login),
             overlayCount: null,
-            // Whether a duplicate can become a gift is the question of whether its winner will ever
-            // be told to claim it, and a bot that is switched on is not the same as one that can
-            // write: the mode has to have somewhere to send, that connection has to be up, and the
-            // message itself has to be switched on. Any of those missing and the draw dodges what
-            // the viewer owns instead of promising a prompt nobody would ever see.
+            // A duplicate can only become a gift if its winner will be told to claim it: the
+            // message has to be switched on and the sending connection up. Otherwise the draw
+            // dodges what the viewer already owns.
             canGift: () => _settings.Bot.Speaks(BotFlow.SpinDuplicate)
                 && (_settings.Bot.Mode == BotMode.Bot ? _botAccount.CanSend : _chatClient.IsRunning));
         _spins.Start();
@@ -278,8 +264,8 @@ public partial class MainWindow : Window
         _settingsSaveTimer.Tick += (_, _) => { _settingsSaveTimer.Stop(); SaveSettingsNow(); };
         _trayIcon = CreateTrayIcon();
         _overlay.PlacementChanged += SaveSettings;
-        // Written on a timer rather than per message: chat arrives in bursts, and a file write per
-        // line during a raid would be the app's busiest piece of disk work for no gain.
+        // Written on a timer, not per message: chat arrives in bursts, and a file write per line
+        // during a raid is disk work for no gain.
         _historySaveTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(20) };
         _historySaveTimer.Tick += (_, _) => SaveChatHistory();
         _historySaveTimer.Start();
@@ -298,11 +284,9 @@ public partial class MainWindow : Window
         _chatClient.EventReceived += OnChatEvent;
         _eventSubClient.EventReceived += OnChatEvent;
         _eventSubClient.RedemptionReceived += OnRedemption;
-        // The queue can also be worked from Twitch's own dashboard. A pet whose redemption was
-        // refunded there has to come down here too – and a reading whose redemption was refunded there
-        // must not be read out at all, nor answered afterwards at a redemption Twitch has closed. The
-        // readings are asked first because they own their redemptions outright; the ledger never sees
-        // one of them.
+        // The queue can also be worked from Twitch's own dashboard: a pet refunded there has to come
+        // down here, and a reading refunded there must be neither read out nor answered. Readings
+        // are asked first because they own their redemptions outright; the ledger never sees them.
         _eventSubClient.RedemptionUpdated += change =>
         {
             if (_tts.HandleExternalUpdate(change.RedemptionId, change.Status)) return;
@@ -315,9 +299,8 @@ public partial class MainWindow : Window
         // drawn, and whether any lawn is connected in the first place.
         _hub.PetShown += _ledger.MarkShown;
         _hub.PetOverlayCountChanged += _ledger.OverlayCountChanged;
-        // The bot is told the same thing, and holds it against a grace period of its own: a scene
-        // change in OBS drops every lawn for a second or two, and announcing that to the channel
-        // would be announcing the streamer's scene changes.
+        // The bot holds the same signal against a grace period of its own: a scene change in OBS
+        // drops every lawn for a second or two, which must not be announced to the channel.
         _hub.PetOverlayCountChanged += _bot.OnPetOverlayCountChanged;
         // A full lawn pushes the oldest pet home to fit a new one, and that pet may be one somebody
         // paid for. The chat route and the test button both do it; a refundable reward refuses
@@ -325,21 +308,19 @@ public partial class MainWindow : Window
         _petService.PetEvicted += _ledger.PetEvicted;
         _ledger.Answered += notice =>
         {
-            // Twitch has taken the verdict, which is the only moment the spin can strike a booked
-            // win off its list of debts. Anything else and the debt would either be dropped while
-            // the redemption was still open, or carried for ever after it closed.
+            // Twitch having taken the verdict is the only moment the spin can strike a booked win
+            // off its list of debts: earlier the redemption is still open, and skipping it would
+            // carry the debt for ever.
             if (notice.RedemptionId.Length > 0) _spins.Settled(notice.RedemptionId);
             RunOnUi(() => ShowRedemptionNotice(notice));
-            // The same sentence, said to the person it is actually about. Until now a viewer whose
-            // points came back was the one party never told.
+            // The same sentence, said in chat to the viewer it is about.
             _bot.OnRedemptionAnswered(notice);
         };
         // Nothing is connected yet, and the ledger has to start out knowing that rather than
         // assuming a lawn it has never seen.
         _ledger.OverlayCountChanged(_hub.PetOverlayCount);
-        // The spin's stagecraft and bookkeeping: the overlay's curtain call frees the queue, the
-        // verdicts ride the same retrying path as everything else, and the announcements go out as
-        // whoever the bot is.
+        // The spin: the overlay's curtain call frees the queue, the verdicts ride the ledger's
+        // retrying path, and the announcements go out through the bot.
         _hub.SpinShown += _spins.OnSpinShown;
         _spins.Verdict += verdict => _ = _ledger.AnswerNow(
             verdict.RedemptionId, verdict.RewardId, verdict.ViewerName, verdict.Cost,
@@ -354,9 +335,8 @@ public partial class MainWindow : Window
         // The browser source saying it has finished a clip is what releases the next one in the
         // queue – and, on the channel points route, the only evidence the reading was delivered.
         _hub.TtsPlaybackFinished += _browserTts.OnFinished;
-        // And a reading page that goes away mid-clip is the same answer arriving as a silence: it can
-        // no longer report anything, so the app settles the clip on its behalf rather than holding the
-        // queue until the timeout.
+        // A reading page that goes away mid-clip can no longer report, so the app settles the clip
+        // on its behalf instead of holding the queue until the timeout.
         _hub.TtsOverlayCountChanged += _browserTts.OnOverlayCountChanged;
         // The sweep and the reading queue answer for the same reward, so the sweep has to be able to
         // tell "left over from before we were listening" from "on screen right now, being decided".
@@ -374,8 +354,7 @@ public partial class MainWindow : Window
             if (_settings.EdgeAlerts.TtsAlert.Enabled) RaiseEdgeAlert(EdgeAlertKind.TtsRequest);
             _bot.OnReadingPending(request);
         };
-        // Every ending, refundable or not. The bot has four different things to say about them and
-        // works out which from the verdict, so nothing here has to know about templates.
+        // Every ending, refundable or not; the bot works out what to say from the verdict.
         _tts.Finished += _bot.OnReadingFinished;
         _eventSubClient.HypeTrainChanged += OnHypeTrain;
         _eventSubClient.StatusChanged += status => RunOnUi(() => SetEventStatus(status));
@@ -397,23 +376,20 @@ public partial class MainWindow : Window
         ApplySpeechConfiguration();
         RestoreChatHistory();
         _ = StartDockServerAsync();
-        // Held until the window is up: a warning about the settings is worth a dialog, and a dialog
-        // in the constructor has nothing to sit on top of.
+        // Held until the window is up, so the warning dialog has an owner to sit on top of.
         Loaded += (_, _) => ReportProfileState();
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
     }
 
     /// <summary>
-    /// Puts back what was on screen last time, or shows the sample lines when there is nothing worth
-    /// putting back. Twitch cannot help here – it sends no history on join – so this is limited to
-    /// the lines this app saw itself, from this channel, within
-    /// <see cref="ChatHistoryStore.MaxAge"/>.
+    /// Puts back what was on screen last time, or shows the sample lines when there is nothing to
+    /// put back. Limited to the lines this app saw itself, from this channel, within
+    /// <see cref="ChatHistoryStore.MaxAge"/>; Twitch sends no history on join.
     ///
     /// <para>The restored lines go straight into the two views and never through
-    /// <see cref="OnChatMessage"/>. That is the whole point: replaying them through the normal path
-    /// would spawn yesterday's pets again, read the names out loud again, welcome the same first-time
-    /// chatters again and light the edges for a "!psst" that was answered hours ago.</para>
+    /// <see cref="OnChatMessage"/>, which would spawn pets, read names aloud, welcome first-time
+    /// chatters and light the edges all over again.</para>
     /// </summary>
     private void RestoreChatHistory()
     {
@@ -434,14 +410,8 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Asks the recent-messages service for what was said before we joined, and weaves it into what
-    /// is already on screen. This is the only part of the chat that does not come from Twitch, and
-    /// the only one that can be switched off.
-    ///
-    /// <para>Once per channel per run: it answers with the same stretch of chat every time, so
-    /// fetching again on each reconnect would cost a request to redraw the same lines.</para>
-    ///
-    /// <para>Like the saved history, nothing fetched here goes through <see cref="OnChatMessage"/> –
-    /// these lines were already said, already answered, and already reacted to.</para>
+    /// is already on screen. Runs once per channel per run, and only while the setting is on.
+    /// Like the saved history, nothing fetched here goes through <see cref="OnChatMessage"/>.
     /// </summary>
     private async Task BackfillRecentMessagesAsync(string channel)
     {
@@ -466,9 +436,8 @@ public partial class MainWindow : Window
             if (string.Equals(_backfilledChannel, channel, StringComparison.OrdinalIgnoreCase)) _backfilledChannel = null;
             return;
         }
-        // The request outlived the channel it was about. Lines from a room we have left would go to
-        // the overlay, the dock and – on the next tick – the history file, all under the new
-        // channel's name, and the disk copy would still be there tomorrow.
+        // The request outlived the channel it was about: its lines would be drawn, and saved to the
+        // history file, under the new channel's name.
         if (!string.Equals(_settings.Channel, channel, StringComparison.OrdinalIgnoreCase))
         {
             AppLog.Info($"Hoppade över {fetched.Count} hämtade rader för #{channel} – kanalen är nu #{_settings.Channel}.");
@@ -487,35 +456,27 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// A message was deleted, somebody was timed out or banned, or a moderator cleared the room –
-    /// including the broadcaster typing /clear in their own chat, which is what Twitch turns into a
-    /// CLEARCHAT for everyone listening.
-    ///
-    /// <para>Three surfaces hold chat and each has to be told. The hub drops the lines from its
-    /// timeline, which is what takes them off the dock and the stream overlay; the overlay window
-    /// keeps its own cards and is told separately; and the file is written at once rather than at
-    /// the next tick, because a restart in the twenty seconds in between is exactly when a cleared
-    /// room would come back as though nothing had happened.</para>
+    /// A message was deleted, somebody was timed out or banned, or the room was cleared – the
+    /// broadcaster's own /clear arrives as a CLEARCHAT too. Removes the lines from the hub (the
+    /// dock and the stream overlay), from the overlay window's own cards, and from the saved history.
     /// </summary>
     private void OnModeration(ChatModerationEvent moderation)
     {
         _hub.PublishModeration(moderation);
         RunOnUi(() =>
         {
-            // A line the action reached may still be sitting in the queue waiting for a card. Drawing
-            // it a moment after it was deleted is the one thing this must not do, and a single flush
-            // takes fifty at a time – the line we are after can be further back than that.
+            // A line the action reached may still be queued for a card, and a single flush takes
+            // only fifty at a time, so the whole queue is drawn before the moderation is applied.
             DrainPendingMessages();
             _overlay.ApplyModeration(moderation);
+            // Saved at once: a restart before the next timer tick would bring a cleared room back.
             SaveChatHistory();
         });
     }
 
     /// <summary>
-    /// An earlier sitting was put away from the dock. The overlay keeps its own cards rather than
-    /// reading the hub's timeline, so it is redrawn from what is left; the file is written at once
-    /// rather than at the next tick, because a restart in the twenty seconds in between is exactly
-    /// when it would look as though nothing had been put away at all.
+    /// An earlier sitting was put away from the dock. Redraws the overlay, which keeps its own
+    /// cards, from what is left, and saves the history at once so a restart cannot bring it back.
     /// </summary>
     private void OnHistoryTrimmed()
     {
@@ -527,22 +488,14 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Takes the lines a redraw of the overlay is about to draw anyway out of the queue of lines
-    /// waiting to be drawn on it. Without this the two accounts are added together: a line that is
-    /// both in the timeline being drawn and still in the queue gets a card from the redraw and
-    /// another one on the next flush.
-    ///
-    /// <para>Matched on identity rather than emptied wholesale, because not everything in this queue
-    /// is in the hub's timeline. A hype train card is drawn on the overlay alone – the dock is handed
-    /// the state and draws a strip instead – so throwing the queue away would lose it for good.</para>
-    ///
-    /// <para>Every line in the timeline was queued for the overlay before it was published to the hub,
-    /// so anything the redraw covers is already in the queue by the time this runs. A line the other
-    /// way around – queued, not yet published – is simply not in the redraw, stays in the queue, and
-    /// is drawn after it. Which is what makes this safe without a lock.</para>
+    /// Removes from the overlay's pending queue the lines a redraw is about to draw anyway, so
+    /// they do not get a second card on the next flush.
     /// </summary>
     private void DropPendingAlreadyDrawn(IReadOnlyList<ChatTimelineItem> drawn)
     {
+        // Matched on identity, not emptied wholesale: a hype train card is queued for the overlay
+        // alone and is in no timeline. Safe without a lock, because every line in the timeline was
+        // queued for the overlay before it was published to the hub.
         HashSet<string> ids = new(drawn.Select(ChatHistoryMerge.IdOf).OfType<string>(), StringComparer.Ordinal);
         List<ChatTimelineItem> keep = [];
         while (_pendingMessages.TryDequeue(out ChatTimelineItem item))
@@ -551,24 +504,21 @@ public partial class MainWindow : Window
             if (ChatHistoryMerge.IdOf(item) is { } id && ids.Contains(id)) continue;
             keep.Add(item);
         }
-        // Back on in the order they arrived; none of them has been drawn, so the flush timer still
-        // has work to do and Queue is what keeps it running.
+        // Back on in the order they arrived; Queue also keeps the flush timer running.
         foreach (ChatTimelineItem item in keep) Queue(item);
     }
 
     /// <summary>
-    /// Writes the history to disk when it has actually changed. The version check is what keeps a
-    /// quiet chat – or a minimised app nobody is talking in – from rewriting the same file every
-    /// twenty seconds all evening.
+    /// Writes the history to disk when it has changed since the last save, so a quiet chat does
+    /// not rewrite the same file every twenty seconds.
     /// </summary>
     private void SaveChatHistory()
     {
         if (_settings.Channel.Length == 0) return;
         long version = _hub.HistoryVersion;
         if (version == _lastSavedHistoryVersion) return;
-        // Only a write that happened counts as saved. Marking it either way turns a file locked for
-        // one second – a backup tool, a virus scanner – into a history that is never written again
-        // until the next line arrives, and the version check then hides that it ever went wrong.
+        // Only a write that happened counts as saved: otherwise a file locked for a second (a backup
+        // tool, a virus scanner) would leave the history unwritten until the next line arrives.
         if (!_historyStore.Save(_settings.Channel, _hub.SnapshotHistory(), DateTimeOffset.Now))
         {
             if (!_historySaveFailing) AppLog.Warn("Chatthistoriken kunde inte skrivas till disk. Försöker igen.");
@@ -683,9 +633,8 @@ public partial class MainWindow : Window
         _settings.Pets.AnimationSpeed = PetAnimSpeedSlider.Value;
         PetAnimSpeedValue.Text = $"{PetAnimSpeedSlider.Value:P0}";
         _hub.PublishPetSettings();
-        // Switching pets off hides the whole lawn, and the creatures on it go on living out their
-        // time behind it. Anyone who paid for one of them is now paying for something nobody can
-        // see, so they get their points back rather than a redemption booked as delivered.
+        // Switching pets off hides the whole lawn while the pets on it live out their time unseen,
+        // so anyone who paid for one gets their points back.
         if (wasEnabled && !_settings.Pets.Enabled) _ledger.RefundAll("pets stängdes av");
         SaveSettings();
     }
@@ -756,10 +705,9 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Creates the row's reward on Twitch, which is the only thing that makes its redemptions
-    /// refundable later: Twitch lets an app answer a redemption only on a reward its own client id
-    /// made. A reward set up by hand in the dashboard cannot be adopted – there is no API for it –
-    /// so moving an existing pet reward over means creating a new one here and retiring the old one.
+    /// Creates the row's reward on Twitch, which is what makes its redemptions refundable: Twitch
+    /// lets an app answer a redemption only on a reward its own client id made, and there is no
+    /// API for adopting a reward set up by hand in the dashboard.
     /// </summary>
     private async void CreatePetReward_Click(object sender, RoutedEventArgs e)
     {
@@ -809,15 +757,14 @@ public partial class MainWindow : Window
             rule.Managed = true;
             _rewards.Remember(created);
             SavePetRewards();
-            // The rows read their state once when they are drawn, so the list is built again to let
-            // the new lock show up next to the reward that just became refundable.
+            // The rows read their state once when drawn, so the list is rebuilt to show the lock.
             RefreshPetRewardList();
             PetRewardStatusText.Text = $"“{created.Title}” skapad. Sätt bilden i Twitchs dashboard – den går inte att ladda upp via API:t.";
         }
         catch (Exception ex) when (ex is TwitchApiException or TwitchAuthException or System.Net.Http.HttpRequestException or TaskCanceledException)
         {
-            // The one worth spelling out: Twitch refuses a second reward with a title the channel
-            // already uses, which is exactly what a streamer moving off a hand-made reward hits.
+            // Twitch refuses a second reward with a title the channel already uses, which is what a
+            // streamer moving off a hand-made reward hits.
             PetRewardStatusText.Text = $"Kunde inte skapa belöningen: {ex.Message} Har du redan en belöning med samma namn? Döp om eller ta bort den först.";
             AppLog.Warn($"Pets: kunde inte skapa belöning “{rule.Label}”: {ex.Message}");
         }
@@ -874,11 +821,7 @@ public partial class MainWindow : Window
         SaveSettings();
     }
 
-    /// <summary>
-    /// The table's two halves, which are only ever right together: column headings standing over an
-    /// empty list are headings for nothing, and the line explaining that the list is empty has no
-    /// business under a list that is not.
-    /// </summary>
+    /// <summary>Shows the column headings when there are rows, and the empty-list line when there are none.</summary>
     private void ShowPetRewardTable()
     {
         bool empty = _petRewards.Count == 0;
@@ -887,9 +830,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Draws the rows again. The rules are plain settings objects with no change notification, so
-    /// the one thing that changes without the user typing it – a row becoming refundable – needs
-    /// the list rebuilt to show up.
+    /// Draws the rows again. The rules have no change notification, so a row becoming refundable
+    /// needs the list rebuilt to show up.
     /// </summary>
     private void RefreshPetRewardList()
     {
@@ -921,9 +863,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Opens the profile folder in Utforskaren. The copies are only worth keeping if getting one
-    /// back is something the streamer can do on the evening it is needed – and every one of them is
-    /// a plain file that can be copied over the broken one with the app closed.
+    /// Opens the profile folder in Utforskaren. Every backup copy there is a plain file that can
+    /// be copied over a broken one with the app closed.
     /// </summary>
     private void OpenProfileFolder_Click(object sender, RoutedEventArgs e)
     {
@@ -977,8 +918,7 @@ public partial class MainWindow : Window
             _spinWins,
             () => OnPetsEdited(_petsWindow),
             ReloadPets,
-            // Null while the server is down: both pages are served by it, and an address to a port
-            // nobody is listening on is worse than being told why the button did nothing.
+            // Null while the server is down: both pages are served by it.
             petId => _dockServer.IsRunning ? _dockServer.InspectUrl(petId) : null,
             petId => _dockServer.IsRunning ? _dockServer.PreviewUrl(petId) : null) { Owner = this };
         _petsWindow.Closed += (_, _) => _petsWindow = null;
@@ -1025,10 +965,7 @@ public partial class MainWindow : Window
         RunOnUi(() => ShowLastReward(rewardId, message.RewardTitle, message.DisplayName));
     }
 
-    /// <summary>
-    /// Shows the reward by name when we have one. A GUID is not something anyone recognises, so a
-    /// name is the difference between a list the streamer can read and one they have to decode.
-    /// </summary>
+    /// <summary>Remembers the last redeemed reward and shows it, by name when there is one.</summary>
     private void ShowLastReward(string rewardId, string? rewardTitle, string displayName)
     {
         _lastSeenRewardId = rewardId;
@@ -1139,12 +1076,11 @@ public partial class MainWindow : Window
         _speechSettingsWindow.Show();
     }
 
-    // ── Bot ─────────────────────────────────────────────────────────────────────────────────────
+    // Bot
 
     /// <summary>
-    /// Where a bot line actually leaves the machine. Read from the settings at send time rather than
-    /// captured when the sender was built: the mode is a radio button the streamer can move while a
-    /// line is still sitting in the queue, and the line should go out as whoever the bot is now.
+    /// Sends a bot line as whichever account the mode names at send time, so a line still in the
+    /// queue follows a mode change. Does nothing while the bot is off.
     /// </summary>
     private Task SendBotLineAsync(string text, CancellationToken cancellationToken) => _settings.Bot.Mode switch
     {
@@ -1155,25 +1091,21 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Brings the bot's connection in line with the settings and with whether the app is in a channel
-    /// at all. Safe to call on any change – the account works out for itself whether it has anything
-    /// to do – which is why every one of the four things that can change calls exactly this.
+    /// at all. Safe to call on any change.
     /// </summary>
     private void ApplyBotConfiguration()
     {
         BotSettings bot = _settings.Bot;
         if (!bot.IsActive || !_chatClient.IsRunning)
         {
-            // Nothing left over from a mode that is no longer on, or from a channel the app has left:
-            // a queue of refund notices written under the old settings would otherwise go out as the
-            // new account, minutes later.
+            // Lines queued under the old mode or channel would otherwise go out as the new
+            // account, minutes later.
             _bot.Reset();
         }
         else
         {
-            // Told how many lawns there are rather than left to wait for one to say so. With no pet
-            // overlay running at all there is no event coming – the count has been zero since before
-            // the bot existed – so its clock would never start and the one thing worth saying about
-            // an overlay that is down would only ever be said after one had been up first.
+            // Told the current count directly: with no pet overlay running there is no change
+            // event coming, and the bot's overlay-down clock would never start.
             _bot.OnPetOverlayCountChanged(_hub.PetOverlayCount);
         }
         _ = _botAccount.ApplyAsync(_settings.Channel, bot.Mode == BotMode.Bot && _chatClient.IsRunning);
@@ -1336,9 +1268,9 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Creates the spin's reward in Twitch. The same conditions as a pet reward – our own channel,
-    /// logged in, with the scope that lets a redemption be answered – because they are the same
-    /// conditions Twitch imposes, and each of them is a different thing to put right.
+    /// Creates the spin's reward in Twitch and returns its id. Like a pet reward it needs a login
+    /// with the redemption scope in our own channel, and throws
+    /// <see cref="InvalidOperationException"/> naming whichever is missing.
     /// </summary>
     private async Task<string> CreateSpinRewardAsync(string title, int cost)
     {
@@ -1407,6 +1339,12 @@ public partial class MainWindow : Window
                 : "Inte konfigurerat – ingen knapp visas i docken.";
     }
 
+    private void SupportLink_RequestNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
+    {
+        OpenInBrowser(e.Uri.AbsoluteUri);
+        e.Handled = true;
+    }
+
     private void OpenInBrowser(string url)
     {
         try
@@ -1457,9 +1395,8 @@ public partial class MainWindow : Window
         try
         {
             await _chatClient.DisconnectAsync();
-            // Checked here so an upgrade to an authenticated connection is not attempted when no
-            // token can be had; the connection itself then asks again per attempt, and the answer
-            // is cached, so this costs nothing extra.
+            // Checked first so an authenticated connection is not attempted when no token can be
+            // had. The connection asks again per attempt, but the answer is cached.
             if (authenticated && await _session.TryGetIrcTokenAsync() is null) return;
             await _chatClient.ConnectAsync(
                 _settings.Channel,
@@ -1477,14 +1414,10 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// <see cref="OnRoomDiscoveredAsync"/> with a net under it. This runs on every connect *and every
-    /// reconnect*, and it calls Twitch over the network several times – so a stalled request during a
-    /// network blip is an ordinary Tuesday, not an exceptional case. It used to be started from an
-    /// async void lambda, which means an exception here had nowhere to go but the dispatcher, and the
-    /// process ended mid-stream with nothing written down anywhere.
-    ///
-    /// <para>Everything it sets up is optional: badges, reward names, the emote picker, the extra
-    /// events. Losing them costs a little polish, and is never worth losing the chat over.</para>
+    /// <see cref="OnRoomDiscoveredAsync"/> with every exception caught and logged. It runs on every
+    /// connect and reconnect and calls Twitch several times, so a stalled request is ordinary, and
+    /// everything it sets up – badges, reward names, the emote picker, the extra events – is
+    /// optional and never worth losing the chat over.
     /// </summary>
     private async Task PrepareRoomAsync(string roomId)
     {
@@ -1500,12 +1433,10 @@ public partial class MainWindow : Window
     {
         _hub.BroadcasterId = roomId;
         _hub.PublishAuth(_chatClient.CanSend);
-        // We are in the room, so the preview lines have had their moment. Taken down here rather
-        // than by the first real message: in a quiet room that message can be twenty minutes away,
-        // and until it came the stream overlay was showing invented chat to actual viewers.
+        // The preview lines come down on joining, not at the first real message: in a quiet room
+        // that can be twenty minutes away, with invented chat on the stream overlay until then.
         _hub.ClearSamples();
-        // First, so the chat reads on from where it left off as early as possible – and before the
-        // slower Twitch calls below have a chance to hold it up.
+        // First, so the chat reads on from where it left off before the slower Twitch calls below.
         await BackfillRecentMessagesAsync(_settings.Channel);
         // Which channel we are in decides what EventSub can carry, so it can only start once the
         // room id is known – not at login, and not when the socket opens.
@@ -1515,45 +1446,39 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Which emotes we may send here. Fetched when the room becomes known rather than when the
-    /// picker is opened, because the other thing it is for happens without warning: the first line
-    /// the streamer writes needs its emotes resolved before it reaches the overlay.
+    /// Loads which emotes we may send here. Done when the room becomes known, because the first
+    /// line the streamer writes needs its emotes resolved before it reaches the overlay.
     /// </summary>
     private async Task LoadUsableEmotesAsync(string roomId)
     {
         // Another channel's emotes drawn onto our own lines would be worse than none at all.
         _emotes.Forget();
         if (!_session.IsLoggedIn) return;
-        // TaskCanceledException belongs in this list: that is what HttpClient throws when a call runs
-        // past its 15 second timeout, and a timeout is the most ordinary way for any of this to fail.
+        // TaskCanceledException is what HttpClient throws when a call runs past its timeout.
         try { await _emotes.GetAsync(roomId, _session.UserId); }
         catch (Exception ex) when (ex is TwitchApiException or TwitchAuthException or System.Net.Http.HttpRequestException or TaskCanceledException)
         {
-            // Not worth surfacing: without the list our own lines read as they were typed, which is
-            // exactly how they read before any of this existed. The dock says so where it matters.
+            // Not worth surfacing: without the list our own lines read as they were typed.
         }
     }
 
     /// <summary>
-    /// Points EventSub at a channel. Everything here is allowed to come up empty: logged out, a
-    /// login from before these scopes existed, or simply someone else's channel all end with the
-    /// extra events switched off and the chat reading exactly as it did before.
+    /// Points EventSub at a channel. Logged out, a login without the needed scopes, or someone
+    /// else's channel all end with the extra events switched off and the chat unaffected.
     /// </summary>
     private async Task RestartEventSubAsync(string broadcasterId)
     {
         // A reconnect or a channel switch can start this again while an earlier run is still waiting
-        // on Twitch. Only the newest run may finish: two of them reaching StartAsync would throw
-        // from an async void callback, which takes the whole app with it. Read and written on the
-        // UI thread only, so a plain counter is enough.
+        // on Twitch. Only the newest run may finish: two of them reaching StartAsync would throw.
+        // Read and written on the UI thread only, so a plain counter is enough.
         int generation = ++_eventSubGeneration;
 
         await _eventSubClient.StopAsync();
         // Another channel's reward names would be wrong here, and a stale name is worse than none.
         _rewards.Clear();
         _powerUps.Clear();
-        // From here on nothing can tell us the train ended, so the strip has to go even when the
-        // channel is the same one. A live train writes itself back on the next progress; a train
-        // that ended during the gap would otherwise sit there claiming to be running.
+        // Nothing can tell us a train ended during the gap, so the strip goes even when the channel
+        // is the same one. A live train writes itself back on the next progress.
         _hub.ClearHypeTrain();
         _hypeCards.Clear();
         _petService.RedemptionsFromEventSub = false;
@@ -1561,28 +1486,21 @@ public partial class MainWindow : Window
         // has to be read again on the way back.
         _swept = false;
 
-        // Pending redemptions belong to the channel they were made in, so a switch lets them go –
-        // answering them from another channel is refused by Twitch and would be wrong even if it
-        // were not. A plain reconnect must not, though: this method also runs when IRC drops and
-        // comes back mid-stream, and throwing away the pets living through that gap would leave
-        // their viewers refunded for something they watched.
+        // Pending redemptions belong to the channel they were made in, so a switch lets them go;
+        // Twitch refuses answering them from another channel. A plain reconnect must keep them:
+        // this also runs when IRC drops mid-stream, and the pets living through that gap were watched.
         if (!string.Equals(_ledgerChannel, broadcasterId, StringComparison.Ordinal))
         {
             _ledger.Reset();
             // A reading bought in the channel we have left has no business being read out over the
             // one we have joined – and the viewer who paid for it is not in this room.
             _tts.Reset();
-            // The reels staged for the old channel go the same way, and so do the gifts still
-            // waiting for a winner to name somebody: their redemptions belong to the channel we have
-            // left, where claiming or paying one back is refused – and would be wrong even if it
-            // were not. The wins themselves stay: they are the viewers' property, not the
-            // connection's.
+            // The staged reels and the gifts still waiting for a recipient go the same way. The
+            // wins themselves stay: they are the viewers' property, not the connection's.
             _spins.LeaveChannel();
             _ledgerChannel = broadcasterId;
-            // Another channel's pets have no business on this one's lawn, and the entries that
-            // vouched for them have just gone. Letting them go is not the same as settling them:
-            // they stay unfulfilled in the channel they were made in, and coming back there finds
-            // them sitting from before we were listening and pays them back.
+            // Another channel's pets do not belong on this lawn. They are let go, not settled: they
+            // stay unfulfilled in their own channel, where the sweep pays them back on return.
             _petRegistry.Clear();
             _hub.PublishPetsCleared();
         }
@@ -1595,30 +1513,15 @@ public partial class MainWindow : Window
         if (plan.Redemptions) await LoadRewardNamesAsync(broadcasterId);
         if (generation != _eventSubGeneration) return;
 
-        // Belt and braces: the guard above is the real fix, but a crash here would cost the user
-        // their whole session over an optional feature.
+        // The generation guard keeps a second start from happening; swallowed anyway, since a crash
+        // here would cost the whole session over an optional feature.
         try { await _eventSubClient.StartAsync(broadcasterId); }
         catch (InvalidOperationException) { }
-        // The sweep is not started here. StartAsync only kicks off the background task – the socket
-        // is not open and nothing is subscribed yet, so anything redeemed in that gap would be
-        // invisible to EventSub and too new for a sweep cut at this moment. It waits for coverage
-        // to confirm the subscription instead; see ApplyEventCoverage.
+        // The sweep is not started here: StartAsync only kicks off the background task, and anything
+        // redeemed before the subscription is confirmed would be invisible to EventSub and too new
+        // for a sweep cut at this moment. See ApplyEventCoverage.
     }
 
-    /// <summary>
-    /// Pays back every redemption of one of our rewards that we were not listening for.
-    ///
-    /// <para>The pets only ever live in memory, so a redemption still unfulfilled on an app-made
-    /// reward from before we subscribed bought a pet that nobody can be watching now. A clean exit,
-    /// a crash mid-stream, a spell in another channel and the seconds it takes the socket to come
-    /// up all look the same from here, and the viewer is owed their points in every one of them.
-    /// </para>
-    /// </summary>
-    /// <param name="listeningSince">
-    /// The moment EventSub confirmed the subscription. Everything redeemed before it is ours to pay
-    /// back; everything after arrives through the normal path. Cut here rather than at process
-    /// start on purpose – that left the connection gap belonging to neither.
-    /// </param>
     /// <summary>Runs the sweep and lets the next one in afterwards, however this one ended.</summary>
     private async Task SweepThenReleaseAsync(DateTimeOffset listeningSince, int generation)
     {
@@ -1626,13 +1529,17 @@ public partial class MainWindow : Window
         finally { _sweeping = false; }
     }
 
+    /// <summary>
+    /// Pays back every redemption of one of our rewards that was made while we were not listening.
+    /// Pets and readings live in memory only, so after an exit, a crash, a spell in another channel
+    /// or a connection gap, what such a redemption bought no longer exists.
+    /// </summary>
+    /// <param name="listeningSince">
+    /// The moment EventSub confirmed the subscription. Everything redeemed before it is paid back;
+    /// everything after arrives through the normal path.
+    /// </param>
     private async Task SweepLeftoverRedemptionsAsync(DateTimeOffset listeningSince, int generation)
     {
-        // The reading reward is swept alongside the pets'. Both live in memory only, so anything
-        // still unfulfilled on one of them from before we were listening belongs to something that
-        // no longer exists – a reading that was waiting for a yes when the app was closed, a channel
-        // switch that let the queue go, a crash mid-stream. Without this the app is the only half of
-        // the pets' design that TTS copied: letting go quietly, and never coming back to settle up.
         var managed = _settings.Pets.ManagedRewardIds.ToList();
         if (_settings.Tts.CanRefund && !managed.Contains(_settings.Tts.RewardId, StringComparer.OrdinalIgnoreCase))
             managed.Add(_settings.Tts.RewardId);
@@ -1657,15 +1564,14 @@ public partial class MainWindow : Window
         }
         if (generation != _eventSubGeneration) return;
 
-        // Only a sweep that actually read every queue may stop the next connection from trying
-        // again. Marking it done up front is how a single failed call leaves a viewer's points
-        // sitting in Twitch's queue for the rest of the stream.
-        // Now that redemptions can be answered again, anything the spin still owes is raised afresh.
+        // Redemptions can be answered again, so anything the spin still owes is raised afresh.
         // After the sweep on purpose: a debt that has run out of attempts is written off here, and
         // the sweep that has just run is the one thing that would have paid it back on top of a pet
         // the viewer keeps.
         _spins.ResumeOwed();
 
+        // Only a sweep that read every queue may stop the next connection from trying again;
+        // otherwise one failed call leaves a viewer's points in Twitch's queue for the whole stream.
         _swept = complete;
         RunOnUi(() => PetRewardStatusText.Text = complete
             ? "Kön är genomgången."
@@ -1685,22 +1591,18 @@ public partial class MainWindow : Window
     private void SetEventStatus(string text) => EventStatusText.Text = text;
 
     /// <summary>
-    /// Says what the extra events are doing and, when something is off because the stored login
-    /// predates a scope, offers the one thing that fixes it. A missing permission is never an error
-    /// here – it is a sentence explaining why a card is not showing up.
+    /// Says what the extra events are doing and, when the stored login lacks a scope, offers to
+    /// log in again. A missing permission is shown as an explanation, never as an error. Also
+    /// starts the leftover-redemption sweep once redemptions are being delivered.
     /// </summary>
     private void ApplyEventCoverage(EventSubCoverage coverage)
     {
         _petService.RedemptionsFromEventSub = coverage.Redemptions;
 
-        // This is the first moment we know redemptions are actually being delivered, which makes it
-        // the only honest place to cut the sweep: everything redeemed before now was redeemed while
-        // nobody was listening.
-        //
-        // Not listening is exactly what arms it again. Every gap – a reconnect, a revoked
-        // subscription, a channel switch – is a stretch where a redemption could arrive with nobody
-        // to hear it, so the queue has to be looked at once more on the way back. The flag is only
-        // set by a sweep that finished, so a failed one comes round again too.
+        // The first moment redemptions are known to be delivered, so the sweep is cut here:
+        // everything redeemed before now was redeemed while nobody was listening. Every gap – a
+        // reconnect, a revoked subscription, a channel switch – arms it again, and the flag is
+        // only set by a sweep that finished, so a failed one comes round again too.
         if (!coverage.Redemptions) _swept = false;
         else if (!_swept && !_sweeping)
         {
@@ -1726,10 +1628,8 @@ public partial class MainWindow : Window
             : missingEventScopes ? "Inga extra händelser än."
             : "Inga extra händelser i den här kanalen – belöningar, power-ups och hypetåg kräver din egen kanal, shoutouts att du är moderator.";
 
-        // The emote picker's personal half is not an event, so it stays out of the headline – but it
-        // is behind the very same "log in again", and a scope nobody is told about is a feature that
-        // silently never turns on. Appended to the sentence rather than given one of its own,
-        // because the button under it can only be pressed once for all of them.
+        // The emote scope is not an event, so it stays out of the headline, but the same re-login
+        // grants it, so it joins the same sentence and the one button.
         var missing = coverage.MissingScopes.ToList();
         if (_session.IsLoggedIn && !_session.HasScope(TwitchAuth.EmotesScope)) missing.Add(TwitchAuth.EmotesScope);
         bool offerLogin = _session.IsLoggedIn && missing.Count > 0;
@@ -1741,8 +1641,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// New scopes only arrive through a fresh approval: refreshing a token hands back the scopes it
-    /// was granted, never the ones we have started asking for since.
+    /// Logs out and starts a fresh login. New scopes only arrive through a fresh approval:
+    /// refreshing a token hands back only the scopes it was granted.
     /// </summary>
     private async void Reauthorize_Click(object sender, RoutedEventArgs e)
     {
@@ -1759,9 +1659,8 @@ public partial class MainWindow : Window
     {
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("Öppna inställningar", null, (_, _) => RestoreFromTray());
-        // Reachable from the tray on purpose: the log is worth having exactly when the main window is
-        // not what the user is looking at, and asking someone to find %LOCALAPPDATA% over voice chat
-        // is how a log nobody reads stays unread.
+        // Reachable from the tray, so the log can be found without the main window or a path into
+        // %LOCALAPPDATA%.
         menu.Items.Add("Visa loggar", null, (_, _) => AppLog.OpenFolder());
         menu.Items.Add("Sök efter uppdateringar", null, async (_, _) =>
         {
@@ -1830,9 +1729,8 @@ public partial class MainWindow : Window
         await UpdateCoordinator.CheckAsync(this, manual: true);
 
     /// <summary>
-    /// Ends the app the ordinary way while the updater waits for this process to exit. It has to be the
-    /// ordinary way: settings and the last minutes of chat are written during shutdown, and an update
-    /// that costs the user those is not an improvement.
+    /// Ends the app the ordinary way while the updater waits for this process to exit, so settings
+    /// and the last minutes of chat are written during shutdown.
     /// </summary>
     internal void ExitForUpdate() => ExitApplication();
 
@@ -1843,17 +1741,16 @@ public partial class MainWindow : Window
     private void OnChatMessage(ChatMessage message)
     {
         message = _rewards.Enrich(message);
-        // A line the bot wrote itself. It is chat like any other to the views, but it must not set
-        // anything off: a welcome greeting the bot's own welcome, or "{pet} levde klart" spawning a
-        // pet through the chat route, is a loop the whole channel would have to sit through.
+        // A line the bot wrote itself is chat like any other to the views, but must not set anything
+        // off: a welcome greeting the bot's own welcome, or "{pet} levde klart" spawning a pet
+        // through the chat route, would loop.
         bool own = _bot.IsOwnMessage(message);
         // Marking and publishing are one step, see _publishGate.
         lock (_publishGate)
         {
             message = _powerUps.Enrich(message);
-            // The overlay lies over a game, where the bot's answers are a stream of notifications
-            // nobody asked for; in the dock they are the conversation they belong to, so only the
-            // overlay drops them.
+            // Over a game the bot's answers are notifications nobody asked for; in the dock they
+            // are part of the conversation, so only the overlay drops them.
             if (!own || !_settings.Bot.HideOwnMessagesInOverlay) Queue(ChatTimelineItem.Of(message));
             _hub.PublishMessage(message);
         }
@@ -1862,8 +1759,7 @@ public partial class MainWindow : Window
         _petService.HandleMessage(message);
         _fight.HandleMessage(message);
         TrackLastReward(message);
-        // The welcome and the two commands. Ahead of the edge alerts because it answers rather than
-        // lights up, and the two have nothing to do with each other.
+        // The bot's welcome and commands, independent of the edge alerts below.
         _bot.OnChatMessage(message);
         // The edge glow. A mod calling outranks the welcome: when a moderator's very first message
         // is the command, the streamer is being called, not introduced to their own mod.
@@ -1880,12 +1776,9 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Writes down why a line that *was* the call command still did not light the edges. There are
-    /// only ever two answers – the alert is switched off, or the sender is not a moderator – and
-    /// neither of them shows up anywhere on screen, which is what makes "I wrote it and nothing
-    /// happened" impossible to tell apart from a broken feature.
-    ///
-    /// <para>Silent for anything that is not the command, so ordinary chat costs one comparison.</para>
+    /// Logs why a line that was the call command still did not light the edges – the alert is
+    /// switched off, or the sender is not a moderator – since neither shows anywhere on screen.
+    /// Does nothing for a line that is not the command.
     /// </summary>
     private void ExplainMissedModCall(ChatMessage message)
     {
@@ -1907,20 +1800,18 @@ public partial class MainWindow : Window
         string reason = alertDisabled
             ? "mod-ljuset är avstängt i inställningarna"
             : "avsändaren är varken moderator eller broadcaster";
-        // The person who wrote it is the one who cannot see any of this. The bot words the same two
-        // answers for them – neither of which is the sentence written to the log here, because a
-        // moderator wants to know what to do and the log wants to know what happened.
+        // The sender cannot see the log, so the bot words the same two answers for them: a
+        // moderator wants to know what to do, the log what happened.
         _bot.OnModCallMissed(message, alertDisabled);
-        // The mod tag is what the decision actually rests on, so it is written down next to the
-        // badges: badges alone once made a lead moderator look like an ordinary viewer here.
+        // The mod tag is what the decision rests on, so it is logged next to the badges: badges
+        // alone can make a lead moderator look like an ordinary viewer.
         string modTag = message.HasModTag ? "ja" : "nej";
         AppLog.Info($"\"{text}\" från {message.DisplayName} tände inte kanterna: {reason}. Mod-tagg: {modTag}. Badges: {badges}.");
     }
 
     /// <summary>
     /// Lights the edges, unless <see cref="_edgeScheduler"/> says this one has nothing to add to
-    /// what is already lit. Deciding here rather than in the window keeps the policy testable and
-    /// leaves the settings window's test buttons free to preview a glow whatever chat is doing.
+    /// what is already lit. Does not check whether the alert is switched on; callers do.
     /// </summary>
     private void RaiseEdgeAlert(EdgeAlertKind kind)
     {
@@ -1931,8 +1822,7 @@ public partial class MainWindow : Window
             _ => _settings.EdgeAlerts.NewChatterAlert
         };
         // The length comes from the scheduler, not from the setting: a glow being held open has only
-        // the rest of its ceiling to run, and playing a full alert on top of it is what would keep
-        // the edges lit past the limit during a busy chat.
+        // the rest of its ceiling to run, or a busy chat would keep the edges lit past the limit.
         if (_edgeScheduler.PlayFor(kind, style.DurationSeconds, DateTimeOffset.UtcNow) is not { } lit)
         {
             AppLog.Info($"Kantljuset ({kind}) hoppades över – ett ljus pågår redan eller taket är nått.");
@@ -1950,11 +1840,9 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// A step in a hype train. The two views want different things from it, which is why this does
-    /// not go through <see cref="OnChatEvent"/>: the dock is handed the whole state and draws a strip
-    /// that stays put for the minutes the train lasts, while the overlay – which has nowhere to put
-    /// a strip – gets a card for the start and one for the end and nothing in between. A bar
-    /// redrawing every few seconds on top of a game is the opposite of what the overlay is for.
+    /// A step in a hype train. Bypasses <see cref="OnChatEvent"/> because the two views want
+    /// different things: the dock is handed the whole state and draws a strip for as long as the
+    /// train lasts, while the overlay gets a card for the start, one for the end and nothing between.
     /// </summary>
     private void OnHypeTrain(HypeTrainState train)
     {
@@ -1980,18 +1868,15 @@ public partial class MainWindow : Window
 
         RunOnUi(() => ShowLastReward(redemption.RewardId, redemption.RewardTitle, redemption.DisplayName));
 
-        // The reading reward is claimed before the pets see it. Without this a channel with no pet
-        // rules configured – where every redemption spawns a pet – would answer the same redemption
-        // twice: once when the pet's time was up and once when the message had been read.
+        // The reading reward is claimed before the pets see it: a channel with no pet rules spawns
+        // a pet for every redemption, and the same redemption would be answered twice.
         if (_settings.Tts.MatchesReward(redemption.RewardId))
         {
             HandleTtsRedemption(redemption);
             return;
         }
 
-        // The spin reward is claimed before the pets for the same reason the reading is: a channel
-        // with no pet rules spawns a pet for every redemption it meets, and one purchase must never
-        // be answered twice.
+        // The spin reward is claimed before the pets for the same reason.
         if (_settings.Spin.MatchesReward(redemption.RewardId, redemption.RewardTitle))
         {
             HandleSpinRedemption(redemption);
@@ -2000,15 +1885,13 @@ public partial class MainWindow : Window
 
         PetRedemptionResult result = _petService.HandleRedemption(redemption);
         AnswerRedemption(redemption, result);
-        // Told the outcome rather than the verdict: a redemption that bought nothing is worth a word
-        // in chat whether or not the points can be handed back, because the next viewer about to
-        // spend theirs is the one who benefits from hearing it.
+        // Told the outcome, not the verdict: a redemption that bought nothing is worth a word in
+        // chat whether or not the points can be handed back.
         _bot.OnPetOutcome(
             redemption.DisplayName.Length > 0 ? redemption.DisplayName : redemption.UserLogin,
             redemption.RewardCost ?? 0,
             result.Outcome);
-        // Its own line rather than a case in OnPetOutcome, because it needs the pet's name – the
-        // one piece of the answer the outcome alone does not carry.
+        // Announced separately because it needs the pet's name, which the outcome does not carry.
         if (result is { Outcome: PetSpawnOutcome.NotOwned, Asked: { } asked })
             _bot.Announce(BotFlow.SpinNotOwned, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -2018,9 +1901,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// A redemption of the spin reward. The service has already booked whatever there was to book by
-    /// the time it answers; all that is left here is paying back the redemptions that bought nothing.
-    /// The happy paths answer for themselves – the service raises its own verdicts for those.
+    /// A redemption of the spin reward. The service books the draw and raises its own verdicts;
+    /// all that is left here is paying back the redemptions that bought nothing.
     /// </summary>
     private void HandleSpinRedemption(RewardRedemption redemption)
     {
@@ -2086,18 +1968,9 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Tells Twitch what became of a reading that was bought with channel points. Only ever called
-    /// for requests the app accepted as refundable, so the reward is one this client id created and
-    /// the answer is one Twitch will take.
-    /// </summary>
-    /// <summary>
-    /// Where a reading actually comes out. The browser source is the one that reaches the viewers –
-    /// OBS mixes it itself – while the desktop is the streamer's own speakers and only reaches the
-    /// stream if they capture their whole desktop, which most setups deliberately do not.
-    ///
-    /// <para>With both, the browser is what is waited on and what may fail: the local copy is a
-    /// convenience for the streamer, and a sound card that is busy is not a reason to pay a viewer
-    /// back for a reading the channel heard perfectly well.</para>
+    /// Plays a reading where the settings say: the browser source, which is what reaches the viewers
+    /// through OBS, the streamer's own speakers, or both. With both, only the browser is awaited
+    /// and only its failure counts; a busy sound card is no reason to pay a viewer back.
     /// </summary>
     private async Task PlayReadingAsync(TtsClip clip, CancellationToken cancellationToken)
     {
@@ -2117,18 +1990,21 @@ public partial class MainWindow : Window
         await _browserTts.PlayAsync(clip, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Tells Twitch what became of a reading that was bought with channel points. Only called for
+    /// requests the app accepted as refundable, so the reward is one this client id created.
+    /// </summary>
     private Task AnswerTtsAsync(TtsRequest request, RedemptionStatus status, string reason) =>
         _ledger.AnswerNow(request.Id, request.RewardId, request.DisplayName, request.Cost, status, reason, "tts");
 
     /// <summary>
-    /// Tells Twitch what became of a redemption – but only for the rewards this app created, which
-    /// are the only ones it may answer at all.
+    /// Tells Twitch what became of a redemption, for the rewards this app created – the only ones
+    /// it may answer.
     ///
-    /// <para>A pet that did spawn is not answered yet. It goes into the ledger and stays in the
-    /// channel's queue until it has lived its time, because that is the only window in which it can
-    /// still be paid back: an OBS browser source that never came up accepts the frame and draws
-    /// nothing, and marking the purchase done at spawn would close the door before anyone could
-    /// notice. Everything that failed outright is refunded on the spot.</para>
+    /// <para>A pet that did spawn is not answered yet: it goes into the ledger and stays in the
+    /// channel's queue until it has lived its time, the only window in which it can still be paid
+    /// back if an OBS browser source never drew it. Everything that failed outright is refunded on
+    /// the spot.</para>
     /// </summary>
     private void AnswerRedemption(RewardRedemption redemption, PetRedemptionResult result)
     {
@@ -2157,9 +2033,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Says what the ledger just did, so a refund is not something the streamer finds out about
-    /// later. Put next to the feature the redemption paid for: a reading reported under the pets
-    /// would have the streamer looking for a creature that was never involved.
+    /// Shows what the ledger just did, in the status line of the feature the redemption paid for.
     /// </summary>
     private void ShowRedemptionNotice(RedemptionNotice notice)
     {
@@ -2201,9 +2075,8 @@ public partial class MainWindow : Window
         }
         RunOnUi(() =>
         {
-            // The line may still be sitting in the pending queue, and there is no card to update
-            // until it has been drawn. Emptied rather than flushed once: a flush takes fifty at a
-            // time, and the line we are after can be further back than that.
+            // The line may still be in the pending queue, with no card to update until it is drawn.
+            // Drained, not flushed once: a flush takes only fifty at a time.
             DrainPendingMessages();
             _overlay.UpdateMessage(marked);
         });
@@ -2221,9 +2094,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Empties the pending queue instead of taking the usual batch off it. Bounded all the same:
-    /// the queue itself is capped at 500, so twenty passes is twice what it can ever hold – and a
-    /// chat writing faster than this drains must not be able to hold the UI thread here.
+    /// Empties the pending queue instead of taking the usual batch off it. Bounded at twenty passes,
+    /// twice what the 500-capped queue can hold, so a fast chat cannot hold the UI thread here.
     /// </summary>
     private void DrainPendingMessages()
     {
@@ -2317,7 +2189,7 @@ public partial class MainWindow : Window
         UpdateValueLabels();
     }
 
-    /// <summary>The colours the edge glow can have. A handful of clear names beats a colour picker here.</summary>
+    /// <summary>The colours the edge glow can have.</summary>
     private static readonly (string Name, string Hex)[] EdgeColors =
     [
         ("Orange", "#F59E0B"), ("Röd", "#EF4444"), ("Rosa", "#DB2777"), ("Lila", "#A970FF"),
@@ -2477,9 +2349,8 @@ public partial class MainWindow : Window
         _settings.ClientId = ClientIdBox.Text.Trim();
         _lastBadgeRoom = null;
         _badgeLoadCancellation?.Cancel();
-        // The previous streamer's subscriber icons go with them. Dropped here rather than when the
-        // new set arrives, because the new set may never arrive at all: logged out, Twitch hands out
-        // no badges, and the alternative to a plain "SUB" would be someone else's picture.
+        // The previous streamer's subscriber icons are dropped at once, not when the new set arrives:
+        // logged out, Twitch hands out no badges, and the new set may never come.
         _badgeCatalog.ForgetChannel();
         _overlay.RefreshMessages();
         _hub.PublishBadgesLoaded();
@@ -2503,8 +2374,7 @@ public partial class MainWindow : Window
                 _session.IsLoggedIn ? _session.TryGetIrcTokenAsync : null,
                 _session.UserId);
             _hub.PublishAuth(_chatClient.CanSend);
-            // The bot follows the app into the channel rather than sitting in one of its own; a
-            // channel switch takes it along the same way.
+            // The bot follows the app into the channel, also on a channel switch.
             ApplyBotConfiguration();
         }
         catch (Exception ex) { SetConnectionButtons(false); SetStatus(ex.Message, true); }
@@ -2594,8 +2464,8 @@ public partial class MainWindow : Window
         edge.NewChatterAlert.Color = SelectedColor(EdgeNewColorBox, edge.NewChatterAlert.Color);
         edge.NewChatterAlert.Intensity = EdgeNewIntensitySlider.Value;
         edge.NewChatterAlert.DurationSeconds = EdgeNewDurationSlider.Value;
-        // Deliberately no Enabled here: the switch for this one lives next to the feature it belongs
-        // to, on the reading tab, so it is where the streamer is when they decide they want it.
+        // Deliberately no Enabled here: that switch lives on the reading tab, next to the feature
+        // it belongs to.
         edge.TtsAlert.Color = SelectedColor(EdgeTtsColorBox, edge.TtsAlert.Color);
         edge.TtsAlert.Intensity = EdgeTtsIntensitySlider.Value;
         edge.TtsAlert.DurationSeconds = EdgeTtsDurationSlider.Value;
@@ -2605,9 +2475,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Switching it on mid-session does not fetch anything by itself – the fetch belongs to a
-    /// connection, and there is nothing to weave into a chat that is already running. It takes
-    /// effect on the next connect, which is also when the channel name would be sent.
+    /// Stores the setting only. The fetch belongs to a connection, so switching it on mid-session
+    /// takes effect on the next connect.
     /// </summary>
     private void RecentMessages_Changed(object sender, RoutedEventArgs e)
     {
@@ -2623,7 +2492,7 @@ public partial class MainWindow : Window
         SaveSettings();
     }
 
-    /// <summary>Shows what will actually count – "psst hej" became "!psst" the moment it was typed.</summary>
+    /// <summary>Shows the cleaned command that actually counts: "psst hej" is stored as "!psst".</summary>
     private void EdgeModCommand_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
         => EdgeModCommandBox.Text = _settings.EdgeAlerts.ModCommand;
 
@@ -2635,7 +2504,7 @@ public partial class MainWindow : Window
     private void EdgeTtsTest_Click(object sender, RoutedEventArgs e)
         => _edgeAlerts.Play(_settings.EdgeAlerts.TtsAlert, _settings.EdgeAlerts.EdgeWidth);
 
-    /* ------------------------------------------------------------ uppläsning */
+    // Uppläsning
 
     private void PopulateTtsControls()
     {
@@ -2671,23 +2540,19 @@ public partial class MainWindow : Window
             ? TtsOutput.Desktop
             : TtsOutputBothRadio.IsChecked == true ? TtsOutput.Both : TtsOutput.Browser;
         SaveSettings();
-        // Where the sound goes decides whether the card can ever be drawn: no clip reaches the
-        // reading page when the readings are played on this machine's speakers, so a page that was
-        // told to expect one has to hear about the change.
+        // Where the sound goes decides whether the card can be drawn: no clip reaches the reading
+        // page when readings play on this machine's speakers, so the page is told about the change.
         ShowTtsWidget();
         _hub.PublishTtsWidget();
     }
 
     /// <summary>
-    /// What the OBS source is for right now – a size, and whether it draws anything. Both lines say
-    /// what to do rather than what is set, because the difference between the two states is a source
-    /// that has to be resized by hand in OBS and nowhere else.
+    /// Shows what the OBS source should be right now: its size, and whether it draws anything.
     /// </summary>
     private void ShowTtsWidget()
     {
-        // The same question the page is answered with: a card that is switched on but whose sound
-        // never goes through the browser is a card that cannot be drawn, and telling somebody to
-        // resize the source for it would send them to OBS to fix the wrong thing.
+        // A card that is switched on but whose sound never goes through the browser cannot be
+        // drawn, so the hint must not ask for the source to be resized for it.
         bool card = _settings.Tts.ShowsWidget;
         TtsSourceHint.Text = card
             ? "Lägg till som Browser Source i OBS och gör den lika stor som scenen – rutan placerar sig själv i bilden och resten av sidan är genomskinlig. Kryssa i “Control audio via OBS” om du vill ha ett eget reglage i mixern."
@@ -2722,9 +2587,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Draws the card in OBS with an invented reading. Nothing is synthesised, nothing is queued and
-    /// nobody is charged: it exists so the placement can be settled before a viewer's money is spent
-    /// finding out where the card landed.
+    /// Draws the card in OBS with an invented reading and returns what to tell the user. Nothing
+    /// is synthesised, nothing is queued and nobody is charged.
     /// </summary>
     private string PreviewTtsWidget()
     {
@@ -2751,7 +2615,7 @@ public partial class MainWindow : Window
         catch (System.Runtime.InteropServices.COMException) { }
     }
 
-    /// <summary>Only the half that is actually in use, so the tab reads as one choice rather than two.</summary>
+    /// <summary>Shows only the panel of the trigger in use, power-up or reward, and its refund hint.</summary>
     private void ShowTtsTrigger()
     {
         bool powerUp = _settings.Tts.Trigger == TtsTrigger.PowerUp;
@@ -2789,8 +2653,7 @@ public partial class MainWindow : Window
         _settings.EdgeAlerts.TtsAlert.Enabled = TtsEdgeAlertCheck.IsChecked == true;
 
         // A hand-typed id points the app at a reward it did not create, so the claim that it may be
-        // refunded has to go with it. Editing the id of a reward the app made is the same thing:
-        // whatever is in the box now is not the reward we were given the right to answer for.
+        // refunded goes with it – also when the id that was edited belonged to a reward the app made.
         string rewardId = TtsRewardIdBox.Text.Trim();
         if (!string.Equals(rewardId, tts.RewardId, StringComparison.OrdinalIgnoreCase))
         {
@@ -2967,10 +2830,9 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Puts an invented request in the queue so the dock's bar can be seen and pressed without
-    /// waiting for a viewer to spend anything. It goes through the ordinary path, so approving it
-    /// really does read it out – and it is never refundable, because there is no redemption behind
-    /// it to answer for.
+    /// Puts an invented request in the queue so the dock's bar can be tried without a viewer
+    /// spending anything. It goes through the ordinary path, so approving it reads it out, and it
+    /// is never refundable: there is no redemption behind it.
     /// </summary>
     private void TtsTestBanner_Click(object sender, RoutedEventArgs e)
     {
@@ -3083,8 +2945,8 @@ public partial class MainWindow : Window
 
     private void SetStatus(string text, bool error = false)
     {
-        // Every connect, drop and retry passes through here, so the log gets the chat's whole story
-        // with timestamps – which is what tells a dead connection apart from a quiet chat afterwards.
+        // Every connect, drop and retry passes through here, so the log can tell a dead connection
+        // apart from a quiet chat afterwards.
         if (error) AppLog.Warn("Chattstatus: " + text);
         else AppLog.Info("Chattstatus: " + text);
         StatusText.Text = text;
@@ -3119,17 +2981,14 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// A chatter was given a name, or lost one. Raised from whichever thread the dock request came
-    /// in on, so everything here either takes its own lock or is hopped onto the UI thread.
-    ///
-    /// Written to disk immediately rather than on the settings timer: this is the one piece of data
-    /// in the app that cannot be fetched again from anywhere, and a name typed seconds before a
-    /// crash should still be there afterwards. The store keeps a dated copy of every save, so a
-    /// nickname that is overwritten by mistake is recoverable as well.
+    /// in on. Saves the nicknames to disk at once and tells the dock and the overlay.
     /// </summary>
     private void OnNicknameChanged(Nickname entry)
     {
         try
         {
+            // Saved at once, not on the settings timer: a nickname cannot be fetched again from
+            // anywhere, and one typed seconds before a crash should survive it.
             _nicknameStore.Save(_nicknames);
             if (_nicknameStore.LastBackupError is { Length: > 0 } backupError)
                 RunOnUi(() => SetStatus("Smeknamnet sparades, men säkerhetskopian kunde inte skapas: " + backupError, true));
@@ -3145,12 +3004,9 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Everything that has to happen between reading the settings and writing anything back: a copy
-    /// of the whole profile when the build has changed, and a note of whatever the read ran into.
-    ///
-    /// <para>The order matters and is the reason this is not left until later in the start-up. The
-    /// snapshot has to be of the profile as the previous build left it, and the first save is only
-    /// a keystroke away once the window is up.</para>
+    /// Takes a copy of the whole profile when the build has changed, and notes whatever reading
+    /// the settings ran into. Must run between reading the settings and the first write: the
+    /// snapshot has to be of the profile as the previous build left it.
     /// </summary>
     private void GuardProfile()
     {
@@ -3177,15 +3033,13 @@ public partial class MainWindow : Window
                     break;
             }
 
-            // Only when there is nothing left to try. The stamp is what stops the next start from
-            // taking this snapshot, so writing it after a copy that failed or came out short would
-            // quietly spend the one chance this upgrade had.
+            // Only when there is nothing left to try: the stamp stops the next start from taking
+            // this snapshot, so it must not be written after a copy that failed or came out short.
             if (version.MayStamp)
             {
                 _settings.LastRunVersion = AppVersion.DisplayText;
-                // Written now rather than left to the next change: a session can end without a save.
-                // Saved straight through the store rather than through SaveSettingsNow, which
-                // reports failures on a status line that does not exist this early in the start-up.
+                // Written at once, since a session can end without a save. Through the store, not
+                // SaveSettingsNow, which reports failures on a status line that does not exist yet.
                 try { _settingsStore.Save(_settings); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
@@ -3208,9 +3062,8 @@ public partial class MainWindow : Window
 
         if (report.QuarantinedPath is { Length: > 0 } broken)
         {
-            // Named only when one was actually taken this start. Pointing at the snapshot folder
-            // regardless would be the app's word that the profile is safe on the one occasion it
-            // has just told the user it is not.
+            // The snapshot is named only when one was actually taken this start; otherwise the
+            // message points at the older per-file copies.
             string alsoCopied = version.Snapshot.Path is { Length: > 0 } zip
                 ? $"\n\nHela profilen kopierades till:\n{zip}"
                 : $"\n\nÄldre kopior av filen kan finnas i:\n{_settingsStore.BackupFolder}";
@@ -3254,9 +3107,9 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Hands work to the UI thread. The guard is not decoration: almost everything here is posted
-    /// from a socket read loop, and an exception in one of these callbacks lands on the dispatcher
-    /// with no caller left to catch it – which used to end the process without a word.
+    /// Posts work to the UI thread, catching and logging any exception it throws: almost everything
+    /// here is posted from a socket read loop, with no caller left to catch it. Does nothing once
+    /// the window is closing.
     /// </summary>
     private void RunOnUi(Action action)
     {
@@ -3280,20 +3133,17 @@ public partial class MainWindow : Window
         _badgeLoadCancellation?.Cancel();
         _badgeLoadCancellation?.Dispose();
         _badgeLoadCancellation = null;
-        // Anything still waiting on a verdict is left in Twitch's queue rather than answered from a
-        // window that is disappearing. The streamer can refund it there, and the next start sweeps
-        // whatever they did not.
-        // The readings go first: they settle through the ledger, so letting them go while it is
-        // still alive is the order that cannot answer Twitch from under a disposed object. Reset
-        // marks them abandoned rather than answering, and the sentence being read is cut off with
-        // them – the audio player is about to close underneath it either way.
-        // First of the three: a verdict raised on the way out would otherwise be queued for a chat
-        // connection that is already being torn down, and nobody is left in the channel to read it.
+        // Anything still waiting on a verdict is left in Twitch's queue: the streamer can refund it
+        // there, and the next start sweeps the rest.
+        // The bot goes first: a verdict raised on the way out would otherwise be queued for a chat
+        // connection that is being torn down.
         _bot.Dispose();
+        // The readings go before the ledger they settle through. Reset marks them abandoned without
+        // answering, and cuts off the sentence being read.
         _tts.Reset();
         _tts.Dispose();
-        // Between the bot and the ledger for the same reason as the readings: a gift timing out on
-        // the way down would raise a verdict into a ledger that must still be alive to hold it.
+        // Before the ledger like the readings: a gift timing out on the way down raises a verdict
+        // the ledger must still be alive to hold.
         _spins.Reset();
         _spins.Dispose();
         _ledger.Reset();

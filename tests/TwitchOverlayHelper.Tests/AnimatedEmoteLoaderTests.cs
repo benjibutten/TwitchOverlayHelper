@@ -106,7 +106,7 @@ public sealed class AnimatedEmoteLoaderTests
 
     /// <summary>
     /// The other way an entry leaves without the cache shrinking: a transient failure is evicted so a
-    /// later message retries. A bad network stretch used to leave one dead entry behind per attempt.
+    /// later message retries, and must not leave a dead entry behind per attempt.
     /// </summary>
     [Fact]
     public async Task EvictedFailuresDoNotAccumulate()
@@ -123,9 +123,8 @@ public sealed class AnimatedEmoteLoaderTests
     /// <summary>
     /// A download can finish after the entry that started it has left the cache: a decode failure
     /// marks the emote unavailable while the bytes for another copy of it are still on the wire.
-    /// Those bytes belong to nothing the cache is holding, and booking them against whoever holds
-    /// the id by then would leave the budget counting an animation that is not there – for good,
-    /// because the entry it was charged to has a size of its own to give back and not that one.
+    /// Booking those bytes against whoever holds the id by then would leave the budget counting an
+    /// animation that is not there, for good.
     /// </summary>
     [Fact]
     public async Task ADownloadFinishingAfterItsEntryWasReplacedIsNotCounted()
@@ -144,8 +143,7 @@ public sealed class AnimatedEmoteLoaderTests
         var loader = new AnimatedEmoteLoader(new HttpClient(handler));
 
         // On its own thread, because the stub blocks until it is released. Waiting for the request
-        // to actually be in the handler is what makes the overtaking below deterministic: without
-        // it the mark can land before the entry exists, and then there is no download to overtake.
+        // to be in the handler keeps the mark below from landing before the entry exists.
         Task<byte[]?> inFlight = Task.Run(() => loader.GetAnimationAsync("overtaken"));
         await started.Task;
 

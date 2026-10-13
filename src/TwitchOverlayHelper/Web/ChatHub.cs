@@ -16,8 +16,7 @@ namespace TwitchOverlayHelper.Web;
 /// <summary>
 /// Which page a socket belongs to. The chat frames are the same for all of them, but a few carry
 /// something only the streamer should have – the nicknames above all – and those are addressed
-/// rather than broadcast. A socket that says nothing is a dock, which is what every browser source
-/// added before this existed does.
+/// rather than broadcast. A socket that does not name its view is a dock.
 /// </summary>
 public enum DockView
 {
@@ -25,24 +24,20 @@ public enum DockView
     /// <summary>The transparent chat laid over the stream, seen by the viewers.</summary>
     Stream,
     /// <summary>
-    /// The pet lawn. Told apart from a dock because it is the one view that answers the question
-    /// "is anybody actually going to see this pet" – and a dock left open in a browser tab is not
-    /// an answer to that. A pet overlay from before this view existed still connects as a dock and
-    /// still works; it simply cannot vouch for itself, and the rewards that pay back notice.
+    /// The pet lawn. A view of its own so the app can tell whether a pet will be seen at all,
+    /// which a dock left open in a browser tab cannot answer. A pet overlay that connects as a
+    /// dock works but is not counted.
     /// </summary>
     Pets,
 
     /// <summary>
-    /// The paid readings, as sound and nothing else. A page of its own rather than a job for the pet
-    /// lawn: OBS mixes each browser source's audio separately, so this is what gives the readings
-    /// their own volume, their own track and their own monitoring – and a streamer who wants no pets
-    /// should not have to add a lawn in order to be heard.
+    /// The paid readings, as sound and nothing else. A page of its own because OBS mixes each
+    /// browser source's audio separately, which gives the readings their own volume and track.
     /// </summary>
     Tts,
 
     /// <summary>
-    /// The wait screen with the fight. Gets its own setup and the viewers' cheers, never the chat:
-    /// it fills a whole scene on the broadcast, and has no use for a raid's worth of lines.
+    /// The wait screen with the fight. Gets its own setup and the viewers' cheers, never the chat.
     /// </summary>
     Fight
 }
@@ -64,45 +59,38 @@ public sealed class ChatHub(
 
     private readonly ConcurrentDictionary<Guid, Client> _clients = new();
     // Messages and events share one queue, so a sub notice keeps its place between the lines it
-    // landed between even after the dock reconnects and replays the history.
+    // landed between when a reconnecting dock replays the history.
     private readonly Queue<ChatTimelineItem> _history = new();
     private readonly Lock _historyLock = new();
-    // Written from the EventSub reader and read by every dock that connects, so it needs a lock of
-    // its own rather than riding along on the history's.
+    // Written from the EventSub reader and read by every dock that connects.
     private readonly Lock _hypeTrainLock = new();
 
     private long _historyVersion;
     private HypeTrainState? _hypeTrain;
     private string _statusText = "Inte ansluten";
     private string _statusState = "idle";
-    // Starts on the channel we were in last time rather than on nothing. The saved history is put
-    // back before anything connects, and an empty channel here would make the first connect look
-    // like a channel switch – which throws that history away the moment the stream starts.
+    // Starts on the saved channel: the saved history is restored before anything connects, and an
+    // empty channel here would make the first connect look like a channel switch and discard it.
     private string _channel = settings.Channel;
     private bool _showingSamples;
 
     public int ClientCount => _clients.Count;
 
     /// <summary>
-    /// How many pet overlays are connected right now. Zero means a pet spawned this second would be
-    /// drawn for nobody – the browser source is missing from the scene, or OBS has shut it down –
-    /// which is the difference between a redemption that was delivered and one that has to be paid
-    /// back.
+    /// How many pet overlays are connected right now. Zero means a pet spawned now would be drawn
+    /// for nobody, so its redemption has to be paid back.
     /// </summary>
     public int PetOverlayCount => CountOf(DockView.Pets);
 
     /// <summary>
-    /// Lines were dropped from the timeline by a reader rather than by chat moving on – today only
-    /// the dock's "hide the earlier sitting" button. The window listens, because the overlay draws
-    /// from its own cards and the disk copy from its own file: without this, lines put away in the
-    /// dock would still be on the stream, and back in both after the next restart.
+    /// Raised when a reader, rather than chat moving on, dropped lines from the timeline. The
+    /// overlay and the saved history keep their own copies and have to drop the lines too.
     /// </summary>
     public event Action? HistoryTrimmed;
 
     /// <summary>
-    /// A pet overlay reporting that it has put a pet on screen, by pet id. The only signal in the
-    /// app that a redemption was actually delivered rather than merely accepted: everything before
-    /// this proves the server thought so.
+    /// A pet overlay reporting that it has put a pet on screen, by pet id. The only signal that a
+    /// redemption was delivered rather than merely accepted.
     /// </summary>
     public event Action<string>? PetShown;
 
@@ -110,57 +98,50 @@ public sealed class ChatHub(
     public event Action<int>? PetOverlayCountChanged;
 
     /// <summary>
-    /// A pet overlay reporting that a lucky spin has played out, by spin id. Pure stagecraft – the
-    /// win is booked before the frame ever goes out – so this only tells the queue the stage is
-    /// free for the next one.
+    /// A pet overlay reporting that a lucky spin has played out, by spin id. The win is booked
+    /// before the frame goes out, so this only frees the stage for the next spin.
     /// </summary>
     public event Action<string>? SpinShown;
 
     /// <summary>
-    /// The reading page reporting that it has finished – or failed to start – one clip, by the id it
-    /// was sent. The only signal that a reading actually reached the mix: everything before it
-    /// proves the server sent a frame.
+    /// The reading page reporting that it has finished – or failed to start – one clip, by the id
+    /// it was sent. The only signal that a reading reached the mix.
     /// </summary>
     public event Action<string, bool>? TtsPlaybackFinished;
 
     /// <summary>
-    /// Raised with the new count whenever a reading page connects or goes away. What it exists for is
-    /// the going away: a clip in flight when the last page left will never be reported on, because the
-    /// report would go over the socket that has just closed.
+    /// Raised with the new count whenever a reading page connects or goes away. A clip in flight
+    /// when the last page leaves is never reported through <see cref="TtsPlaybackFinished"/>.
     /// </summary>
     public event Action<int>? TtsOverlayCountChanged;
 
     /// <summary>
-    /// The wait screen saying who is in the ring – player 1's fighter id, then player 2's. Only the
-    /// names are taken from it, and only to find the corner a cheer by name is meant for.
+    /// The wait screen saying who is in the ring – player 1's fighter id, then player 2's. Used to
+    /// find the corner a cheer by name is meant for.
     /// </summary>
     public event Action<string, string>? FightLineupReported;
 
     /// <summary>
-    /// How many reading pages are connected. Zero means a reading would be synthesised, paid for and
-    /// heard by nobody – which is the difference between a redemption delivered and one to refund.
+    /// How many reading pages are connected. Zero means a reading would be heard by nobody, so its
+    /// redemption has to be refunded.
     /// </summary>
     public int TtsOverlayCount => CountOf(DockView.Tts);
 
     /// <summary>Twitch room id of the joined channel; needed as broadcaster_id for moderation.</summary>
     public string BroadcasterId { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Whether name pronunciation is set up. The dock hides the speaker button when it is not, so
-    /// nobody meets a button that only ever answers "fyll i API-nycklar".
-    /// </summary>
+    /// <summary>Whether name pronunciation is set up. The dock hides the speaker button when it is not.</summary>
     public bool SpeechEnabled { get; set; }
 
     /// <summary>
-    /// What the dock's approval bar should be showing. A callback rather than a list held here: the
-    /// readings live in the speech service, and two copies of that queue would be two answers to
-    /// "what is waiting" – the wrong one being the one on screen while the streamer decides.
+    /// What the dock's approval bar should be showing. A callback because the speech service owns
+    /// the queue of readings.
     /// </summary>
     public Func<IReadOnlyList<TtsEntry>>? TtsPending { get; set; }
 
     /// <summary>
-    /// Who is in the ring and where, for the wait screen. A callback for the same reason as
-    /// <see cref="TtsPending"/>: the fighters live in their own catalog, read off disk.
+    /// Who is in the ring and where, for the wait screen. A callback because the fighters live in
+    /// their own catalog, read off disk.
     /// </summary>
     internal Func<DockFightSetup>? FightSetup { get; set; }
 
@@ -178,9 +159,8 @@ public sealed class ChatHub(
         BroadcasterId = string.Empty;
         if (!changed) return;
 
-        // A train belongs to the channel it ran in, and it goes even while the sample lines are
-        // still up: a train needs nobody to have said anything, so it can be running in a room
-        // where the samples have never been replaced.
+        // Before the samples check below: a train can be running in a room where the samples have
+        // never been replaced.
         ClearHypeTrain();
 
         lock (_historyLock)
@@ -193,11 +173,7 @@ public sealed class ChatHub(
         }
     }
 
-    /// <summary>
-    /// Says there is no train any more. Its own frame rather than a ride on the clear frame: clear
-    /// also fires when the first real line replaces the sample lines, and a train that started
-    /// before anyone had said a word would be wiped off the strip by a stranger's first "hej".
-    /// </summary>
+    /// <summary>Tells every page that no hype train is running.</summary>
     public void ClearHypeTrain()
     {
         lock (_hypeTrainLock)
@@ -205,15 +181,15 @@ public sealed class ChatHub(
             if (_hypeTrain is null) return;
             _hypeTrain = null;
         }
+        // Its own frame rather than part of "clear": clear also fires when the first real line
+        // replaces the samples, which must not wipe a train that started before it.
         Send(DockJson.Serialize(new DockEnvelope<DockHypeTrain?>("hypeTrain", null)));
     }
 
     public void PublishMessage(ChatMessage message)
     {
-        // The queue and the frame under one lock, here and everywhere below: a dock's stream has to
-        // arrive in the order the history was built. Publishing outside the lock lets a line land in
-        // the middle of another writer's redraw, where it is either drawn in the wrong place or
-        // wiped by a clear that was decided before it existed.
+        // The queue and the frame under one lock, here and everywhere below, so a dock receives
+        // frames in the order the history was built and no line lands mid-redraw.
         lock (_historyLock)
         {
             Remember(ChatTimelineItem.Of(message));
@@ -231,16 +207,14 @@ public sealed class ChatHub(
     }
 
     /// <summary>
-    /// Where the hype train stands now. Deliberately not part of the history: a train is one thing
-    /// that changes for minutes, not a run of lines, and remembering every step would push the chat
-    /// out of the column it shares. Each frame is the whole picture and replaces the last one.
+    /// Publishes where the hype train stands now. Not part of the history: each frame is the
+    /// whole picture and replaces the last one. An update older than the current state is dropped.
     /// </summary>
     public void PublishHypeTrain(HypeTrainState train)
     {
         lock (_hypeTrainLock)
         {
-            // Twitch promises nothing about the order of these, so an update that would walk the
-            // train backwards is dropped rather than shown.
+            // Twitch promises nothing about the order of these.
             if (!train.Supersedes(_hypeTrain)) return;
             _hypeTrain = train;
         }
@@ -248,13 +222,8 @@ public sealed class ChatHub(
     }
 
     /// <summary>
-    /// Sends a line that is already on screen again, changed. One thing needs this: a Gigantify an
-    /// Emote power-up arrives on a different connection than the message it enlarged, and when it
-    /// arrives second the only alternative would be to hold every chat line back long enough for a
-    /// power-up that almost never comes.
-    ///
-    /// The history is rewritten too, so a dock that reconnects afterwards replays the marked version
-    /// rather than the line as it first went out.
+    /// Sends a line that is already on screen again, changed, and rewrites it in the history. Used
+    /// when a Gigantify an Emote power-up arrives after the message it enlarged.
     /// </summary>
     public void PublishMessageUpdate(ChatMessage message)
     {
@@ -269,15 +238,13 @@ public sealed class ChatHub(
                 found = true;
                 break;
             }
-            // Already scrolled out of the history: the docks that still show it get the update below,
-            // and there is nothing left to rewrite for the ones that reconnect.
+            // When the line has scrolled out of the history, docks that still show it get the
+            // update below.
             if (found)
             {
                 _history.Clear();
                 foreach (ChatTimelineItem item in items) _history.Enqueue(item);
-                // The rewritten line has to survive a restart too. Without this the marker is only
-                // ever written to disk if some later message happens to bump the version for us,
-                // and in a quiet chat that never comes.
+                // Bumped so the rewritten line is saved to disk even if no later message arrives.
                 _historyVersion++;
             }
             Send(DockJson.Serialize(new DockEnvelope<DockMessage>("messageUpdate", ToDock(message))));
@@ -285,11 +252,9 @@ public sealed class ChatHub(
     }
 
     /// <summary>
-    /// Takes the preview down, because the app has joined a channel and everything from here is real
-    /// chat. Called on connect rather than left to the first line that arrives: a room that stays
-    /// quiet for the first ten minutes of a stream would otherwise have six invented lines and a made
-    /// up subscription sitting on the broadcast the whole time, and the viewers cannot tell them from
-    /// the real thing.
+    /// Takes the sample lines down. Call on connect rather than waiting for the first line: in a
+    /// quiet room the invented lines would otherwise stay on the broadcast, where viewers cannot
+    /// tell them from real chat.
     /// </summary>
     public void ClearSamples()
     {
@@ -300,12 +265,12 @@ public sealed class ChatHub(
     }
 
     /// <summary>
-    /// The samples go, and every page hears that the column is empty. Callers hold
-    /// <see cref="_historyLock"/>. Deliberately no version bump: the samples were never part of what
-    /// gets saved, so nothing about the file on disk has changed.
+    /// Removes the samples and tells every page the column is empty. Callers hold
+    /// <see cref="_historyLock"/>.
     /// </summary>
     private void DropSamples()
     {
+        // No version bump: the samples are never saved.
         _showingSamples = false;
         _history.Clear();
         Send(DockJson.Serialize(new DockEnvelope<object?>("clear", null)));
@@ -314,8 +279,7 @@ public sealed class ChatHub(
     /// <summary>Adds one item to the timeline. Callers hold <see cref="_historyLock"/>.</summary>
     private void Remember(ChatTimelineItem item)
     {
-        // A line that arrived before the connect could take the samples down – our own echo, a test
-        // pet, the very first "hej" – replaces them the same way it always did.
+        // A real line replaces the samples.
         if (_showingSamples) DropSamples();
 
         _history.Enqueue(item);
@@ -324,15 +288,14 @@ public sealed class ChatHub(
     }
 
     /// <summary>
-    /// Counts how many times the history has changed. Read by the code that writes it to disk, so a
-    /// quiet chat costs nothing: no new lines, no new version, no file written.
+    /// Counts how many times the history has changed, so the code that saves it can skip writing
+    /// when nothing has.
     /// </summary>
     public long HistoryVersion { get { lock (_historyLock) return _historyVersion; } }
 
     /// <summary>
-    /// The history as it stands, for saving. Sample lines are never handed out – they are a preview
-    /// of the settings, and restoring them tomorrow as though they were chat would be a small lie
-    /// told every morning.
+    /// The history as it stands, for saving. Empty while the sample lines are showing, since they
+    /// are a preview and not chat.
     /// </summary>
     public IReadOnlyList<ChatTimelineItem> SnapshotHistory()
     {
@@ -340,12 +303,9 @@ public sealed class ChatHub(
     }
 
     /// <summary>
-    /// Replaces the whole timeline – a saved history at startup, or that history rebuilt once the
-    /// fetched lines from before we connected have been woven into it.
-    ///
-    /// <para>Open docks are redrawn, which is what makes the second case work: by then a dock may
-    /// already be showing live lines, and the fetched ones belong above them rather than appended
-    /// underneath. At startup there is no dock connected yet, so the same call sends nothing.</para>
+    /// Replaces the whole timeline – a saved history at startup, or that history merged with the
+    /// lines fetched from before we connected – and redraws every open dock. Does nothing for an
+    /// empty list.
     /// </summary>
     public void ReplaceHistory(IReadOnlyList<ChatTimelineItem> items)
     {
@@ -356,30 +316,26 @@ public sealed class ChatHub(
             foreach (ChatTimelineItem item in items) _history.Enqueue(item);
             while (_history.Count > HistoryLimit) _history.Dequeue();
             _historyVersion++;
-            // Restored lines are real chat, so the samples must not come back over them – and the next
-            // real message must not wipe them the way it wipes a preview.
+            // Restored lines are real chat, so the next message must not wipe them like samples.
             _showingSamples = false;
             Redraw();
         }
     }
 
     /// <summary>
-    /// Drops every line older than <paramref name="cutoff"/>. What the dock's earlier-sitting button
-    /// calls: the chat now survives a restart, so a dock can open onto this morning's lines sitting
-    /// above tonight's first "hej", and putting them away has to mean away – not hidden in one
-    /// browser until the next reload brings them back.
+    /// Drops every line older than <paramref name="cutoff"/> from the timeline, redraws the open
+    /// docks and raises <see cref="HistoryTrimmed"/>. Used by the dock's earlier-sitting button.
     /// </summary>
     /// <returns>
-    /// How many lines went, so the dock can say it out loud. Usually more than the reader could see:
-    /// the dock keeps fewer lines on screen than the timeline holds.
+    /// How many lines went. Can be more than the reader could see: the dock keeps fewer lines on
+    /// screen than the timeline holds.
     /// </returns>
     public int TrimHistoryBefore(DateTimeOffset cutoff)
     {
         int removed;
         lock (_historyLock)
         {
-            // The sample lines are a preview of the reading settings rather than anyone's chat, and
-            // they all carry the moment they were made – there is no earlier sitting among them.
+            // The sample lines all carry the moment they were made.
             if (_showingSamples) return 0;
 
             ChatTimelineItem[] kept = _history.Where(item => item.At >= cutoff).ToArray();
@@ -388,25 +344,20 @@ public sealed class ChatHub(
 
             _history.Clear();
             foreach (ChatTimelineItem item in kept) _history.Enqueue(item);
-            // Put away has to stay put away across a restart, so this counts as a change worth writing.
+            // Bumped so the trimmed lines stay gone across a restart.
             _historyVersion++;
             Redraw();
         }
-        // Outside the lock: the window answers this by reading the history back for the overlay and
-        // for the file, and nothing about that belongs inside a lock the fan-out holds.
+        // Outside the lock: the handler reads the history back.
         HistoryTrimmed?.Invoke();
         return removed;
     }
 
+    // One "history" frame rather than a clear followed by the lines: the dock paces incoming
+    // messages at reading speed, so two hundred of them would trickle in for a minute, and a
+    // clear would also empty the pinned strip although the channel has not changed.
     /// <summary>
-    /// Hands every open dock the timeline as it now stands. Callers hold <see cref="_historyLock"/>,
-    /// so what goes out is exactly what a reconnect would replay, and a live line arriving mid-redraw
-    /// waits its turn instead of being wiped by a redraw that was decided before it existed.
-    ///
-    /// <para>One frame rather than a clear followed by the lines again: the dock paces incoming
-    /// messages at the reading speed the user chose, and two hundred lines sent as messages would
-    /// trickle back onto the page for a minute. Deliberately not a clear either – the channel has not
-    /// changed, so the pinned strip has no reason to lose what it is holding.</para>
+    /// Hands every open dock the timeline as it now stands. Callers hold <see cref="_historyLock"/>.
     /// </summary>
     private void Redraw() =>
         Send(DockJson.Serialize(new DockEnvelope<IReadOnlyList<DockHistoryItem>>(
@@ -420,24 +371,22 @@ public sealed class ChatHub(
             ChatTimelineItem[] kept = _history.Where(item => !IsAffected(item, moderation)).ToArray();
             _history.Clear();
             foreach (ChatTimelineItem item in kept) _history.Enqueue(item);
-            // A deleted line has to stay deleted across a restart too, so this counts as a change.
+            // Bumped so a deleted line stays deleted across a restart.
             _historyVersion++;
             Send(DockJson.Serialize(new DockEnvelope<DockModerationPayload>("moderation", DockMapper.ToDock(moderation))));
         }
     }
 
     /// <summary>
-    /// Moderation reaches messages only, which is <see cref="ChatModerationEvent.Affects"/>'s rule –
-    /// shared with the overlay, so the same ban cannot take a line off one surface and leave it on
-    /// another.
+    /// Moderation reaches messages only. Uses <see cref="ChatModerationEvent.Affects"/>, the rule
+    /// the overlay uses, so a ban removes the same lines on both surfaces.
     /// </summary>
     private static bool IsAffected(ChatTimelineItem item, ChatModerationEvent moderation) =>
         item.Message is { } message && moderation.Affects(message);
 
     /// <summary>
-    /// Whether we are connected, and what went wrong if not. The dock's alone: it is information
-    /// about the app rather than about the conversation, and the page that carries it onto the
-    /// broadcast should not be told which of our tokens expired.
+    /// Publishes whether we are connected, and what went wrong if not. Sent to docks only: the
+    /// pages on the broadcast must not show which of our tokens expired.
     /// </summary>
     public void PublishStatus(string text, string state)
     {
@@ -460,13 +409,8 @@ public sealed class ChatHub(
         SendTo(DockView.Dock, DockJson.Serialize(new DockEnvelope<DockSpeech>("speech", new DockSpeech(SpeechEnabled))));
 
     /// <summary>
-    /// The paid readings waiting on the streamer, to the dock alone. Sent as the whole list rather
-    /// than as one request at a time, the way the hype train is: a bar showing the wrong queue is
-    /// worse than one that redraws a little more often, and a dock that reconnects mid-decision gets
-    /// the same shape in its hello.
-    ///
-    /// <para>Never anywhere but the dock. The text is a stranger's words waiting to be judged, and
-    /// the pages that can be added to a scene are the ones the viewers are looking at.</para>
+    /// Publishes the paid readings waiting on the streamer, as the whole list each time. Sent to
+    /// docks only: the text is unapproved, and the other pages are the ones the viewers see.
     /// </summary>
     public void PublishTts() =>
         SendTo(DockView.Dock, DockJson.Serialize(new DockEnvelope<IReadOnlyList<TtsEntry>>("tts", TtsSnapshot())));
@@ -474,20 +418,16 @@ public sealed class ChatHub(
     private IReadOnlyList<TtsEntry> TtsSnapshot() => TtsPending?.Invoke() ?? [];
 
     /// <summary>
-    /// Hands one clip to the reading pages. Addressed to them alone: it carries a playable address,
-    /// and the pages on the broadcast that draw chat have no business fetching it.
+    /// Hands one clip to the reading pages, and to them alone.
     /// </summary>
     /// <returns>
     /// How many pages were told. Zero means the browser source is missing from the scene, and the
-    /// caller has to treat the reading as undelivered rather than wait for an acknowledgement that
-    /// nobody is going to send.
+    /// caller has to treat the reading as undelivered: no acknowledgement will come.
     /// </returns>
     public int PublishTtsPlay(string playbackId, string url, TtsClip clip)
     {
-        // Whose words these are travels with the clip only when there is a card to draw them on.
-        // Deciding it here rather than in the page is the whole point: a frame that was never sent
-        // cannot be read by a browser source sitting on the broadcast, and this is the one place in
-        // the app that knows both what the settings say and who is listening.
+        // The viewer's name and text are only sent when the settings ask for a card. Decided here
+        // rather than in the page, so a browser source on the broadcast never receives them.
         bool card = settings.Tts.ShowsWidget;
         var play = card
             ? new DockTtsPlay(
@@ -505,18 +445,17 @@ public sealed class ChatHub(
     }
 
     /// <summary>
-    /// Pushes the card's appearance, so a slider in the app lands without anyone reloading OBS. To
-    /// the reading pages alone: nothing else draws it.
+    /// Pushes the card's appearance to the reading pages, so a slider in the app lands without
+    /// anyone reloading OBS.
     /// </summary>
     public void PublishTtsWidget() =>
         SendTo(DockView.Tts, DockJson.Serialize(new DockEnvelope<DockTtsWidget>("ttsWidget", DockTtsWidget.From(settings.Tts))));
 
     /// <summary>
-    /// Draws the card for a few seconds with nothing playing, for the preview button in the settings.
-    /// The only way to see where it has landed in the scene without spending a viewer's money on
-    /// finding out – and unlike the test reading it costs no ElevenLabs characters either.
+    /// Draws the card for <paramref name="milliseconds"/> with nothing playing, for the preview
+    /// button in the settings. Costs no ElevenLabs characters.
     /// </summary>
-    /// <returns>How many reading pages drew it, so the app can say when there is nothing to preview on.</returns>
+    /// <returns>How many reading pages were told to draw it.</returns>
     public int PublishTtsPreview(string viewer, string text, int cost, TtsSource source, int milliseconds)
     {
         var preview = new DockTtsPreview(
@@ -530,9 +469,8 @@ public sealed class ChatHub(
         SendTo(DockView.Tts, DockJson.Serialize(new DockEnvelope<object?>("ttsStop", null)));
 
     /// <summary>
-    /// A nickname was given, changed or taken away. Every dock gets it, including the one that made
-    /// the change: the name has to land on the lines already on screen, and rendering it from a
-    /// lookup rather than from the message means one frame is enough to update the whole column.
+    /// A nickname was given, changed or taken away. Every dock gets it, including the one that
+    /// made the change, and applies it to the lines already on screen.
     /// </summary>
     public void PublishNickname(Nickname entry) =>
         SendTo(DockView.Dock, DockJson.Serialize(new DockEnvelope<DockNickname>("nickname",
@@ -551,18 +489,14 @@ public sealed class ChatHub(
         SendEverywhere(DockJson.Serialize(new DockEnvelope<DockSpin>("spin", spin)));
 
     /// <summary>
-    /// Sends one pet home ahead of time, because the redemption behind it was paid back. Its own
-    /// frame rather than a spawn carrying <c>removedId</c>: nothing is arriving to make room here,
-    /// and a spawn frame with no pet in it would be a lie the overlay has to unpick.
+    /// Sends one pet home ahead of time, because the redemption behind it was paid back.
     /// </summary>
     public void PublishPetRemoved(string petId) =>
         SendEverywhere(DockJson.Serialize(new DockEnvelope<DockPetRemoved>("petRemove", new DockPetRemoved(petId))));
 
     /// <summary>
-    /// Empties the lawn – the app has left the channel these pets were bought in. Sent as its own
-    /// frame because a reconnecting overlay would otherwise be handed the pets back from a registry
-    /// that has already let them go, and a viewer from the previous channel would be walking about
-    /// in front of the new one.
+    /// Empties the lawn on every open overlay, because the app has left the channel these pets
+    /// were bought in.
     /// </summary>
     public void PublishPetsCleared() =>
         SendEverywhere(DockJson.Serialize(new DockEnvelope<object?>("petsClear", null)));
@@ -583,8 +517,8 @@ public sealed class ChatHub(
     }
 
     /// <summary>
-    /// A vote in the character select. The voter travels as a key the page can count by but not read
-    /// a Twitch id out of: the wait screen is on the broadcast, and has no business holding one.
+    /// A vote in the character select. The voter travels as a hashed key the page can count by:
+    /// the wait screen is on the broadcast and must not hold a Twitch id.
     /// </summary>
     public void PublishFightPick(FightPick pick)
     {
@@ -600,9 +534,8 @@ public sealed class ChatHub(
             assist.Player, assist.Kind == FightAssistKind.Heal ? "heal" : "cheer", assist.Viewer, assist.Color))));
 
     /// <summary>
-    /// What the overlay looks like. Also what the pet inspector reads over HTTP: the animation speed
-    /// is a setting, not a property of the sheet, and an inspector that ignored it would show a pace
-    /// the lawn does not play at.
+    /// The pet settings as the overlay gets them. Also what the pet inspector reads over HTTP, so
+    /// it plays at the lawn's animation speed.
     /// </summary>
     internal DockPetSettings BuildPetSettings() => new(
         settings.Pets.Enabled, settings.Pets.Scale, settings.Pets.LifetimeMinutes, settings.Pets.MaxPets,
@@ -624,25 +557,22 @@ public sealed class ChatHub(
         return new DockAuth(
             state.IsLoggedIn,
             state.Login,
-            // An IRC socket opened while logged in stays authenticated until it is torn down, so a
-            // logout has to take the composer away immediately rather than when the socket closes.
+            // An IRC socket opened while logged in stays authenticated until it is torn down, so
+            // the login is checked too and a logout takes the composer away at once.
             canSend && state.IsLoggedIn,
-            // Twitch only lets you raid out of your own channel, so the button is pointless
-            // while watching someone else's chat as a moderator.
+            // Twitch only lets you raid out of your own channel.
             state.IsLoggedIn && BroadcasterId.Length > 0 && BroadcasterId == state.UserId,
             BroadcasterId,
             state.Error);
     }
 
     /// <summary>
-    /// Sample lines so an unconnected dock shows what the reading settings actually look like,
-    /// rather than an empty column.
+    /// Shows sample lines, so an unconnected dock shows what the reading settings look like rather
+    /// than an empty column.
     ///
-    /// <para>Sent as one frame that says what they are, rather than as the messages they pretend to
-    /// be. The pages need to be able to tell: on the stream overlay a replayed line is dropped once
-    /// it is older than the fade time, and these all carry the moment the app started – as ordinary
-    /// chat they would be gone from every reload a few minutes into the run, which is exactly when
-    /// somebody is placing the browser source in OBS and has nothing else to aim at.</para>
+    /// <para>Sent as one "samples" frame rather than as messages: the stream overlay drops
+    /// replayed lines older than the fade time, and samples must stay up while the browser source
+    /// is being placed in OBS.</para>
     /// </summary>
     public void ShowSamples()
     {
@@ -680,14 +610,12 @@ public sealed class ChatHub(
         new(id, name, text, color, badges, id == "sample-3", false, at) { UserLogin = name.ToLowerInvariant() };
 
     /// <summary>
-    /// What the stream overlay opens onto: its own appearance and the tail of the timeline. There is
-    /// no reason to hand it the whole two hundred lines, but the tail has to be deeper than the dozen
-    /// it draws – the page throws away bots, commands, switched-off events and anything too old to be
-    /// worth replaying, and a quiet stretch that ended in bot chatter would otherwise open onto an
-    /// empty column with perfectly good lines sitting just above the cut.
+    /// What the stream overlay opens onto: its own appearance and the tail of the timeline.
     /// </summary>
     private string BuildStreamHello()
     {
+        // Deeper than the lines the page draws, because it filters out bots, commands,
+        // switched-off events and lines too old to replay.
         int depth = Math.Clamp(settings.Stream.MaxMessages * 4, 40, HistoryLimit);
         ChatTimelineItem[] history;
         bool samples;
@@ -696,17 +624,15 @@ public sealed class ChatHub(
             history = _history.TakeLast(depth).ToArray();
             samples = _showingSamples;
         }
-        // Said out loud, because the page treats the two completely differently: replayed chat is
-        // dropped once it is too old to be worth putting back in front of the viewers, and a preview
-        // has no age – it is what the overlay is aimed at while nothing is connected.
+        // The samples flag matters to the page: replayed chat is dropped once it is too old, while
+        // samples have no age.
         return DockJson.Serialize(new DockStreamHello("hello", settings.Stream, history.Select(ToDock).ToArray(), samples));
     }
 
     /// <summary>
-    /// The pet overlay's own greeting: its settings, the drawings and the pets already alive. It
-    /// used to get the dock's, which carries the nicknames, who is logged in and the whole chat
-    /// history – none of which a lawn full of creatures has any use for, and all of which sits on
-    /// the broadcast machine as a browser source.
+    /// The pet overlay's own greeting: its settings, the drawings and the pets already alive.
+    /// Unlike the dock's it carries no nicknames, login or chat history, which a browser source
+    /// on the broadcast machine should not hold.
     /// </summary>
     private string BuildPetsHello() =>
         DockJson.Serialize(new DockPetsHello("hello", BuildPetSettings(), BuildPetCatalog(), pets.Snapshot().Select(ToDock).ToArray()));
@@ -731,14 +657,12 @@ public sealed class ChatHub(
             BuildPetSettings(),
             BuildPetCatalog(),
             pets.Snapshot().Select(ToDock).ToArray(),
-            // A train that has already run out is not news to a dock opening now, and replaying it
-            // would put a strip on screen for something that finished before the page existed.
+            // A train that has already run out is not replayed to a dock opening now.
             hypeTrain is { } train && train.IsWorthShowing(DateTimeOffset.Now) ? DockMapper.ToDock(train) : null,
-            // The whole book, not the names in the history: a dock that scrolls back to a line from
-            // an hour ago should still see the nickname on it.
+            // The whole book, not only the names in the history: the dock may still show older lines.
             nicknames.Snapshot().Select(entry => new DockNickname(entry.UserId, entry.Login, entry.Text)).ToArray(),
-            // A reading waiting for an answer outlives an OBS restart, so the bar has to come back
-            // with it rather than leaving the viewer's purchase to time out unseen.
+            // A reading waiting for an answer outlives an OBS restart, so the approval bar comes
+            // back with the hello.
             TtsSnapshot()));
     }
 
@@ -755,40 +679,32 @@ public sealed class ChatHub(
     private sealed record Client(Channel<string> Outbound, DockView View);
 
     /// <summary>
-    /// The chat and everything that happens in it, to the pages that read chat. The pet lawn is
-    /// deliberately not one of them, and neither is the wait screen, for the same reason.
+    /// Sends the chat and everything that happens in it to the pages that read chat, which
+    /// excludes the pet lawn and the wait screen.
     ///
-    /// <para><b>Why the lawn is left out.</b> Its socket carries a bounded queue like every other,
-    /// and a client that fills it is dropped rather than allowed to stall the fan-out. The lawn
-    /// reads none of these frames – but during a raid it would be handed every one of them, and a
-    /// queue filled by chat it was never going to look at would close the socket. That now costs
-    /// real money: no lawn connected is what refunds the pets currently on it, so a busy minute of
-    /// chat could hand back the points for every pet on screen.</para>
+    /// <para>The lawn must be left out: a client that fills its bounded queue is dropped, and a
+    /// raid's worth of chat frames the lawn never reads could close its socket. No lawn connected
+    /// refunds the pets on it.</para>
     /// </summary>
     private void Send(string payload) => Fan(payload, client => client.View is not (DockView.Pets or DockView.Fight));
 
     /// <summary>
-    /// Sends to one kind of page only. What the dock alone gets is everything a viewer has no
-    /// business seeing – the nicknames, who is logged in, the reading settings – and what the stream
-    /// overlay alone gets is its own appearance. Addressed rather than filtered in the browser: a
-    /// frame that is never sent cannot be read by a page sitting on the broadcast.
+    /// Sends to one kind of page only. Private data – the nicknames, who is logged in, the
+    /// reading settings – is addressed to the dock rather than filtered in the browser, so it
+    /// never reaches a page sitting on the broadcast.
     /// </summary>
     private void SendTo(DockView view, string payload) => Fan(payload, client => client.View == view);
 
     /// <summary>
-    /// The pet frames, to every page. Not narrowed to <see cref="DockView.Pets"/>: a lawn added as a
-    /// browser source before that view existed connects as a dock, and narrowing would leave it
-    /// showing nothing at all. They are few and far between, so a dock that ignores them pays
-    /// nothing for receiving them.
+    /// Sends the pet frames to every page. Not narrowed to <see cref="DockView.Pets"/>, because a
+    /// pet overlay whose URL does not name that view connects as a dock.
     /// </summary>
     private void SendEverywhere(string payload) => Fan(payload, _ => true);
 
-    /// <summary>
-    /// Enumerated over the dictionary rather than over its <c>Values</c>: that property builds a
-    /// fresh list of every client each time it is read, and this runs on every chat line.
-    /// </summary>
     private void Fan(string payload, Func<Client, bool> wants)
     {
+        // Enumerates the dictionary rather than its Values, which builds a fresh list on every
+        // read; this runs on every chat line.
         foreach (KeyValuePair<Guid, Client> entry in _clients)
         {
             Client client = entry.Value;
@@ -798,10 +714,11 @@ public sealed class ChatHub(
         }
     }
 
-    /// <summary>How many connected pages are of one kind. Same reason as <see cref="Fan"/>.</summary>
+    /// <summary>How many connected pages are of one kind.</summary>
     private int CountOf(DockView view)
     {
         int count = 0;
+        // Enumerates the dictionary rather than its Values, like Fan.
         foreach (KeyValuePair<Guid, Client> entry in _clients)
             if (entry.Value.View == view) count++;
         return count;
@@ -811,9 +728,9 @@ public sealed class ChatHub(
     public async Task RunClientAsync(WebSocket socket, bool canSend, CancellationToken cancellationToken, DockView view = DockView.Dock)
     {
         var id = Guid.NewGuid();
-        // Never DropOldest: the queue carries clear and moderation frames as well as chat lines, and
-        // silently dropping one of those leaves a deleted message on screen. When a dock falls this
-        // far behind it is dropped instead, and the reconnect hands it a correct history.
+        // Never DropOldest: the queue also carries clear and moderation frames, and dropping one
+        // leaves a deleted message on screen. A dock that falls this far behind is disconnected
+        // instead, and its reconnect gets a correct history.
         var outbound = Channel.CreateBounded<string>(new BoundedChannelOptions(256)
         {
             FullMode = BoundedChannelFullMode.Wait,
@@ -829,21 +746,19 @@ public sealed class ChatHub(
             {
                 DockView.Stream => BuildStreamHello(),
                 DockView.Pets => BuildPetsHello(),
-                // The reading page is handed its own appearance and nothing else. It has no state to
-                // restore – a clip that was playing when OBS restarted is over – and it is a browser
-                // source on the broadcast machine, so the less it is ever sent the better.
+                // The reading page gets its own appearance and nothing else: it has no state to
+                // restore, and it is a browser source on the broadcast machine.
                 DockView.Tts => DockJson.Serialize(new DockTtsHello("hello", DockTtsWidget.From(settings.Tts))),
-                // The wait screen is told who fights where, and never the chat itself: the only
-                // viewers it names are the ones who cheer. (It does get the few pet frames every
-                // page gets, and ignores them.)
+                // The wait screen is told who fights where, never the chat. It ignores the pet
+                // frames every page gets.
                 DockView.Fight => FightSetup is null
                     ? DockJson.Serialize(new DockEnvelope<object?>("hello", null))
                     : DockJson.Serialize(new DockEnvelope<DockFightSetup>("hello", FightSetup())),
                 _ => BuildHello(canSend)
             };
             await SendFrameAsync(socket, hello, cancellationToken).ConfigureAwait(false);
-            // Completing the outbound channel when the socket closes is what ends the loop below;
-            // without it an idle dock would sit in _clients until the next message happened to arrive.
+            // Completes the outbound channel when the socket closes, which ends the loop below even
+            // for an idle dock.
             Task drain = DrainThenCompleteAsync(socket, outbound, view, cancellationToken);
 
             await foreach (string payload in outbound.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
@@ -871,13 +786,9 @@ public sealed class ChatHub(
     }
 
     /// <summary>
-    /// Reads what a page sends back. For a dock that is pings only, and reading them is what
-    /// detects a closed socket. Two pages say more: the pet overlay reports each pet it has drawn,
-    /// and the reading page reports each clip it has played – both being the only thing that can
-    /// tell a delivered redemption from one the browser source never got round to.
-    ///
-    /// <para>Nothing here may act on a page's say-so beyond that: these sockets sit on the
-    /// broadcast machine, so an unknown frame is dropped rather than guessed at.</para>
+    /// Reads what a page sends back until the socket closes. For a dock that is pings only, and
+    /// reading them is what detects a closed socket. The pet overlay, the reading page and the
+    /// wait screen also send reports, which go to <see cref="ReadReport"/>.
     /// </summary>
     private async Task DrainIncomingAsync(WebSocket socket, DockView view, CancellationToken cancellationToken)
     {
@@ -891,8 +802,7 @@ public sealed class ChatHub(
                 if (result.MessageType == WebSocketMessageType.Close) break;
                 if (view is not (DockView.Pets or DockView.Tts or DockView.Fight) || result.MessageType != WebSocketMessageType.Text) continue;
 
-                // A frame longer than an id is not one of ours; the rest of it is dropped so a page
-                // cannot grow this buffer without limit.
+                // Capped so a page cannot grow this buffer without limit; no valid report is this long.
                 if (message.Length < 2048) message.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
                 if (!result.EndOfMessage) continue;
 
@@ -906,23 +816,18 @@ public sealed class ChatHub(
     }
 
     /// <summary>
-    /// One frame from a page that is allowed to report something. Each view is only ever listened to
-    /// for its own kind of report: a pet lawn cannot answer for a reading, and the reverse.
-    ///
-    /// <para>Every value is checked for its kind before it is read. <c>GetString</c> on a number or
-    /// an object throws <see cref="InvalidOperationException"/>, which is not a
-    /// <see cref="JsonException"/> and would travel straight out of the socket loop – so a page
-    /// sending <c>{"type":1}</c> could take the reader down. Both are caught anyway: this parses
-    /// input from a browser, and nothing it sends may end a connection.</para>
+    /// Handles one report frame from a page. Each view is only listened to for its own kind of
+    /// report, and an unknown or malformed frame is ignored: these sockets sit on the broadcast
+    /// machine, and nothing a browser sends may end a connection.
     /// </summary>
     private void ReadReport(string payload, DockView view)
     {
         try
         {
-            // Disposed rather than left to the collector: JsonDocument rents its backing buffer
-            // from the shared ArrayPool, and one that is never disposed never gives it back.
             using JsonDocument document = JsonDocument.Parse(payload);
             JsonElement frame = document.RootElement;
+            // Every value's kind is checked before it is read: GetString on a number throws
+            // InvalidOperationException, not JsonException.
             if (frame.ValueKind != JsonValueKind.Object) return;
             if (!frame.TryGetProperty("type", out JsonElement type) || type.ValueKind != JsonValueKind.String) return;
             if (Text(frame, "id") is not { Length: > 0 } id) return;

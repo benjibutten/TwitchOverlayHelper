@@ -9,9 +9,8 @@ public static class GlobalHotkeys
 {
     public const int WmHotkey = 0x0312;
 
-    // Without MOD_NOREPEAT, holding the hotkey down makes Windows post repeated
-    // WM_HOTKEY messages (keyboard auto-repeat), which would toggle the overlay
-    // several times per press. This flag delivers exactly one message per press.
+    // Without MOD_NOREPEAT, keyboard auto-repeat posts WM_HOTKEY again and again while the hotkey
+    // is held, which would toggle the overlay several times per press.
     private const uint ModNoRepeat = 0x4000;
 
     [DllImport("user32.dll", SetLastError = true)]

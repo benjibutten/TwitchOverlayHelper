@@ -7,24 +7,19 @@ public sealed class AppSettings
 {
     /// <summary>
     /// Which shape this file is in, so <see cref="SettingsMigrations"/> knows what it is looking
-    /// at. 0 means a file written before the stamp existed. Written first in the document because
-    /// it is the first thing anybody reads when a settings file has gone strange.
+    /// at. 0 means a file written before the stamp existed. Declared first so it leads the document.
     /// </summary>
     public int SchemaVersion { get; set; }
 
     /// <summary>
-    /// The app version that last wrote this file. What tells the app it is running under a new
-    /// build for the first time, which is when the whole profile is copied aside.
+    /// The app version that last wrote this file. A different value means the first run under
+    /// another build, which is when the whole profile is copied aside.
     /// </summary>
     public string LastRunVersion { get; set; } = string.Empty;
 
     /// <summary>
-    /// Everything in the file this build has no property for.
-    ///
-    /// <para>Without this, going back a version – an update rolled back, an older build started by
-    /// mistake – costs every setting the newer one added: they are read as nothing and the first
-    /// save writes the file without them. Kept here, they ride through untouched and are still
-    /// there when the newer build comes back.</para>
+    /// Everything in the file this build has no property for, carried through a save untouched so
+    /// an older build does not strip the settings a newer one added.
     /// </summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Unknown { get; set; }
@@ -49,28 +44,23 @@ public sealed class AppSettings
     public bool ShowEmotes { get; set; } = true;
     /// <summary>
     /// Draws the GIFs tier 2 and tier 3 subscribers can send. Off leaves the line as Twitch worded
-    /// it – "[Yes GIF by Someone]" – which is a sentence in its own right, so nothing goes missing.
+    /// it – "[Yes GIF by Someone]".
     /// </summary>
     public bool ShowGifs { get; set; } = true;
     /// <summary>
-    /// Whether to ask recent-messages.robotty.de for the lines said before the app connected, so a
-    /// restart mid-stream comes back to a chat that reads on rather than starting from nothing.
-    ///
-    /// <para>A switch of its own because it is the one thing in the app that talks to somebody other
-    /// than Twitch: turning it on sends the channel name to a community service on every connect.
-    /// Off means the chat is filled only from what this app saw itself.</para>
+    /// Whether to ask recent-messages.robotty.de for the lines said before the app connected. The
+    /// one thing in the app that talks to somebody other than Twitch: on, it sends the channel name
+    /// to a community service on every connect.
     /// </summary>
     public bool FetchRecentMessages { get; set; } = true;
     /// <summary>
-    /// Draws an emote a Gigantify power-up enlarged at its full size. On by default – someone spent
-    /// bits to make it big – but the overlay sits over a game, so it is worth being able to turn
-    /// off: the emote then stays at reading size with a "⚡ förstorad" marker.
+    /// Draws an emote a Gigantify power-up enlarged at its full size. Off keeps it at reading size
+    /// with a "⚡ förstorad" marker.
     /// </summary>
     public bool GiantEmotes { get; set; } = true;
     /// <summary>
-    /// Which event cards the overlay draws. Kept apart from the dock's list on purpose: the overlay
-    /// lies over a game, so this is where a calm selection is usually made, while the dock is read at
-    /// rest and can take everything.
+    /// Which event cards the overlay draws. Separate from the dock's list: the overlay lies over a
+    /// game and usually wants the calmer selection.
     /// </summary>
     public ChatEventVisibility Events { get; set; } = new();
     public bool TextOutline { get; set; }
@@ -115,7 +105,7 @@ public sealed class AppSettings
     public EdgeAlertSettings EdgeAlerts { get; set; } = new();
 
     /// <summary>
-    /// A chat bot that tells the viewers what the app until now only told the streamer: why a
+    /// A chat bot that tells the viewers what the app otherwise only tells the streamer: why a
     /// redemption was paid back, that a reading is still waiting, that the overlay is down.
     /// </summary>
     public BotSettings Bot { get; set; } = new();

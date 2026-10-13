@@ -14,26 +14,20 @@ public class TwitchApiException(string message) : Exception(message);
 
 /// <summary>
 /// Twitch understood the call and said no: the token lacks the scope, or the user does not hold the
-/// role the call needs in that channel. A subclass rather than a sibling, so every caller that
-/// already treats a Twitch refusal as a readable error keeps doing so; only the code that can
-/// degrade – subscribing to events we may not be allowed to see – catches the narrower type and
-/// quietly turns that feature off.
+/// role the call needs in that channel. Callers that can degrade catch this type and turn the
+/// feature off; everyone else handles it as a <see cref="TwitchApiException"/>.
 /// </summary>
 public sealed class TwitchNotPermittedException(string message) : TwitchApiException(message);
 
 /// <summary>One channel point reward as the channel has it configured.</summary>
 public sealed record CustomReward(string Id, string Title, int Cost);
 
-/// <summary>
-/// One Twitch account, as the users endpoint answers for it. What the spin's gift flow runs on: the
-/// recipient is typed as a name, and the name has to become an id before a win can be tied to it.
-/// </summary>
+/// <summary>One Twitch account, as the users endpoint answers for it.</summary>
 public sealed record TwitchUser(string Id, string Login, string DisplayName);
 
 /// <summary>
-/// One of the channel's own bits Power-ups. <paramref name="RequiresInput"/> matters more here than
-/// it does for a reward: a Power-up that asks for nothing sends no text, and there is nothing to
-/// read out loud.
+/// One of the channel's own bits Power-ups. A Power-up without <paramref name="RequiresInput"/>
+/// sends no text, so there is nothing to read out loud.
 /// </summary>
 public sealed record CustomPowerUp(string Id, string Title, int Bits, bool Enabled, bool RequiresInput);
 
@@ -41,8 +35,8 @@ public sealed record CustomPowerUp(string Id, string Title, int Bits, bool Enabl
 /// A reward to create, worded the way the pet settings ask for it.
 /// </summary>
 /// <param name="RequireInput">
-/// Whether the viewer must type something. The pets read that text to pick a species, so it is
-/// normally on – but a reward that always gives the default pet is a fine thing to sell too.
+/// Whether the viewer must type something. The pets read that text to pick a species; without it
+/// the reward gives the default pet.
 /// </param>
 /// <param name="CooldownSeconds">Zero for no cooldown, which is Twitch's own default.</param>
 public sealed record NewCustomReward(
@@ -55,8 +49,8 @@ public sealed record NewCustomReward(
 
 /// <summary>
 /// A redemption sitting in the channel's request queue, as Helix hands it back.
-/// <paramref name="RedeemedAt"/> is what tells a redemption from before this app started from one
-/// that arrived while it was starting.
+/// <paramref name="RedeemedAt"/> tells a redemption from before this app started from one that
+/// arrived while it was starting.
 /// </summary>
 public sealed record QueuedRedemption(string Id, string RewardId, string UserName, int Cost, DateTimeOffset RedeemedAt);
 
@@ -74,8 +68,8 @@ public enum RedemptionStatus
 
 /// <summary>
 /// One emote the picker can offer. <paramref name="Group"/> is where it came from – "channel",
-/// "yours" or "global" – which is what the dock sorts the picker into; the image is built from the
-/// id by the same CDN pattern the chat lines already use, so no URL is carried over the wire.
+/// "yours" or "global" – and is what the dock sorts the picker into. The image URL is built from
+/// the id by the CDN pattern the chat lines use.
 /// </summary>
 public sealed record UsableEmote(string Id, string Name, string Group);
 
@@ -83,13 +77,11 @@ public sealed record UsableEmote(string Id, string Name, string Group);
 /// What the emote picker can offer right now.
 /// </summary>
 /// <param name="MissingScope">
-/// The personal half is absent because the login predates the scope – a different thing from having
-/// no emotes.
+/// The personal emotes are absent because the login lacks <see cref="TwitchAuth.EmotesScope"/>.
 /// </param>
 /// <param name="ChannelChecked">
-/// Whether the channel's own emotes could be held against what this account may send. False means
-/// they were left out rather than guessed at, which is worth saying: the picker then looks emptier
-/// than the channel is, and the reason is fixable from the app.
+/// Whether the channel's own emotes could be checked against what this account may send. False
+/// means they were left out of <paramref name="Emotes"/> rather than guessed at.
 /// </param>
 public sealed record EmoteCatalog(IReadOnlyList<UsableEmote> Emotes, bool MissingScope, bool ChannelChecked);
 
@@ -138,24 +130,22 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
     }
 
     /// <summary>
-    /// Pins a message at the top of the channel's chat, where the viewers see it too. Twitch keeps
-    /// one mod-pinned message per channel, so a new pin quietly replaces whatever was pinned before.
-    ///
-    /// <para><b>PUT, and everything in the query string.</b> Every sibling call in this file posts a
-    /// JSON body, and pinning reads like it should do the same – it does not, and Twitch answers a
-    /// POST with a 404 that says nothing about why. No <c>duration_seconds</c> either: a pin stays
-    /// until it is taken down, which is what pinning reads as.</para>
+    /// Pins a message at the top of the channel's chat, where the viewers see it too, until it is
+    /// unpinned. Twitch keeps one mod-pinned message per channel, so a new pin replaces the
+    /// previous one.
     /// </summary>
     public async Task PinMessageAsync(string broadcasterId, string messageId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(messageId)) throw new TwitchApiException("Meddelandet saknar id och går inte att nåla fast.");
+        // PUT with everything in the query string: Twitch answers a POST with a JSON body with an
+        // unexplained 404.
         string url = $"https://api.twitch.tv/helix/chat/pins?broadcaster_id={Uri.EscapeDataString(broadcasterId)}" +
                      $"&moderator_id={Uri.EscapeDataString(session.UserId)}&message_id={Uri.EscapeDataString(messageId)}";
         using var request = new HttpRequestMessage(HttpMethod.Put, url);
         await SendAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Takes the channel's pin down again.</summary>
+    /// <summary>Takes the channel's pin down.</summary>
     public async Task UnpinMessageAsync(string broadcasterId, string messageId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(messageId)) throw new TwitchApiException("Meddelandet saknar id och nålen går inte att ta bort.");
@@ -180,16 +170,14 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
     }
 
     /// <summary>
-    /// Who a login belongs to, or null when it belongs to nobody. Null rather than a throw for the
-    /// not-found case, because the name arrives straight from chat and a typo is an expected answer
-    /// – but Twitch being unreachable still throws, so the caller can tell "no such user" from
-    /// "could not ask".
+    /// Who a login belongs to, or null when it belongs to nobody or is not a valid login. Throws
+    /// when Twitch cannot be asked, so the caller can tell "no such user" from "could not ask".
     /// </summary>
     public async Task<TwitchUser?> GetUserByLoginAsync(string login, CancellationToken cancellationToken = default)
     {
         string trimmed = (login ?? string.Empty).Trim().TrimStart('@');
-        // A login Twitch could never have issued is answered here rather than sent: Helix meets it
-        // with a 400, which reads like an outage when all that happened is somebody typed "påelle".
+        // Helix answers a login it could never have issued, such as "påelle", with a 400, which
+        // would read as an outage rather than "no such user".
         if (trimmed.Length is 0 or > 25 || !trimmed.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '_'))
             return null;
 
@@ -231,8 +219,8 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
     }
 
     /// <summary>
-    /// Subscribes to an EventSub topic over an open WebSocket session. The condition differs per
-    /// topic, so it is handed in already shaped rather than guessed at here.
+    /// Subscribes to an EventSub topic over an open WebSocket session, with the condition that
+    /// topic requires.
     /// </summary>
     public async Task CreateEventSubSubscriptionAsync(
         string type,
@@ -261,13 +249,10 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
         await SendAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// The channel's rewards, so a redemption can be shown by name from the very first one instead
-    /// of waiting to learn the name from a redemption that has already gone past.
-    /// </summary>
+    /// <summary>The channel's channel point rewards.</summary>
     /// <param name="onlyManageable">
     /// Narrows the answer to the rewards this client id created, which are the only ones whose
-    /// redemptions it may ever answer.
+    /// redemptions it may answer.
     /// </param>
     public async Task<IReadOnlyList<CustomReward>> GetCustomRewardsAsync(
         string broadcasterId, bool onlyManageable = false, CancellationToken cancellationToken = default)
@@ -290,21 +275,17 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
 
     /// <summary>
     /// Creates a reward owned by this app, which is the only kind whose redemptions it may answer
-    /// later. Everything else about refunding follows from that one fact.
+    /// later. Redemptions of it wait in the request queue, so they can be refunded.
     ///
-    /// <para><b>The queue is the point.</b> <c>should_redemptions_skip_request_queue</c> is sent as
-    /// false and is not offered as a choice: a redemption that skips the queue is fulfilled the
-    /// moment it is made, and a fulfilled redemption can never be refunded. Skipping the queue and
-    /// refunding are the same setting seen from two sides.</para>
-    ///
-    /// <para>Twitch refuses a second reward with a title the channel already uses, so a streamer
-    /// moving over from a hand-made reward has to rename or delete the old one first. That comes
-    /// back as an ordinary <see cref="TwitchApiException"/> carrying Twitch's own wording.</para>
+    /// <para>Throws <see cref="TwitchApiException"/> with Twitch's own wording when the channel
+    /// already has a reward with the same title.</para>
     /// </summary>
     public async Task<CustomReward> CreateCustomRewardAsync(string broadcasterId, NewCustomReward reward, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(reward.Title)) throw new TwitchApiException("Belöningen behöver ett namn.");
 
+        // should_redemptions_skip_request_queue must stay false: a redemption that skips the queue
+        // is fulfilled at once, and a fulfilled redemption can never be refunded.
         var payload = new StringBuilder("{\"title\":").Append(JsonSerializer.Serialize(reward.Title.Trim()))
             .Append(",\"cost\":").Append(Math.Max(1, reward.Cost))
             .Append(",\"is_enabled\":true")
@@ -332,12 +313,11 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
 
     /// <summary>
     /// Answers one redemption. <see cref="RedemptionStatus.Canceled"/> is the refund: Twitch puts the
-    /// points back on the viewer's balance itself, so there is nothing else to pay back by hand.
+    /// points back on the viewer's balance itself.
     ///
     /// <para>Only works on a redemption still sitting unfulfilled, and only on a reward this client
-    /// id created – a reward made in the dashboard answers 403 no matter which scopes the token
-    /// carries. That refusal arrives as <see cref="TwitchNotPermittedException"/>, which is what
-    /// lets a caller tell "not ours to answer" from "Twitch is having a bad day".</para>
+    /// id created. A reward made in the dashboard answers 403 whatever scopes the token carries,
+    /// which is thrown as <see cref="TwitchNotPermittedException"/>.</para>
     /// </summary>
     public async Task UpdateRedemptionStatusAsync(
         string broadcasterId,
@@ -360,9 +340,8 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
     }
 
     /// <summary>
-    /// What is still waiting in one reward's queue. Read at startup: the pets live in memory only,
-    /// so anything left unfulfilled from before this process began belongs to a pet that no longer
-    /// exists and has to be paid back.
+    /// What is still waiting in one reward's queue, up to 2000 redemptions; a longer queue is
+    /// logged and the rest left with Twitch.
     /// </summary>
     public async Task<IReadOnlyList<QueuedRedemption>> GetUnfulfilledRedemptionsAsync(
         string broadcasterId, string rewardId, CancellationToken cancellationToken = default)
@@ -370,10 +349,8 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
         var result = new List<QueuedRedemption>();
         string? cursor = null;
 
-        // Fifty per page. The cap is high enough to cover a stream's worth of pet redemptions
-        // several times over, and exists so a queue that has been left to grow for months cannot
-        // turn one reconnect into a thousand API calls. Hitting it is said out loud rather than
-        // passed over: the rest stays in the queue, and the streamer has the dashboard for it.
+        // Fifty per page. The cap keeps a queue left to grow for months from turning one reconnect
+        // into a thousand API calls.
         const int maxPages = 40;
         for (int page = 0; page < maxPages; page++)
         {
@@ -415,15 +392,12 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
     }
 
     /// <summary>
-    /// The channel's own bits Power-ups, so the settings can offer them by name instead of asking
-    /// for an id pasted out of a dashboard.
-    ///
-    /// <para>Read-only, and that is the whole API: Twitch offers no way for an app to create a
-    /// custom Power-up, change one, or answer a redemption of one. A channel may have fifty at
-    /// most, so this is deliberately unpaged.</para>
+    /// The channel's own bits Power-ups. Reading is the whole API: Twitch offers no way for an app
+    /// to create a custom Power-up, change one, or answer a redemption of one.
     /// </summary>
     public async Task<IReadOnlyList<CustomPowerUp>> GetCustomPowerUpsAsync(string broadcasterId, CancellationToken cancellationToken = default)
     {
+        // Unpaged: a channel may have fifty Power-ups at most.
         string url = $"https://api.twitch.tv/helix/bits/custom_power_ups?broadcaster_id={Uri.EscapeDataString(broadcasterId)}";
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         JsonElement json = await SendAsync(request, cancellationToken).ConfigureAwait(false);
@@ -438,8 +412,7 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
                 id,
                 ReadString(powerUp, "title"),
                 powerUp.TryGetProperty("bits", out JsonElement bits) && bits.ValueKind == JsonValueKind.Number ? bits.GetInt32() : 0,
-                // Absent reads as enabled: a Power-up we cannot judge is better offered than hidden,
-                // and the list is only ever used to fill in an id.
+                // Absent reads as enabled: a Power-up we cannot judge is better offered than hidden.
                 !powerUp.TryGetProperty("is_enabled", out JsonElement enabled) || enabled.ValueKind != JsonValueKind.False,
                 powerUp.TryGetProperty("is_user_input_required", out JsonElement input) && input.ValueKind == JsonValueKind.True));
         }
@@ -458,28 +431,23 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
     }
 
     /// <summary>
-    /// Everything the logged-in user may type into this channel's chat.
+    /// Everything the logged-in user may type into this channel's chat: the channel's emotes, the
+    /// global ones and the user's personal ones, each emote name listed once.
     ///
-    /// <para>Three calls, because Twitch has no endpoint for "what may this account send here".
-    /// Only the personal one needs a scope, so a login granted before that scope existed still gets
-    /// a working picker – two thirds of one – instead of an error.</para>
+    /// <para>The personal list needs <see cref="TwitchAuth.EmotesScope"/>; without it the catalog
+    /// reports <see cref="EmoteCatalog.MissingScope"/> instead of failing.</para>
     ///
-    /// <para><b>The channel's list is not a permission list.</b> <c>chat/emotes</c> answers with
-    /// every emote the channel has, subscriber tiers included, whether or not this account may use
-    /// one – and an emote that may not be sent arrives in chat as loose words rather than as a
-    /// picture. So where the personal list is known it decides, and the channel's list is narrowed
-    /// to what appears in it. Two cases keep the whole list: your own channel, where a broadcaster
-    /// may always use their own emotes, and a personal list long enough to have hit the page cap,
-    /// which cannot be used to rule anything out.</para>
-    ///
-    /// <para>Claiming a name is not the same as drawing it: the dock draws the channel first and the
-    /// global set last, but nearly every global emote is in the personal list too, so letting
-    /// "yours" claim them would file Kappa under the reader's own emotes.</para>
+    /// <para>Twitch's <c>chat/emotes</c> lists every emote the channel has, subscriber tiers
+    /// included, whether or not this account may use them, and an emote that may not be sent
+    /// arrives in chat as plain words. In someone else's channel the channel's emotes are
+    /// therefore narrowed to those in the personal or global list, and left out altogether when
+    /// the personal list is missing or hit its page cap (see
+    /// <see cref="EmoteCatalog.ChannelChecked"/>).</para>
     /// </summary>
     public async Task<EmoteCatalog> GetUsableEmotesAsync(string broadcasterId, CancellationToken cancellationToken = default)
     {
-        // A channel we have not joined yet simply contributes nothing – the rest of the picker is
-        // still worth showing, and the dock asks again once the room is known.
+        // A channel we have not joined yet contributes nothing; the dock asks again once the room
+        // is known.
         EmotePage channel = broadcasterId.Length > 0
             ? await ReadEmotesAsync(
                 $"https://api.twitch.tv/helix/chat/emotes?broadcaster_id={Uri.EscapeDataString(broadcasterId)}",
@@ -490,11 +458,9 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
         EmotePage yours = EmotePage.Empty;
         if (!missingScope)
         {
-            // Named with the channel as well: that is what adds this channel's follower emotes to
-            // the answer. Someone subscribed to a hundred channels has a long list, so it is paged
-            // – and capped, because a picker nobody can scroll through is not a better picker. The
-            // page size is Twitch's own: this endpoint takes user_id, broadcaster_id and after, and
-            // asking it for a "first" it does not document would be relying on it being ignored.
+            // broadcaster_id adds this channel's follower emotes to the answer. The list can be
+            // long, so it is paged and capped. The endpoint documents no "first" parameter, so the
+            // page size is Twitch's own.
             string url = $"https://api.twitch.tv/helix/chat/emotes/user?user_id={Uri.EscapeDataString(session.UserId)}";
             if (broadcasterId.Length > 0) url += $"&broadcaster_id={Uri.EscapeDataString(broadcasterId)}";
             try
@@ -503,18 +469,16 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
             }
             catch (TwitchNotPermittedException)
             {
-                // The token says it has the scope and Twitch says otherwise – treat it as the same
-                // "log in again" answer rather than failing the whole picker.
+                // The token claims the scope but Twitch refuses: same "log in again" answer.
                 missingScope = true;
             }
         }
 
         EmotePage global = await ReadEmotesAsync("https://api.twitch.tv/helix/chat/emotes/global", "global", 1, cancellationToken).ConfigureAwait(false);
 
-        // A broadcaster may always use their own emotes, so their channel needs no checking at all.
+        // A broadcaster may always use their own emotes.
         bool ownChannel = broadcasterId.Length > 0 && string.Equals(broadcasterId, session.UserId, StringComparison.Ordinal);
-        // Anywhere else the personal list is the only thing that can say what may be sent. Without
-        // it – no scope, or a list that stopped at the page cap – there is nothing to check against.
+        // Anywhere else only a complete personal list can say what may be sent.
         bool channelChecked = ownChannel || (!missingScope && !yours.Truncated);
 
         IReadOnlyList<UsableEmote> channelEmotes;
@@ -530,10 +494,8 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
         }
         else
         {
-            // Left out rather than guessed at. Showing them and hoping is how a subscriber emote
-            // gets offered to somebody who is not subscribed: it goes into the box as a picture,
-            // reaches the chat as loose words, and the first sign anything was wrong is the message
-            // itself. A smaller picker and a line saying why is the honest version of not knowing.
+            // Left out rather than guessed at: a subscriber emote offered to a non-subscriber
+            // reaches the chat as plain words.
             channelEmotes = [];
         }
 
@@ -551,6 +513,8 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
         }
 
         Take(channelEmotes);
+        // Global before personal: nearly every global emote is in the personal list too, and
+        // must keep its "global" group.
         Take(global.Emotes);
         Take(yours.Emotes);
         return new EmoteCatalog(ordered, missingScope, channelChecked);
@@ -577,8 +541,7 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
                 ? ReadString(pagination, "cursor")
                 : string.Empty;
             if (string.IsNullOrEmpty(cursor)) break;
-            // More was on offer than we took. Said out loud because a list that stops early is safe
-            // to read from and unsafe to rule things out with.
+            // A list that stops early is safe to read from but cannot rule anything out.
             truncated = page == maxPages - 1;
         }
         return new EmotePage(result, truncated);
@@ -592,8 +555,8 @@ public sealed class TwitchApiClient(HttpClient httpClient, TwitchSession session
 
         using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        // 401 is in here too: a token that is missing a scope is rejected as unauthorised, and that
-        // is a permission answer rather than a fault – the caller turns the feature off and moves on.
+        // 401 counts as a permission answer too: Twitch rejects a token missing a scope as
+        // unauthorised.
         if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized)
             throw new TwitchNotPermittedException(DescribeError(response.StatusCode, body));
         if (!response.IsSuccessStatusCode) throw new TwitchApiException(DescribeError(response.StatusCode, body));

@@ -63,8 +63,8 @@ internal sealed record DockMessage(
 internal sealed record DockEvent(
     string Id,
     string Kind,
-    // Which switch in the reading settings decides whether this card is drawn at all. Sent along
-    // rather than worked out in the dock, so the mapping exists once and not once per language.
+    // Which switch in the reading settings decides whether this card is drawn. Sent along so the
+    // mapping exists only on this side.
     string Group,
     string Headline,
     string DisplayName,
@@ -81,10 +81,9 @@ internal sealed record DockEvent(
 internal sealed record DockHistoryItem(string Type, DockMessage? Message, DockEvent? Event);
 
 /// <summary>
-/// The hype train strip. A train is a state that runs for minutes rather than a line in a log, so
-/// it travels as the whole current picture: each frame replaces the last one, and a dock that
-/// connects mid-train is handed the same shape in its hello. The contributors arrive already
-/// worded, because turning a subscription's tier price into readable Swedish is not the dock's job.
+/// The hype train strip, as the whole current picture: each frame replaces the last one, and a
+/// dock that connects mid-train gets the same shape in its hello. The contributors in
+/// <paramref name="Top"/> arrive already worded.
 /// </summary>
 internal sealed record DockHypeTrain(
     string Id,
@@ -98,20 +97,17 @@ internal sealed record DockHypeTrain(
     long? ExpiresAt);
 
 /// <summary>
-/// One nickname on the wire. Sent as a small book of its own rather than baked into every message,
-/// because a name given now has to reach the lines that are already on screen – including the
-/// replayed history – and a lookup the dock holds is the only version of that which cannot drift.
-/// A missing text means the nickname was taken away.
+/// One nickname on the wire. Sent separately rather than on every message, so a name given now
+/// also reaches the lines already on screen. A missing text means the nickname was taken away.
 /// </summary>
 internal sealed record DockNickname(string UserId, string Login, string? Text);
 
 internal sealed record DockStatus(string Text, string State);
 
 /// <summary>
-/// Who the dock is writing as, and where. <paramref name="Room"/> is the joined channel's Twitch id
-/// – empty until it is known – and rides along because it is the other half of what makes a cached
-/// emote list valid: that list belongs to one account in one channel, and a switch of either has to
-/// throw it away. It is published on every change to both, so the dock needs nothing else to notice.
+/// Who the dock is writing as, and where. <paramref name="Room"/> is the joined channel's Twitch id,
+/// empty until it is known. The dock's cached emote list belongs to one account in one channel,
+/// so a change of either here invalidates it.
 /// </summary>
 internal sealed record DockAuth(bool LoggedIn, string Login, bool CanSend, bool CanRaid, string Room, string? Error);
 
@@ -132,28 +128,20 @@ internal sealed record DockHello(
     IReadOnlyList<Speech.TtsEntry> Tts);
 
 /// <summary>
-/// What a socket from the stream overlay is handed when it opens. Deliberately not
-/// <see cref="DockHello"/> with a couple of fields blanked: this page is on the broadcast, and the
-/// safest version of "the viewers must never see the nicknames" is that the page they are rendered
-/// on never receives them. The same goes for who is logged in and what the dock looks like – none of
-/// it has a use here, and all of it is the streamer's own business.
+/// What a socket from the stream overlay is handed when it opens. A shape of its own rather than
+/// <see cref="DockHello"/>: this page is on the broadcast, so it never receives the nicknames, who
+/// is logged in or the dock's settings.
 ///
-/// <para>The history is cut to what the overlay could show anyway. A page that draws a dozen lines
-/// has no use for two hundred, and this is the frame that would otherwise be the largest thing the
-/// server ever sends.</para>
-///
-/// <para><paramref name="Samples"/> says the lines are the preview rather than chat, which is the
-/// difference between "put these back if they are still recent" and "draw these and leave them
-/// there".</para>
+/// <para><paramref name="History"/> is only the tail of the timeline. <paramref name="Samples"/>
+/// says the lines are the preview rather than chat, so the page does not drop them for being
+/// old.</para>
 /// </summary>
 internal sealed record DockStreamHello(
     string Type, StreamSettings Stream, IReadOnlyList<DockHistoryItem> History, bool Samples);
 
 /// <summary>
-/// The preview lines, as a preview. Its own frame rather than the messages they imitate: a page has
-/// to be able to tell invented lines from chat, or it applies the rules for chat to them – dropping
-/// them for being old, fading them out – and takes down the only thing on screen while nothing is
-/// connected.
+/// The preview lines. Their own frame rather than the messages they imitate, so a page does not
+/// apply the rules for chat to them, such as dropping them for being old or fading them out.
 /// </summary>
 internal sealed record DockSamples(string Type, IReadOnlyList<DockHistoryItem> Items);
 
@@ -173,8 +161,8 @@ internal sealed record DockPetSettings(
 /// One species the overlay can render: an SVG body fetched from the pets folder, or a spritesheet
 /// for pets in the hatch-pet format. SpriteVersion 2 is the extended sheet whose two extra rows
 /// hold the sixteen look directions; null for SVG pets. Rarity is a
-/// <see cref="TwitchOverlayHelper.Pets.PetRarity"/> tier, and the only thing the overlay does with
-/// it is decide how bright an aura the creature walks around in.
+/// <see cref="TwitchOverlayHelper.Pets.PetRarity"/> tier, which the overlay uses for the
+/// brightness of the creature's aura.
 /// </summary>
 internal sealed record DockPetDefinition(
     string Id,
@@ -190,9 +178,8 @@ internal sealed record DockPetDefinition(
 
 /// <summary>
 /// The pet overlay's greeting: what it looks like, what it can draw, and what is already on the
-/// lawn. Cut to those three the same way the stream overlay's is – it is a browser source on the
-/// broadcast machine, and the chat history and nicknames in the dock's hello are the streamer's own
-/// business.
+/// lawn. Like the stream overlay's it leaves out the chat history and nicknames, because the page
+/// is a browser source on the broadcast machine.
 /// </summary>
 internal sealed record DockPetsHello(
     string Type,
@@ -207,11 +194,10 @@ internal sealed record DockPetSpawn(DockPet Pet, string? RemovedId, bool Extende
 internal sealed record DockPetRemoved(string Id);
 
 /// <summary>
-/// One lucky spin for the pet overlay to act out. The winner is already drawn and already booked –
-/// the reel is theatre, which is why the frame carries the answer: the overlay slows down onto
-/// <paramref name="WinnerPetId"/> and reports <c>spinDone</c> with <paramref name="Id"/> when the
-/// curtain falls. <paramref name="PetIds"/> are the candidates to loop through, in the order sent;
-/// their portraits come from the catalog the overlay already holds.
+/// One lucky spin for the pet overlay to act out. The winner is already drawn and booked: the
+/// overlay slows down onto <paramref name="WinnerPetId"/> and reports <c>spinDone</c> with
+/// <paramref name="Id"/> when it is over. <paramref name="PetIds"/> are the candidates to loop
+/// through, in the order sent; their portraits come from the catalog the overlay already holds.
 /// </summary>
 internal sealed record DockSpin(
     string Id,
@@ -227,13 +213,12 @@ internal sealed record DockSpin(
 internal sealed record DockSpeech(bool Enabled);
 
 /// <summary>
-/// One clip for the reading page to play. The address is a token the app minted, never a path, and
-/// it is good for exactly this file – see <see cref="TtsAudioStore"/>.
+/// One clip for the reading page to play. The address carries a token from
+/// <see cref="TtsAudioStore"/>, never a path.
 ///
-/// <para>Everything from <paramref name="Viewer"/> on is what the card draws, and all of it is left
-/// out when the card is switched off. That is not tidiness: with no card there is nothing on that
-/// page that could show a name or a message, so sending them would put a stranger's words on the
-/// broadcast machine for no reason at all.</para>
+/// <para>Everything from <paramref name="Viewer"/> on is what the card draws, and is left out when
+/// the card is switched off, so a viewer's name and words are not sent to the broadcast machine
+/// without a use.</para>
 /// </summary>
 internal sealed record DockTtsPlay(
     string Id,
@@ -247,21 +232,20 @@ internal sealed record DockTtsPlay(
 
 /// <summary>
 /// A card with nothing to play, for the preview button in the settings. Its own frame rather than a
-/// clip with no address: the page answers for every clip it is handed, and a reading nobody paid for
-/// must never reach the machinery that decides whether a viewer gets their points back.
+/// clip with no address: the page reports back on every clip it is handed, and a preview must
+/// never reach the code that decides refunds.
 /// </summary>
 internal sealed record DockTtsPreview(string Viewer, string Text, int Cost, string Source, int Milliseconds);
 
 /// <summary>
-/// What the reading page opens onto. Only ever the card's appearance: a clip that was playing when
-/// OBS restarted is over, and there is nothing else on this page to restore.
+/// What the reading page opens onto: only the card's appearance. The page has no other state to
+/// restore.
 /// </summary>
 internal sealed record DockTtsHello(string Type, DockTtsWidget Widget);
 
 /// <summary>
 /// The card, as the page needs it. Its own shape rather than <see cref="TtsWidgetSettings"/> on the
-/// wire, because the two enums would travel as the numbers they happen to have in this build –
-/// and a browser source cached from an older version would read them as something else entirely.
+/// wire, so the two enums travel as words rather than as numbers that could change between builds.
 /// </summary>
 internal sealed record DockTtsWidget(
     bool Enabled,
@@ -287,9 +271,7 @@ internal sealed record DockTtsWidget(
     {
         TtsWidgetSettings widget = tts.Widget;
         return new DockTtsWidget(
-            // The page is told the card is off when the sound is not going through it either: with
-            // the readings on the desktop only, no clip ever reaches this page, and a card that
-            // waits for one would sit there being invisible for reasons nobody could see.
+            // Also off when the readings play on the desktop only: no clip reaches this page then.
             tts.ShowsWidget,
             Word(widget.Position),
             widget.OffsetX,
@@ -310,7 +292,7 @@ internal sealed record DockTtsWidget(
             widget.LingerMilliseconds);
     }
 
-    /// <summary>Two words the page can key its CSS off, rather than a number it has to translate.</summary>
+    /// <summary>The position as words the page can key its CSS off.</summary>
     private static string Word(TtsWidgetPosition position) => position switch
     {
         TtsWidgetPosition.TopLeft => "top-left",
@@ -369,19 +351,17 @@ internal static class DockMapper
             message.Reply is { } reply
                 ? new DockReply(reply.ParentMessageId, reply.ParentLogin, reply.ParentDisplayName, reply.ParentText)
                 : null,
-            // Which span to blow up is decided on this side, so the dock and the overlay enlarge the
-            // same emote rather than each applying the convention on its own.
+            // Which span to enlarge is decided on this side, so the dock and the overlay agree.
             message.GigantifiedEmoteIndex >= 0 ? message.GigantifiedEmoteIndex : (int?)null,
             message.MessageEffectId,
-            // Sent only when it is true: every ordinary line would otherwise carry a "no" that says
-            // nothing, and there is one of these per message during a raid.
+            // Null rather than false, so ordinary lines do not carry the field at all.
             message.IsLocalEcho ? true : null);
     }
 
     /// <summary>
-    /// What the reward marker on a message should say. Falls all the way back to a bare "belöning":
-    /// IRC hands out the reward's GUID and nothing else, so in a channel whose rewards we may not
-    /// read, saying that a reward was redeemed is the most that can honestly be shown.
+    /// What the reward marker on a message should say, or null when no reward was redeemed. Falls
+    /// back to a bare "belöning" when the title is unknown: IRC only carries the reward's GUID,
+    /// and in someone else's channel the rewards cannot be read.
     /// </summary>
     private static string? RewardLabel(ChatMessage message)
     {
@@ -391,8 +371,8 @@ internal static class DockMapper
     }
 
     /// <summary>
-    /// Events carry no badge images: the card is about what happened, and a row of badges next to
-    /// a "gave 20 subs" line competes with the one thing worth reading.
+    /// Maps an event to its card. Events carry no badge images, which would compete with the
+    /// headline.
     /// </summary>
     public static DockEvent ToDock(ChatEvent chatEvent) => new(
         chatEvent.Id,
@@ -410,8 +390,7 @@ internal static class DockMapper
         chatEvent.AnnouncementColor);
 
     /// <summary>
-    /// A hype train for the strip. The bar is about the level being climbed right now, so a train
-    /// that has ended sends no detail line and a goal of zero – there is nothing left to climb.
+    /// A hype train for the strip. A train that has ended sends no detail line and a goal of zero.
     /// </summary>
     public static DockHypeTrain ToDock(HypeTrainState train) => new(
         train.Id,
@@ -421,7 +400,7 @@ internal static class DockMapper
         train.Level,
         train.Progress,
         train.HasEnded ? 0 : train.Goal,
-        // Three fit on one line in a narrow dock; a fourth would push the row into an ellipsis.
+        // Three fit on one line in a narrow dock.
         train.TopContributions.Take(3).Select(ChatEventText.DescribeContribution).ToArray(),
         train.ExpiresAt?.ToUnixTimeMilliseconds());
 
@@ -442,8 +421,7 @@ internal static class DockMapper
         ChatEventType.ShoutoutSent => "shoutoutSent",
         ChatEventType.ShoutoutReceived => "shoutoutReceived",
         ChatEventType.Celebration => "celebration",
-        // Only the overlay draws these; the dock has the strip instead. Named all the same, so a
-        // card that ever did reach the dock would not arrive labelled as something unknown.
+        // Only the overlay draws these; the dock has the strip instead.
         ChatEventType.HypeTrainBegin => "hypeTrainBegin",
         ChatEventType.HypeTrainEnd => "hypeTrainEnd",
         _ => "other"

@@ -105,7 +105,7 @@ const select = {
     return { 1: this.leader(1), 2: this.leader(2) };
   },
 
-  /* ---------------------------------------------------------------- drawing */
+  /* Drawing */
 
   layout() {
     const n = Math.max(1, this.roster.length);

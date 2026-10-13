@@ -80,8 +80,7 @@ body[data-animate="true"] .evt { animation: arrive 0.22s ease-out both; }
   to { opacity: 1; transform: none; }
 }
 
-/* Leaving is its own animation rather than the arrival played backwards: a line that has had its
-   time is meant to slip away quietly, not to re-enact how it came in. */
+/* Leaving has its own, quieter animation rather than the arrival played backwards. */
 .msg[data-leaving="true"], .evt[data-leaving="true"] {
   animation: leave 0.45s ease-in both;
   pointer-events: none;
@@ -91,7 +90,7 @@ body[data-animate="true"] .evt { animation: arrive 0.22s ease-out both; }
   to { opacity: 0; transform: translateX(-0.6em); }
 }
 
-/* ---------- one message ---------- */
+/* One message */
 
 /* Inline by default, so a short line is "Namn: hej" on one row. The head becomes a block of its own
    when the name is given its own line, and the colon goes with it. */
@@ -108,8 +107,8 @@ body[data-nameline="true"] .msg-head::after { content: ""; margin: 0; }
 .badge { height: 1em; width: auto; vertical-align: -0.12em; margin-right: 0.15em; }
 .emote { height: 1.4em; width: auto; vertical-align: -0.35em; }
 .emote[data-giant="true"] { height: 3em; vertical-align: -0.9em; }
-/* A GIF on the broadcast: a row of its own, and capped tighter than the dock's – this one is lying
-   over the picture, and a viewer's GIF must not become the largest thing on the stream. */
+/* A GIF takes a row of its own, capped tighter than the dock's so a viewer's GIF is never the
+   largest thing on the stream. */
 .chat-gif {
   display: block; max-width: min(100%, 280px); max-height: 180px;
   width: auto; height: auto; margin: 0.2em 0 0.1em; border-radius: 8px;
@@ -171,7 +170,7 @@ body[data-nameline="true"] .msg-head::after { content: ""; margin: 0; }
 }
 .link { color: #c8b4ff; }
 
-/* ---------- events ---------- */
+/* Events */
 
 .evt {
   border-left: 0.16em solid #a970ff;

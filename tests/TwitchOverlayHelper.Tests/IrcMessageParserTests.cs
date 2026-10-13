@@ -138,8 +138,8 @@ public sealed class IrcMessageParserTests
 
     /// <summary>
     /// The GIFs tier 2 and tier 3 subscribers send. Twitch writes the picture's description into the
-    /// message itself and names the range covering it, so the line still reads without us – but the
-    /// range is what lets the views put the picture back where the sender meant it to go.
+    /// message itself and names the range covering it, which is what lets the views put the picture
+    /// where the sender meant it to go.
     /// </summary>
     [Fact]
     public void ParsesGifTag()
@@ -206,9 +206,9 @@ public sealed class IrcMessageParserTests
     }
 
     /// <summary>
-    /// The end of a range is read one past itself, so an end at the top of the int range used to
-    /// wrap round to a negative index and throw – on the socket read loop, which took the whole
-    /// connection down with it. Anything a stranger can put in a tag has to come back empty instead.
+    /// The end of a range is read one past itself, so an end at the top of the int range could wrap
+    /// round to a negative index and throw on the socket read loop, taking the connection down.
+    /// Anything a stranger can put in a tag has to come back empty instead.
     /// </summary>
     [Theory]
     [InlineData("2147483647")]

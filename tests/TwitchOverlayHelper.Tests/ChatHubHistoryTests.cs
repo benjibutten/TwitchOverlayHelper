@@ -105,8 +105,7 @@ public sealed class ChatHubHistoryTests
         Assert.Empty(hub.SnapshotHistory());
     }
 
-    // Once the preview is down, the lines that follow are the timeline – nothing may wipe them the
-    // way the first real line used to wipe the samples.
+    // Once the preview is down, the lines that follow are the timeline and nothing may wipe them.
     [Fact]
     public void LinesAfterThePreviewIsDownAreKept()
     {

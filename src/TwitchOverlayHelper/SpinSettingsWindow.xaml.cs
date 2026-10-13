@@ -14,9 +14,8 @@ namespace TwitchOverlayHelper;
 /// commands, and which pets it can hand out. Everything else about a pet lives in
 /// <see cref="PetsWindow"/>.
 ///
-/// <para>Writes straight through rather than collecting an OK. The pet choices land in each pet's
-/// own pet.json and the rest in settings.json, both saved as they are changed – the same as every
-/// other settings window in the app.</para>
+/// <para>Changes are written straight through, with no OK button: the pet choices to each pet's
+/// own pet.json and the rest to settings.json.</para>
 /// </summary>
 public partial class SpinSettingsWindow : Window
 {
@@ -34,9 +33,8 @@ public partial class SpinSettingsWindow : Window
     /// <param name="save">Saves settings.json after a change to the spin's own settings.</param>
     /// <param name="petsChanged">Tells the overlay and the main window a pet.json was rewritten.</param>
     /// <param name="createReward">
-    /// Creates the reward in Twitch from a title and a cost, answering the new reward's id. Handed
-    /// in rather than reached for, because the API client and the broadcaster live in the main
-    /// window and this window has no business holding either.
+    /// Creates the reward in Twitch from a title and a cost, answering the new reward's id. Throws
+    /// with Twitch's own wording when the reward cannot be created.
     /// </param>
     /// <param name="openPets">Brings up the window where pets are renamed and previewed.</param>
     public SpinSettingsWindow(
@@ -97,10 +95,7 @@ public partial class SpinSettingsWindow : Window
         SideBox.SelectedIndex = 0;
     }
 
-    /// <summary>
-    /// Rebuilds the pet rows from the catalog. Also how the main window hands over a change made
-    /// somewhere else.
-    /// </summary>
+    /// <summary>Rebuilds the pet rows from the catalog.</summary>
     public void RefreshPets()
     {
         _pets.Clear();
@@ -116,8 +111,8 @@ public partial class SpinSettingsWindow : Window
 
         Spin.Enabled = EnabledCheck.IsChecked == true;
         Spin.RewardName = RewardNameBox.Text;
-        // Only while the app has not created the reward: once it has, the id is what ties the
-        // setting to the one reward Twitch will accept an answer on.
+        // An app-created reward's id is what ties the setting to the one reward Twitch will accept
+        // an answer on, so it is not editable.
         if (!Spin.Managed) Spin.RewardId = RewardIdBox.Text;
         Spin.Title = TitleBox.Text;
         Spin.ListCommand = ListCommandBox.Text;
@@ -129,10 +124,9 @@ public partial class SpinSettingsWindow : Window
         if (int.TryParse(SecondsBox.Text, out int seconds)) Spin.SpinSeconds = seconds;
         if (int.TryParse(GiftMinutesBox.Text, out int minutes)) Spin.GiftTimeoutMinutes = minutes;
 
-        // Saving does not normalize – that happens on load – and these values are read while the
-        // app runs. Without this a typed 999 would be a sixteen-minute reel blocking the queue for
-        // the rest of the session. The boxes keep showing what was typed until focus leaves them,
-        // so a half-typed number is not rewritten under the cursor.
+        // Saving does not normalize, and these values are read while the app runs: an unclamped 999
+        // would be a sixteen-minute reel blocking the queue. The boxes keep what was typed until
+        // focus leaves them, so a half-typed number is not rewritten under the cursor.
         Spin.Normalize();
         _save();
         UpdateRewardStatus();
@@ -147,7 +141,7 @@ public partial class SpinSettingsWindow : Window
         GiftMinutesBox.Text = Spin.GiftTimeoutMinutes.ToString();
     }
 
-    /// <summary>The same for the words: an emptied box comes back as the value it fell back to.</summary>
+    /// <summary>Puts the normalized words back in their boxes: an emptied box shows the value it fell back to.</summary>
     private void Text_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
         if (_loading) return;
@@ -188,10 +182,9 @@ public partial class SpinSettingsWindow : Window
             return;
         }
 
-        // A second click writes a new id over one this app is already answering redemptions on, and
-        // everything still open on the old reward falls outside both the matching and the startup
-        // sweep – neither answered nor paid back. Asked rather than refused: moving to a new reward
-        // is a real thing to want, and with the id box locked this is the only way there.
+        // A new id replaces one this app is answering redemptions on, and anything still open on
+        // the old reward is then neither answered nor paid back. Asked, not refused: with the id
+        // box locked this is the only way to move to a new reward.
         if (Spin.Managed && MessageBox.Show(
                 this,
                 $"Appen har redan skapat en belöning för lyckosnurren.\n\nSkapar du en ny tar den över, och den gamla ligger kvar i Twitch – ta bort eller stäng av den där, annars kan inlösen på den varken besvaras eller betalas tillbaka härifrån.\n\nSkapa “{title}” ändå?",
@@ -218,8 +211,7 @@ public partial class SpinSettingsWindow : Window
         }
         catch (Exception ex)
         {
-            // Twitch's own wording is the useful part here – a duplicate title above all, which is
-            // the one a streamer meets and can do something about.
+            // Twitch's own wording is the useful part, a duplicate title above all.
             RewardStatusText.Text = ex.Message;
         }
         finally { CreateRewardButton.IsEnabled = true; }

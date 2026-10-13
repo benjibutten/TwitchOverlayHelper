@@ -4,8 +4,8 @@ using System.Text.Json.Serialization;
 namespace TwitchOverlayHelper.Settings;
 
 /// <summary>
-/// What a viewer spends to have something read out loud. The two are deliberately not the same
-/// feature seen twice: only the channel points half can ever be paid back.
+/// What a viewer spends to have something read out loud. Only the channel points half can ever be
+/// paid back.
 /// </summary>
 public enum TtsTrigger
 {
@@ -27,16 +27,14 @@ public enum TtsTrigger
 public enum TtsOutput
 {
     /// <summary>
-    /// A browser source in OBS. The default, and the only one that reaches the viewers without the
-    /// streamer having to capture their own desktop: OBS takes a browser source's audio into the
-    /// mix itself, on its own track, with its own volume and monitoring.
+    /// A browser source in OBS. The only output that reaches the viewers without desktop capture:
+    /// OBS takes a browser source's audio into the mix itself, on its own track.
     /// </summary>
     Browser,
 
     /// <summary>
-    /// This computer's speakers, through the app. Heard by the streamer, and by the viewers only if
-    /// OBS is capturing desktop audio – which most setups deliberately do not do, because it would
-    /// also carry every notification sound on the machine.
+    /// This computer's speakers, through the app. Heard by the viewers only if OBS is capturing
+    /// desktop audio, which most setups avoid because it carries every notification sound too.
     /// </summary>
     Desktop,
 
@@ -48,10 +46,8 @@ public enum TtsOutput
 /// Reading a viewer's message out loud, bought with bits or with channel points.
 ///
 /// <para>Sibling to <see cref="SpeechSettings"/> rather than part of it: that one is a reading aid
-/// for the streamer – a button beside a name in the dock – while this one is something viewers pay
-/// for and every one of them hears the result of. They share the ElevenLabs account and its key;
-/// they share nothing else, and above all not the voice. The name reader is picked for saying odd
-/// logins clearly, which is rarely the voice a channel wants for its messages.</para>
+/// for the streamer, this one is something viewers pay for and all of them hear. They share the
+/// ElevenLabs account and its key, but not the voice.</para>
 /// </summary>
 public sealed class TtsSettings
 {
@@ -90,9 +86,8 @@ public sealed class TtsSettings
     public bool RequireApproval { get; set; } = true;
 
     /// <summary>
-    /// How long a request may sit unanswered before it is let go. A reading nobody approved during
-    /// the whole stream is not one the viewer still wants to hear; on the channel points route it
-    /// also hands the points back rather than leaving them spent on silence.
+    /// How long a request may sit unanswered before it is let go. On the channel points route that
+    /// also hands the points back.
     /// </summary>
     public int ApprovalTimeoutSeconds { get; set; } = 600;
 
@@ -110,9 +105,8 @@ public sealed class TtsSettings
     public TtsOutput Output { get; set; } = TtsOutput.Browser;
 
     /// <summary>
-    /// The card the viewers see while a message is read. Lives on the same browser source as the
-    /// sound: it is one thing happening – somebody's words are being said out loud – and two sources
-    /// would need two placements in OBS and could still fall out of step with each other.
+    /// The card the viewers see while a message is read. On the same browser source as the sound,
+    /// so the two need one placement in OBS and cannot fall out of step.
     /// </summary>
     public TtsWidgetSettings Widget { get; set; } = new();
 
@@ -124,14 +118,11 @@ public sealed class TtsSettings
     public bool UsesDesktop => Output is TtsOutput.Desktop or TtsOutput.Both;
 
     /// <summary>
-    /// Where a message is cut. ElevenLabs bills by the character, so this is the one setting that
-    /// decides what a single redemption can cost – and a viewer who pastes a novel should not be
-    /// able to hold the stream for four minutes either.
+    /// Where a message is cut. ElevenLabs bills by the character, so this decides what a single
+    /// redemption can cost and how long it can hold the stream.
     ///
-    /// <para>Defaults to Twitch's own limit on a chat message rather than to something smaller: a
-    /// cut below it lands on messages the viewer was allowed to send and paid full price for, and
-    /// the only sign of it is a sentence that stops mid-thought. Nobody counts characters before
-    /// redeeming, so a cheaper default just moves the cost onto the viewer who guessed wrong.</para>
+    /// <para>Defaults to Twitch's own limit on a chat message: a lower cut would truncate messages
+    /// the viewer was allowed to send and paid full price for.</para>
     /// </summary>
     public int MaxCharacters { get; set; } = 500;
 
@@ -140,8 +131,7 @@ public sealed class TtsSettings
 
     /// <summary>
     /// How many requests may wait at once. Beyond this the newest is refused – on the channel points
-    /// route with the points handed straight back, which is a better answer than a queue nobody will
-    /// reach the end of.
+    /// route with the points handed straight back.
     /// </summary>
     public int QueueLimit { get; set; } = 20;
 
@@ -155,8 +145,8 @@ public sealed class TtsSettings
 
     /// <summary>
     /// Whether a channel points redemption is the one this app is listening for. Unlike the pets
-    /// there is no catch-all: an empty id claims nothing, because a reward nobody named would turn
-    /// every redemption in the channel into something read out loud.
+    /// there is no catch-all: an empty id claims nothing, or every redemption in the channel would
+    /// be read out loud.
     /// </summary>
     public bool MatchesReward(string? rewardId) =>
         Trigger == TtsTrigger.Reward
@@ -164,9 +154,8 @@ public sealed class TtsSettings
         && string.Equals(RewardId, rewardId, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Whether the reading page has anything to draw. Both halves have to be true: a card is only
-    /// ever shown while a clip is playing on that page, and nothing plays there unless the sound is
-    /// meant for OBS in the first place.
+    /// Whether the reading page has anything to draw. A card is only shown while a clip is playing
+    /// on that page, and nothing plays there unless the sound is meant for OBS.
     /// </summary>
     public bool ShowsWidget => Widget.Enabled && UsesBrowser;
 

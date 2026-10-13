@@ -5,28 +5,24 @@ using System.Windows.Threading;
 namespace TwitchOverlayHelper.Speech;
 
 /// <summary>
-/// Everything the app says out loud, on the machine running it. The dock could play these in the
-/// browser, but the buttons are pressed in OBS – where a hidden dock is often muted or on another
-/// audio device than the one the streamer is listening to.
+/// Everything the app says out loud, on the machine running it. Played here rather than in the
+/// dock's browser because a dock inside OBS is often muted or on another audio device than the one
+/// the streamer is listening to.
 ///
-/// <para>Two players, not one. A name is a word the streamer asked to hear; a paid reading is a
-/// sentence the viewers are waiting through, and it can run for half a minute. Sharing one
-/// <see cref="MediaPlayer"/> would mean a click on a speaker button cutting a reading off mid-word –
-/// so they get one each, and the rare overlap is the cheaper of the two mistakes.</para>
+/// <para>Names and paid readings each have their own <see cref="MediaPlayer"/>, so a click on a
+/// speaker button cannot cut a reading off mid-word; the two may overlap.</para>
 /// </summary>
 public sealed class SpeechAudioPlayer(Dispatcher dispatcher)
 {
     private MediaPlayer? _namePlayer;
     private MediaPlayer? _messagePlayer;
 
-    /// <summary>Starts a name clip and returns; nothing waits for a word to finish.</summary>
+    /// <summary>Starts a name clip and completes once playback has started, not when it ends.</summary>
     public Task PlayAsync(string filePath, double volume) =>
         dispatcher.InvokeAsync(() => Play(ref _namePlayer, filePath, volume)).Task;
 
     /// <summary>
-    /// Plays a message and completes when it has actually finished – which is what lets the readings
-    /// be a queue rather than a pile-up. Cancelling stops it where it is, for the dock's stop button
-    /// and for a shutdown mid-sentence.
+    /// Plays a message and completes when it has finished. Cancelling stops playback where it is.
     /// </summary>
     public async Task PlayToEndAsync(string filePath, double volume, CancellationToken cancellationToken)
     {

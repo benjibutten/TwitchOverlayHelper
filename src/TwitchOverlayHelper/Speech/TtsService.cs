@@ -45,9 +45,8 @@ public enum TtsState
 }
 
 /// <summary>
-/// One paid reading as it arrives. <paramref name="Refundable"/> is carried rather than worked out
-/// later: it depends on how the request came in and on the settings at that moment, and a request
-/// that outlives a settings change must still be answered on the terms it was accepted under.
+/// One paid reading as it arrives. <paramref name="Refundable"/> is fixed when the request is
+/// accepted, so a request that outlives a settings change is answered on the terms it came in under.
 /// </summary>
 public sealed record TtsRequest(
     string Id,
@@ -60,33 +59,24 @@ public sealed record TtsRequest(
     int Cost,
     DateTimeOffset At);
 
-/// <summary>
-/// One row of the dock's approval bar. A view of a request rather than the request itself: the bar
-/// sits in a browser source on the streaming machine, and what it needs is a name, a sentence and
-/// two buttons.
-/// </summary>
+/// <summary>One row of the dock's approval bar: a request as the dock is sent it.</summary>
+/// <param name="Source">"powerUp" or "reward" – the bar words its refuse button from this.</param>
+/// <param name="Refundable">Whether refusing gives anything back. False for every bits Power-up.</param>
+/// <param name="DeadlineAt">When an unanswered request will be let go, in unix milliseconds.</param>
 public sealed record TtsEntry(
     string Id,
     string Viewer,
     string Text,
     int Cost,
-    /// <summary>"powerUp" or "reward" – the bar words its refuse button from this.</summary>
     string Source,
     string State,
-    /// <summary>Whether refusing actually gives anything back. False for every bits Power-up.</summary>
     bool Refundable,
     long At,
-    /// <summary>When an unanswered request will be let go, so the bar can count down.</summary>
     long? DeadlineAt);
 
 /// <summary>
-/// One synthesised clip on its way to an output, and who it belongs to.
-///
-/// <para>More than a file and a volume because the reading is now something the viewers can be shown
-/// as well as hear: the card in the overlay says whose words these are, and that has to travel with
-/// the clip rather than be looked up beside it. Looking it up would be a second answer to "what is
-/// playing right now" – and the wrong one exactly when the queue moves on, which is the moment the
-/// card changes.</para>
+/// One synthesised clip on its way to an output, with the viewer and text the overlay's card shows
+/// while it plays.
 ///
 /// <para><paramref name="Cost"/> of zero means nothing was paid for it: the test button, and
 /// anything else the streamer starts themselves.</para>
@@ -110,28 +100,17 @@ public sealed record TtsOutcome(bool Accepted, TtsState State, string Reason)
 /// wanted, has ElevenLabs say it, and plays it on this machine – one at a time, in the order they
 /// were approved.
 ///
-/// <para><b>Why a queue and not a fire-and-forget.</b> Two readings at once is noise, and the second
-/// one is money spent on something nobody could make out. So a reading holds the speakers until it
-/// has finished, and the rest wait.</para>
-///
-/// <para><b>Why an answer at the end rather than at the yes.</b> On the channel points route this
-/// app owes Twitch a verdict, and the only honest moment to give it is once the words have actually
-/// come out of the speakers. Approving something whose synthesis then fails would leave the points
-/// spent on silence; the failure is a refund instead. The bits route has no such moment – Twitch
-/// offers no endpoint to answer a Power-up redemption at all – so there the verdict is only ever a
-/// line in the log and a word in the dock.</para>
+/// <para>On the channel points route Twitch gets its verdict when the reading ends, not at the
+/// streamer's yes: a synthesis that fails after approval becomes a refund. Twitch offers no endpoint
+/// to answer a Power-up redemption, so on the bits route the verdict is only a line in the log and
+/// a word in the dock.</para>
 /// </summary>
 public sealed class TtsService : IDisposable
 {
-    /// <summary>Roughly a stream's worth of readings kept on disk, so replaying one costs nothing.</summary>
+    /// <summary>How many synthesised readings are kept on disk.</summary>
     private const int AudioFileLimit = 60;
 
-    /// <summary>
-    /// The three refusals something outside this class needs to be able to tell apart, named rather
-    /// than repeated. The chat bot words each of them differently for the viewer – a full queue is
-    /// "try again shortly" while a missing key is "this is not running" – and matching on a sentence
-    /// spelled out in two files is a bug waiting for the day one of them is reworded.
-    /// </summary>
+    // The three refusal reasons the chat bot matches on to word its own answer.
     internal const string QueueFullReason = "kön för uppläsning är full";
 
     internal const string DisabledReason = "uppläsning är avstängd i appen";
@@ -149,17 +128,14 @@ public sealed class TtsService : IDisposable
     private readonly Timer _timer;
 
     private readonly Lock _gate = new();
-    /// <summary>Everything not yet finished, oldest first – which is the order the bar shows them in.</summary>
+    // Everything not yet finished, oldest first, which is the order the bar shows them in.
     private readonly List<Entry> _open = [];
 
-    /// <summary>
-    /// Cancels whatever is at the speakers right now, for the dock's stop button. Held by the
-    /// reading loop for a paid reading and by <see cref="SpeakTestAsync"/> for a test – there is one
-    /// audio element at the far end, so there is one of these.
-    /// </summary>
+    // Cancels whatever is at the speakers. Held by the reading loop for a paid reading and by
+    // SpeakTestAsync for a test; there is one output, so non-null also means the speakers are taken.
     private CancellationTokenSource? _speaking;
 
-    /// <summary>Set while a test holds <see cref="_speaking"/>, so its own finally can let it go.</summary>
+    // Set while a test holds _speaking, so its finally can tell whether to release it.
     private CancellationTokenSource? _testPlayback;
     private bool _pumping;
     private bool _disposed;
@@ -185,16 +161,15 @@ public sealed class TtsService : IDisposable
     /// <summary>Whether the feature is both switched on and able to do anything.</summary>
     public bool IsConfigured => _settings.Tts.Enabled && CanSpeak;
 
-    /// <summary>Raised whenever the bar's contents changed, so the dock can be handed the new list.</summary>
+    /// <summary>Raised whenever the bar's contents changed.</summary>
     public event Action? Changed;
 
-    /// <summary>Raised when something new is waiting for a yes – what lights the edge glow.</summary>
+    /// <summary>Raised when something new is waiting for a yes.</summary>
     public event Action<TtsRequest>? ApprovalNeeded;
 
     /// <summary>
     /// Raised once a request has reached an ending, with the verdict Twitch should be given. Only
-    /// ever fires for requests that carried <see cref="TtsRequest.Refundable"/>; everything else has
-    /// nobody to tell.
+    /// fires for requests that carried <see cref="TtsRequest.Refundable"/>.
     /// </summary>
     public event Action<TtsRequest, RedemptionStatus, string>? Answered;
 
@@ -203,16 +178,14 @@ public sealed class TtsService : IDisposable
 
     /// <summary>
     /// Raised for every ending, refundable or not, with the request as it was accepted and the
-    /// verdict it reached. Sibling to <see cref="Answered"/> rather than a replacement: that one is
-    /// about what Twitch is owed and fires only when there is something to owe, while this one is
-    /// about what happened – which is what the chat bot has to be able to tell a viewer, including
-    /// for a request that was refused before it ever reached the queue.
+    /// state it reached – including a request refused before it reached the queue. It says what
+    /// happened to the reading, not whether Twitch has taken the verdict.
     /// </summary>
     public event Action<TtsRequest, TtsState, string>? Finished;
 
     /// <summary>
-    /// Takes a redemption that matched the configured trigger. Answers rather than returning
-    /// quietly, because the caller may owe Twitch a verdict either way.
+    /// Takes a redemption that matched the configured trigger and returns what became of it. A
+    /// refusal is also raised through <see cref="Answered"/> and <see cref="Finished"/>.
     /// </summary>
     public TtsOutcome Handle(TtsRequest request)
     {
@@ -244,10 +217,8 @@ public sealed class TtsService : IDisposable
             if (!full) _open.Add(entry);
         }
 
-        // A queue nobody will reach the end of is worse than a refusal the viewer hears about now –
-        // and on the channel points route the refusal hands the points straight back. Answered
-        // outside the lock, because refusing raises the events that redraw the dock and answer
-        // Twitch, and nothing that reaches the network belongs inside this lock.
+        // Refused outside the lock: refusing raises the events that redraw the dock and answer
+        // Twitch, and nothing that reaches the network belongs inside it.
         if (full) return Refuse(request, TtsState.Rejected, QueueFullReason);
 
         Changed?.Invoke();
@@ -261,7 +232,7 @@ public sealed class TtsService : IDisposable
         return new TtsOutcome(true, TtsState.Queued, "köad för uppläsning");
     }
 
-    /// <summary>The streamer said yes. Nothing is answered to Twitch yet – that waits for the words.</summary>
+    /// <summary>The streamer said yes. Twitch is not answered until the reading has ended.</summary>
     public bool Approve(string id)
     {
         lock (_gate)
@@ -277,7 +248,8 @@ public sealed class TtsService : IDisposable
 
     /// <summary>
     /// The streamer said no. On the channel points route this is the refund; on the bits route the
-    /// reading simply does not happen, which is all a refusal can mean there.
+    /// reading simply does not happen. Returns false for a reading already at the speakers, which
+    /// <see cref="Stop"/> takes off instead.
     /// </summary>
     public bool Reject(string id)
     {
@@ -285,8 +257,6 @@ public sealed class TtsService : IDisposable
         lock (_gate)
         {
             entry = Find(id);
-            // A reading already at the speakers is stopped rather than refused: it has been heard,
-            // in part, and the stop button is what takes it off.
             if (entry is null || entry.State is not (TtsState.Pending or TtsState.Queued)) return false;
             _open.Remove(entry);
         }
@@ -295,8 +265,8 @@ public sealed class TtsService : IDisposable
     }
 
     /// <summary>
-    /// Stops what is playing. The reading counts as delivered: the viewers heard it, and the streamer
-    /// cutting it short is not the viewer's fault to pay for.
+    /// Stops what is at the speakers. A reading that had started playing counts as delivered; one
+    /// stopped during synthesis is paid back.
     /// </summary>
     public bool Stop()
     {
@@ -309,19 +279,12 @@ public sealed class TtsService : IDisposable
 
     /// <summary>
     /// Twitch says one of the channel's redemptions changed status without us asking – the streamer
-    /// worked the queue in the dashboard while the request sat here. Their answer is final: the
-    /// redemption has left the queue, and this app can neither fulfil nor refund it any more.
+    /// worked the queue in the dashboard. The redemption is closed, so the app no longer answers it.
     ///
-    /// <para>A cancellation is the one that changes what happens. The viewer has had their points
-    /// back, so the message must not be read out after all – and if it is already being read, it is
-    /// taken off the way the stop button takes one off. Anything else is let run; only the answer at
-    /// the end is dropped, because sending it would be five failed attempts at a redemption Twitch has
-    /// already closed.</para>
-    ///
-    /// <para>The app's own answers come back through this event as well. They never match anything
-    /// here: an entry leaves <see cref="_open"/> before Twitch is ever told about it.</para>
+    /// <para>On a cancellation the message is not read out, and one already being read is stopped.
+    /// On any other status the reading runs on and only the answer at the end is dropped.</para>
     /// </summary>
-    /// <returns>Whether the redemption was one of this queue's, so the caller can stop looking.</returns>
+    /// <returns>Whether the redemption was one of this queue's.</returns>
     public bool HandleExternalUpdate(string redemptionId, string status)
     {
         bool canceled = status.Equals("CANCELED", StringComparison.OrdinalIgnoreCase);
@@ -329,15 +292,16 @@ public sealed class TtsService : IDisposable
         CancellationTokenSource? speaking = null;
         lock (_gate)
         {
+            // The app's own answers come back through this event too, but never match: an entry
+            // leaves _open before Twitch is told about it.
             if (Find(redemptionId) is not { } found) return false;
             entry = found;
             entry.Released = canceled ? "återbetalad i Twitch" : "avslutad i Twitch";
             if (!canceled) return true;
 
-            // Already at the speakers. The reading loop owns it from here: cancelling stops the sound,
-            // and the loop takes it out of the queue and leaves it unanswered because it is released.
-            // Taken out here in every other case – including a reading whose loop has just let the
-            // speakers go, which would otherwise be left sitting in the bar with nobody to remove it.
+            // A reading at the speakers is cancelled and left to the reading loop, which removes it
+            // and leaves it unanswered because it is released. In every other case it is removed
+            // here – including when the loop has just let the speakers go.
             if (entry.State == TtsState.Speaking) speaking = _speaking;
             if (speaking is null) _open.Remove(entry);
         }
@@ -356,9 +320,8 @@ public sealed class TtsService : IDisposable
     }
 
     /// <summary>
-    /// Whether this redemption is one the reading queue is still holding. Asked by the sweep that
-    /// clears out redemptions from before the app was listening: a reconnect gives it a fresh
-    /// cutoff, and everything waiting for the streamer's yes is older than that.
+    /// Whether this redemption is one the reading queue is still holding, so the ledger's startup
+    /// sweep leaves it alone.
     /// </summary>
     public bool Holds(string redemptionId)
     {
@@ -384,13 +347,9 @@ public sealed class TtsService : IDisposable
     }
 
     /// <summary>
-    /// Reads a line straight out, for the test button in the settings. Outside the approval queue:
-    /// it is the streamer proving the chain works, not a viewer's purchase.
-    ///
-    /// <para>It is not, however, outside the speakers. There is one audio element at the far end and
-    /// one clip in flight at a time, so a test started over a paid reading would take that reading
-    /// off the air and leave the queue behind it waiting on an acknowledgement that is never coming.
-    /// A viewer who paid outranks a button, so the test waits its turn rather than barging in.</para>
+    /// Reads a line straight out, for the test button in the settings, bypassing the approval queue.
+    /// Throws <see cref="SpeechException"/> when nothing can be spoken, when a reading already holds
+    /// the speakers, or when the test is stopped.
     /// </summary>
     public async Task SpeakTestAsync(string text, CancellationToken cancellationToken = default)
     {
@@ -402,8 +361,8 @@ public sealed class TtsService : IDisposable
         {
             if (_speaking is not null)
                 throw new SpeechException("En betald uppläsning pågår just nu – testa igen när den är klar.");
-            // Claimed for the whole test, so a redemption approved a moment later queues behind it
-            // instead of playing on top of it. The pump only ever starts a reading with this free.
+            // Claimed for the whole test, so a redemption approved meanwhile queues behind it: the
+            // pump only starts a reading while _speaking is null.
             _speaking = _testPlayback = new CancellationTokenSource();
         }
 
@@ -412,9 +371,7 @@ public sealed class TtsService : IDisposable
             TtsSettings tts = _settings.Tts;
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _testPlayback!.Token);
             string file = await EnsureAudioAsync(cleaned, tts, linked.Token).ConfigureAwait(false);
-            // The card in the overlay is shown for a test too, which is the only way to see where it
-            // has landed without spending a viewer's points on finding out. Named after the button
-            // rather than after nobody: an empty name would draw a card with a hole in it.
+            // The overlay shows its card for a test too; an empty viewer name would leave a hole in it.
             var clip = new TtsClip(
                 file,
                 tts.Volume,
@@ -426,9 +383,8 @@ public sealed class TtsService : IDisposable
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            // The dock's stop button reaches whatever is at the speakers, a test included, and the
-            // app closing does the same. Turned into the exception the callers already handle:
-            // letting a cancellation out of here would take an async void click handler with it.
+            // Stopped by the dock's stop button or by the app closing. Rethrown as SpeechException:
+            // a cancellation escaping from here would crash an async void click handler.
             throw new SpeechException("Uppläsningen avbröts.");
         }
         finally
@@ -439,21 +395,15 @@ public sealed class TtsService : IDisposable
                 _testPlayback?.Dispose();
                 _testPlayback = null;
             }
-            // A redemption may have been approved while the test held the speakers; nothing else
-            // would start the queue moving again.
+            // A redemption approved while the test held the speakers has nothing else to start it.
             StartPump();
         }
     }
 
     /// <summary>
-    /// Lets everything waiting go without answering Twitch – the app is closing, or has left the
-    /// channel. Like the pets' ledger this is deliberately not a round of refunds: a refund fired
-    /// off while the window is disappearing is worse than a redemption left unfulfilled, which the
-    /// streamer can still work by hand and which the next connection's sweep settles.
-    ///
-    /// <para>Every entry is marked on the way out, including the one at the speakers. Without that
-    /// the reading being cut short would still reach <see cref="Finish"/> and answer Twitch – on a
-    /// shutdown, through a ledger that has already been disposed.</para>
+    /// Lets everything waiting go without answering Twitch, and stops what is playing – the app is
+    /// closing, or has left the channel. The redemptions stay unfulfilled, for the streamer to work
+    /// by hand or the next connection's sweep to refund.
     /// </summary>
     public void Reset()
     {
@@ -461,6 +411,8 @@ public sealed class TtsService : IDisposable
         lock (_gate)
         {
             had = _open.Count > 0;
+            // Marked released, the one at the speakers included: cut short, it would otherwise
+            // reach Finish and answer Twitch through a ledger that may already be disposed.
             foreach (Entry entry in _open) entry.Released = "appen släppte kanalen";
             _open.Clear();
         }
@@ -468,7 +420,7 @@ public sealed class TtsService : IDisposable
         if (had) Changed?.Invoke();
     }
 
-    /// <summary>Lets go of everything nobody answered in time. Internal so the tests can drive it.</summary>
+    /// <summary>Expires every pending request whose approval deadline has passed.</summary>
     internal void Sweep()
     {
         try
@@ -489,16 +441,12 @@ public sealed class TtsService : IDisposable
         }
         catch (Exception ex)
         {
-            // A timer callback that throws takes the process with it, and this one runs while the
-            // streamer is live.
+            // A timer callback that throws takes the process with it.
             AppLog.Error("Uppläsning: fel i tidsgränskontrollen", ex);
         }
     }
 
-    /// <summary>
-    /// The reading loop. One at a time, started on demand and ending when the queue runs dry – there
-    /// is nothing to keep warm between two redemptions half an hour apart.
-    /// </summary>
+    /// <summary>Starts the reading loop unless it is already running. The loop ends when the queue runs dry.</summary>
     private void StartPump()
     {
         lock (_gate)
@@ -519,9 +467,7 @@ public sealed class TtsService : IDisposable
                 CancellationTokenSource cancellation;
                 lock (_gate)
                 {
-                    // A test is at the speakers. Stopping here rather than playing over it is what
-                    // keeps the two from cutting each other off; the test's finally starts the queue
-                    // moving again the moment it is done.
+                    // A test is at the speakers; its finally restarts the pump when it is done.
                     if (_speaking is not null)
                     {
                         _pumping = false;
@@ -546,11 +492,9 @@ public sealed class TtsService : IDisposable
                 }
                 catch (Exception ex)
                 {
-                    // SpeakAsync answers rather than throws for everything that was foreseen, so this
-                    // is a bug or something new. It still has to become an ending here: an entry left
-                    // as Speaking would hold the speakers for good – the loop refuses to start a
-                    // reading while _speaking is set, so every request after it would queue and none
-                    // of them would ever be read.
+                    // SpeakAsync returns a state for every expected failure, so this is a bug. It must
+                    // still become an ending: an entry left as Speaking would keep _speaking set, and
+                    // nothing after it would ever be read.
                     AppLog.Error("Uppläsning: oväntat fel under uppläsningen", ex);
                     state = TtsState.Failed;
                     reason = "ett oväntat fel avbröt uppläsningen";
@@ -565,10 +509,8 @@ public sealed class TtsService : IDisposable
                 }
                 cancellation.Dispose();
 
-                // No longer ours to answer: the app is closing or has left the channel, or the
-                // streamer settled the redemption in Twitch's own queue while it was playing. Either
-                // way the verdict is somebody else's, and one sent from here would go to a redemption
-                // that is not there any more.
+                // Released while it was playing: the app is leaving the channel, or the streamer
+                // settled the redemption in Twitch's own queue. No verdict is sent.
                 if (released is not null)
                 {
                     AppLog.Info($"Uppläsning: {Viewer(entry)}s inlösen lämnades obesvarad – {released}.");
@@ -580,8 +522,7 @@ public sealed class TtsService : IDisposable
         }
         catch (Exception ex)
         {
-            // Whatever went wrong, the loop must not die holding the flag – nothing would ever be
-            // read again until the app restarted.
+            // The loop must not die with _pumping set: nothing would start it again.
             AppLog.Error("Uppläsning: kön stannade", ex);
             lock (_gate) _pumping = false;
         }
@@ -590,32 +531,26 @@ public sealed class TtsService : IDisposable
     private async Task<(TtsState State, string Reason)> SpeakAsync(Entry entry, CancellationToken cancellationToken)
     {
         TtsSettings tts = _settings.Tts;
-        // Read once, so a name that arrives as part of the spoken line is the one the bar showed.
         string spoken = tts.AnnounceName && entry.Request.DisplayName.Length > 0
             ? $"{entry.Request.DisplayName} säger: {entry.Request.Text}"
             : entry.Request.Text;
 
-        // Whether the clip ever reached an output. A stop during the ElevenLabs call is a reading
-        // nobody heard a syllable of, and calling that "delivered" is the one mistake here that
-        // silently keeps a viewer's money for silence – so the two halves are told apart rather than
-        // both being caught as "the streamer pressed stop".
+        // Whether the clip ever reached an output: a stop during synthesis is a reading nobody
+        // heard, and must not count as delivered.
         bool reachedSpeakers = false;
         try
         {
             string file;
             using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             {
-                // The synthesis alone; playback is not on a clock, because a long message is long on
-                // purpose and the stop button is there for the rest.
+                // The timeout covers the synthesis only; playback has the stop button instead.
                 timeout.CancelAfter(TimeSpan.FromSeconds(60));
                 file = await EnsureAudioAsync(spoken, tts, timeout.Token).ConfigureAwait(false);
             }
 
             reachedSpeakers = true;
-            // The card is drawn from the request rather than from the line that was synthesised: the
-            // spoken version may carry "Kajsa säger:" in front of the words, and reading that back to
-            // the viewers as though it were part of the message would be the app's phrasing shown as
-            // somebody else's.
+            // The card shows the request's own text: the synthesised line may carry "Kajsa säger:"
+            // in front, which is not part of the viewer's message.
             var clip = new TtsClip(
                 file,
                 tts.Volume,
@@ -628,9 +563,8 @@ public sealed class TtsService : IDisposable
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Stopped by the streamer, or by the app closing. Once it was playing the viewers heard
-            // some of it and cutting it short is the streamer's decision, not the viewer's fault to
-            // pay for; before that there was nothing to hear, and it is paid back.
+            // Stopped by the streamer, or by the app closing. Once it was playing it counts as
+            // delivered; before that there was nothing to hear, and it is paid back.
             return reachedSpeakers
                 ? (TtsState.Spoken, "avbruten av streamern")
                 : (TtsState.Failed, "avbruten innan något hann läsas upp");
@@ -689,10 +623,7 @@ public sealed class TtsService : IDisposable
         }
     }
 
-    /// <summary>
-    /// A request that never made it into the queue at all. Answered on the spot rather than tracked:
-    /// there is no reading whose fate could still change the verdict.
-    /// </summary>
+    /// <summary>Ends a request that never made it into the queue.</summary>
     private TtsOutcome Refuse(TtsRequest request, TtsState state, string reason)
     {
         Finish(new Entry(request), state, reason);
@@ -718,18 +649,12 @@ public sealed class TtsService : IDisposable
             ? $"Uppläsning: {viewer}s meddelande lästes upp – {reason}."
             : $"Uppläsning: {viewer}s meddelande lästes inte upp – {reason}.");
 
-        // The verdict has been handed over, which is not the same as Twitch having taken it: the
-        // ledger retries for as long as that takes. So this says what happened to the reading and
-        // nothing about the money – a listener that wants to tell a viewer their points are back has
-        // to wait for the ledger to say they are.
+        // The verdict has been handed to the ledger, which may still be retrying it: listeners
+        // learn that the points are back from the ledger, not from this event.
         Finished?.Invoke(entry.Request, state, reason);
 
-        // Three endings, not two. A refusal that cannot pay back has two quite different causes, and
-        // saying "bits" about a channel points reward would point the streamer at the wrong
-        // limitation – theirs is fixable by creating the reward from the app, the other is not
-        // fixable at all. What is said about bits is scoped to what is actually known: the app
-        // cannot pay them back because Twitch exposes no endpoint for it. Whether the streamer can
-        // do it by hand in the dashboard is Twitch's business, not ours to promise either way.
+        // A refusal that cannot pay back is worded by its cause: a reward not created by the app
+        // is something the streamer can fix, bits are not – Twitch has no endpoint to refund them.
         Noticed?.Invoke(spoken
             ? $"Läste upp {viewer}s meddelande."
             : entry.Request.Refundable
@@ -748,7 +673,7 @@ public sealed class TtsService : IDisposable
     private Entry? Find(string id) =>
         _open.FirstOrDefault(entry => string.Equals(entry.Request.Id, id, StringComparison.Ordinal));
 
-    /// <summary>Kept as camelCase strings rather than numbers so the dock's CSS can key off them.</summary>
+    /// <summary>The state as the string the dock is sent; its CSS keys off these.</summary>
     private static string Word(TtsState state) => state switch
     {
         TtsState.Pending => "pending",
@@ -777,9 +702,8 @@ public sealed class TtsService : IDisposable
 
         /// <summary>
         /// Why this redemption stopped being ours to answer, or null while it still is. Set by
-        /// <see cref="Reset"/>, where it is meant to stay unfulfilled for the next sweep to find, and
-        /// by <see cref="HandleExternalUpdate"/>, where Twitch has already taken it out of the queue.
-        /// Every ending checks it before answering Twitch.
+        /// <see cref="Reset"/> and <see cref="HandleExternalUpdate"/>; every ending checks it before
+        /// answering Twitch.
         /// </summary>
         public string? Released { get; set; }
     }

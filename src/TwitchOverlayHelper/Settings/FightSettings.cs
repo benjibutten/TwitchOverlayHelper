@@ -33,10 +33,7 @@ public sealed class FightSettings
     /// <summary>How long the chat has to vote before the match starts, seconds.</summary>
     public int SelectSeconds { get; set; } = 30;
 
-    /// <summary>
-    /// Rounds a fighter has to win to take the match. 0 is a match that never ends, which is how the
-    /// wait screen worked before there were matches.
-    /// </summary>
+    /// <summary>Rounds a fighter has to win to take the match. 0 is a match that never ends.</summary>
     public int WinsToWin { get; set; } = 3;
 
     /// <summary>What the chat types, with a fighter and an outfit digit, to vote for player 1 – "!p1 my2".</summary>
@@ -139,7 +136,7 @@ public sealed class FightSettings
         WinsToWin = Math.Clamp(WinsToWin, 0, 9);
         Pick1Command = Command(Pick1Command, "!p1");
         Pick2Command = Command(Pick2Command, "!p2");
-        // The vote words yield to the cheer and the heal, which the chat met first, and to each other.
+        // The vote words yield to the cheer and the heal, and to each other.
         string[] taken = [CheerCommand, HealCommand];
         if (taken.Contains(Pick1Command, StringComparer.OrdinalIgnoreCase))
             Pick1Command = FreeWord(["!p1", "!välj1", "!spelare1"], taken);

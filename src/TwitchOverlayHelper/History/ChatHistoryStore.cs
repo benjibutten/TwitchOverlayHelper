@@ -21,9 +21,7 @@ public sealed class ChatHistoryStore
 {
     /// <summary>
     /// How old a line may be and still be worth putting back. Measured per line rather than by the
-    /// calendar on purpose: "today's chat" would empty itself at midnight, which is the middle of
-    /// the evening for a stream that started at nine – and a restart at 00:05 is exactly when
-    /// getting the chat back matters most.
+    /// calendar: "today's chat" would empty itself at midnight, in the middle of an evening stream.
     /// </summary>
     public static readonly TimeSpan MaxAge = TimeSpan.FromHours(12);
 
@@ -43,10 +41,9 @@ public sealed class ChatHistoryStore
     }
 
     /// <summary>
-    /// The lines worth showing again: this channel's, young enough to still be the same sitting, and
-    /// no more than <see cref="MaxItems"/> of them. Anything unreadable, from elsewhere or from
-    /// yesterday comes back as an empty list – a chat that starts empty is the old behaviour and
-    /// costs nothing, while chat from the wrong room or the wrong day is actively misleading.
+    /// The lines worth showing again: this channel's, no older than <see cref="MaxAge"/>, and no
+    /// more than <see cref="MaxItems"/> of them. Anything unreadable, from another channel or too
+    /// old comes back as an empty list.
     /// </summary>
     public IReadOnlyList<ChatTimelineItem> Load(string channel, DateTimeOffset now)
     {
@@ -68,14 +65,12 @@ public sealed class ChatHistoryStore
     }
 
     /// <summary>
-    /// Writes the snapshot, newest <see cref="MaxItems"/> lines only. Written through a temp file so
-    /// a crash mid-write cannot leave a half-written file behind – which would then be the thing
-    /// that fails to load on the very restart it exists to help.
+    /// Writes the snapshot, newest <see cref="MaxItems"/> lines only, through a temp file so a crash
+    /// mid-write cannot leave a half-written file behind.
     /// </summary>
     /// <returns>
-    /// Whether the file was written. Answered rather than thrown, and answered rather than swallowed:
-    /// the caller only skips the next write because this one is already on disk, so a locked file or
-    /// a full disk has to be something it can hear about and try again after.
+    /// Whether the file was written. A locked file or a full disk is answered with false rather than
+    /// thrown, so the caller can try again later.
     /// </returns>
     public bool Save(string channel, IReadOnlyList<ChatTimelineItem> items, DateTimeOffset now)
     {
@@ -91,8 +86,8 @@ public sealed class ChatHistoryStore
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {
-            // Losing the history costs one empty column after a restart. Never worth an exception on
-            // a timer tick, and never worth taking the app down for.
+            // Losing the history costs one empty column after a restart: never worth an exception
+            // on a timer tick.
             return false;
         }
     }

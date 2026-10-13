@@ -5,22 +5,17 @@ using System.Text.Json;
 namespace TwitchOverlayHelper.Storage;
 
 /// <summary>
-/// A JSON file that keeps its own history. Two things go wrong with small settings files that are
-/// written all through a session: a write that is interrupted halfway leaves a truncated file, and
-/// a mistake made in the app – everything deleted, the wrong thing saved – is one save away from
-/// being the only version left. So every save is atomic *and* leaves a dated copy behind, and a
-/// main file that no longer parses is answered from the newest copy that does rather than with an
+/// A JSON file that keeps its own history. Every save is atomic and leaves a dated copy behind, and
+/// a main file that does not parse is answered from the newest copy that does rather than with an
 /// empty document.
 ///
-/// The copy is of the state that was just written, not of the one it replaced: that way the folder
-/// always holds at least one readable version, including after the very first save.
+/// <para>The copy is of the state that was just written, not of the one it replaced, so the folder
+/// holds a readable version from the very first save.</para>
 /// </summary>
 /// <param name="minimumBackupInterval">
-/// How close together two copies may be taken. Zero – the default – copies on every save, which is
-/// what a file written once per deliberate edit wants. A file written on a timer while a slider is
-/// being dragged wants a gap instead: without one, a minute of tuning fills the folder with twenty
-/// copies of the same minute and pushes out every copy from before it, which is the only stretch of
-/// history anyone ever wants back.
+/// How close together two copies may be taken. Zero – the default – copies on every save, which
+/// suits a file written once per deliberate edit. A file written on a timer while a slider is being
+/// dragged needs a gap, or a minute of tuning pushes out every copy from before it.
 /// </param>
 public sealed class BackedUpJsonFile(
     string filePath,
@@ -42,7 +37,7 @@ public sealed class BackedUpJsonFile(
 
     /// <summary>
     /// Why the last copy could not be written, if it could not. A failed backup never fails the
-    /// save – the data is on disk either way – but it is worth being able to say so.
+    /// save.
     /// </summary>
     public string? LastBackupError { get; private set; }
 
@@ -59,12 +54,8 @@ public sealed class BackedUpJsonFile(
     public string QuarantineFolder => Path.Combine(BackupFolder, "unreadable");
 
     /// <summary>
-    /// Whether the last read found anything on disk at all, readable or not.
-    ///
-    /// <para>Its own answer rather than one inferred from the read having failed, because those are
-    /// two different questions and the difference is the whole story: no file means a first run and
-    /// nothing has been lost, while a file that would not parse means the user had something and
-    /// this app could not read it.</para>
+    /// Whether the last read found anything on disk at all, readable or not. No file means a first
+    /// run; a file that would not parse means the user had something this app could not read.
     /// </summary>
     public bool FoundOnDisk { get; private set; }
 
@@ -104,10 +95,8 @@ public sealed class BackedUpJsonFile(
                 return true;
             }
 
-            // Nothing on disk parsed, so the caller is about to carry on with defaults – and the
-            // first save after that writes straight over the file we could not read. Whatever is
-            // in it is the last trace of what the user had, so it is moved aside rather than left
-            // in the one place that is certain to be overwritten.
+            // Nothing on disk parsed, so the caller carries on with defaults and its first save
+            // overwrites this file. It is the last trace of what the user had, so it is moved aside.
             TryQuarantine();
             value = default;
             return false;
@@ -116,8 +105,8 @@ public sealed class BackedUpJsonFile(
 
     /// <summary>
     /// Saves the document and leaves a copy of it behind. A save that would change nothing is
-    /// skipped, so a settings window that writes on every keystroke cannot push the useful copies
-    /// out of the folder with twenty identical ones.
+    /// skipped, so a window that writes on every keystroke cannot push the useful copies out with
+    /// identical ones.
     /// </summary>
     public void Write<T>(T value, JsonSerializerOptions options)
     {
@@ -145,8 +134,7 @@ public sealed class BackedUpJsonFile(
 
     /// <summary>
     /// Whether a copy would be too close on the heels of the last one. Judged by the newest copy's
-    /// own timestamp rather than by a clock kept in memory, so the gap survives a restart – a run
-    /// that saves once on the way up would otherwise copy on every start.
+    /// own timestamp rather than by a clock kept in memory, so the gap survives a restart.
     /// </summary>
     private bool TooSoonForBackup()
     {
@@ -172,8 +160,8 @@ public sealed class BackedUpJsonFile(
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // The save itself went through, so this is worth reporting but never worth throwing:
-            // failing the save because the copy failed would lose the very data being protected.
+            // The save itself went through, so this is reported and never thrown: failing the save
+            // because the copy failed would lose the very data being protected.
             LastBackupError = ex.Message;
         }
     }
@@ -223,10 +211,9 @@ public sealed class BackedUpJsonFile(
     {
         try
         {
-            // An empty file is moved aside like any other. It used to be left where it was, on the
-            // grounds that nothing is in it worth keeping – but a settings file truncated to zero
-            // bytes is what a crash leaves behind, and leaving it there meant the load reported no
-            // trouble at all and the app reset itself in silence.
+            // An empty file is moved aside like any other: a file truncated to zero bytes is what a
+            // crash leaves behind, and left in place the load would report no trouble while the app
+            // reset itself.
             if (!File.Exists(FilePath)) return;
             Directory.CreateDirectory(QuarantineFolder);
             string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss-fff");

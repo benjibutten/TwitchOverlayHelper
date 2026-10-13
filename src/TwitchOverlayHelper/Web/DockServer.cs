@@ -57,31 +57,26 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
     public string StreamUrl => $"http://127.0.0.1:{Port}/stream.html?key={context.Settings.DockAccessKey}";
 
     /// <summary>
-    /// The readings, as an OBS browser source that draws nothing and only carries sound. Its own
-    /// source rather than a job for one of the others, so OBS gives it a fader and a track of its
-    /// own – and so a scene without pets or overlay chat can still have readings.
+    /// The readings, as an OBS browser source of its own, so OBS gives them their own fader and
+    /// track.
     /// </summary>
     public string TtsUrl => $"http://127.0.0.1:{Port}/tts.html?key={context.Settings.DockAccessKey}";
 
     /// <summary>
     /// The wait screen: the streamer's two characters fighting on their own while the stream waits.
-    /// Keyed like the other browser sources, because it listens to the app – who is in the ring,
-    /// what the banner says, and the viewers who take a side.
     /// </summary>
     public string FightUrl => $"http://127.0.0.1:{Port}/fight.html?key={context.Settings.DockAccessKey}";
 
     /// <summary>
     /// One pet alone in a browser tab, with the controls to try every animation it has. A page for
-    /// setting a pet up rather than for streaming with: nothing in the app opens it by itself, and
-    /// nothing it does reaches the overlay – WebP spritesheets are simply easier to judge where
-    /// there is a browser to draw them.
+    /// setting a pet up: nothing it does reaches the overlay.
     /// </summary>
     public string InspectUrl(string petId) =>
         $"http://127.0.0.1:{Port}/pet-inspect.html?key={context.Settings.DockAccessKey}&pet={Uri.EscapeDataString(petId)}";
 
     /// <summary>
-    /// One pet alone, drawn by the overlay's own page so it looks exactly as it will on stream. Like
-    /// the inspector it never touches the real lawn: no socket, nothing the viewers can see.
+    /// One pet alone, drawn by the overlay's own page so it looks as it will on stream. It opens
+    /// no socket, so it never touches the real lawn.
     /// </summary>
     public string PreviewUrl(string petId) =>
         $"http://127.0.0.1:{Port}/pet-preview.html?key={context.Settings.DockAccessKey}&preview={Uri.EscapeDataString(petId)}";
@@ -102,8 +97,7 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
         }
         catch (Exception ex) when (ex is IOException or HttpRequestException or InvalidOperationException)
         {
-            // The dock URL is pasted into OBS once and must stay stable, so we never silently
-            // fall back to another port – the user gets told to free this one instead.
+            // No fallback to another port: the dock URL is pasted into OBS once and must stay stable.
             LastError = $"Port {port} är upptagen av ett annat program. Välj en annan port i inställningarna.";
             return false;
         }
@@ -143,7 +137,7 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
 
     private async Task GuardAsync(HttpContext http, RequestDelegate next)
     {
-        // OBS caches aggressively; a stale dock after an app update would be very confusing.
+        // OBS caches aggressively and would show a stale dock after an app update.
         http.Response.Headers.CacheControl = "no-store";
 
         bool needsKey = http.Request.Path.StartsWithSegments("/api") || http.Request.Path.StartsWithSegments("/ws");
@@ -190,9 +184,8 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
         app.MapGet("/ws", async (HttpContext http) =>
         {
             if (!http.WebSockets.IsWebSocketRequest) return Results.BadRequest();
-            // A page says which it is when it connects. Anything else – a browser source added
-            // before the stream chat or the pet view existed – is a dock, which is the view that
-            // gets everything.
+            // A page says which it is when it connects. A socket that names no known view is a
+            // dock, which is the view that gets everything.
             DockView view = http.Request.Query["view"].FirstOrDefault() switch
             {
                 "stream" => DockView.Stream,
@@ -214,8 +207,8 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
             speechEnabled = context.Hub.SpeechEnabled
         }, DockJson.Options));
 
-        // Reads a chatter's name out loud on the machine running the app. Deliberately not gated on
-        // being logged in: hearing a name is a reading aid, not a moderation action.
+        // Reads a chatter's name out loud on the machine running the app. Not gated on being
+        // logged in: hearing a name is a reading aid, not a moderation action.
         app.MapPost("/api/speech/name", async (SpeakNameRequest request) =>
         {
             if (!context.Speech.IsConfigured)
@@ -233,13 +226,9 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
             }
         });
 
-        // Answering a paid reading. Behind the dock key like everything else and behind no login at
-        // all: the decision is about this machine's speakers, and the refund that may follow is the
-        // app answering Twitch with its own token rather than the browser doing anything.
-        //
-        // The id is checked against what is actually waiting – the service answers false for
-        // anything it does not hold – so a stale bar cannot approve a reading that has already
-        // timed out and been paid back.
+        // Answering a paid reading. Behind the dock key but no login: any refund that follows is
+        // made by the app with its own token. The service answers false for an id it does not
+        // hold, so a stale bar cannot approve a reading that has already timed out.
         app.MapPost("/api/tts/approve", (TtsDecisionRequest request) =>
             TtsAnswer(context.Tts.Approve(request.Id ?? string.Empty)));
 
@@ -249,19 +238,16 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
         // No id: there is only ever one reading at the speakers.
         app.MapPost("/api/tts/stop", () => TtsAnswer(context.Tts.Stop()));
 
-        // One synthesised clip, for the browser source that plays it. Only tokens the app minted
-        // resolve to anything, so this can never name a file the app did not make itself – see
-        // TtsAudioStore. Under /api like everything else, which is what puts it behind the key.
+        // One synthesised clip, for the browser source that plays it. Only tokens minted by
+        // TtsAudioStore resolve, so this can never name a file the app did not make itself.
+        // Under /api, which puts it behind the key.
         app.MapGet("/api/tts/audio/{token}", (string token) =>
             context.TtsAudio.TryGet(token, out string path) && File.Exists(path)
                 ? Results.File(path, "audio/mpeg")
                 : Results.NotFound());
 
-        // Naming a chatter is a reading aid on this machine: it changes nothing on Twitch, nobody
-        // but this reader ever sees it, and it works in any channel. So it sits outside everything a
-        // logout takes away, next to the local pin rather than next to the moderation buttons.
-        // The app saves and fans the change out from the book's own change event, which is what
-        // keeps the overlay and every open dock saying the same name.
+        // Naming a chatter is a local reading aid that changes nothing on Twitch, so it needs no
+        // login. The app saves and fans the change out from the book's own change event.
         app.MapPost("/api/nickname", (SetNicknameRequest request) =>
         {
             string userId = request.UserId?.Trim() ?? string.Empty;
@@ -269,7 +255,7 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
             if (userId.Length == 0 && login.Length == 0)
                 return Problem("Vet inte vem smeknamnet gäller.");
 
-            // Blank text is the way a nickname is taken back, so it is an answer rather than an error.
+            // Blank text removes the nickname.
             if (NicknameBook.Clean(request.Text).Length == 0)
             {
                 context.Nicknames.Remove(userId, login);
@@ -282,11 +268,8 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
                 : Results.Json(saved, DockJson.Options);
         });
 
-        // Putting the earlier sitting away is a reading decision on this machine – nothing on Twitch,
-        // nothing anyone else sees – so it sits outside the login, next to the local pin and the
-        // nicknames. It goes through the app rather than staying in the browser because the same
-        // lines are on the overlay and in the file that survives a restart: hiding them in one of the
-        // three would only mean meeting them again tomorrow.
+        // Putting the earlier sitting away changes nothing on Twitch, so it needs no login. It
+        // goes through the app because the same lines are on the overlay and in the saved history.
         app.MapPost("/api/chat/trim", (TrimHistoryRequest request) =>
         {
             if (request.Before <= 0) return Problem("Vet inte var det tidigare passet slutade.");
@@ -295,7 +278,7 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
         });
 
         // The IRC socket stays authenticated until it is torn down, so a logout has to be enforced
-        // here too – hiding the composer in the dock is not what makes sending stop.
+        // here; hiding the composer in the dock does not stop sending.
         app.MapPost("/api/chat/send", async (SendMessageRequest request) =>
             await RunAsync(() => context.Session.IsLoggedIn
                 ? context.Chat.SendMessageAsync(request.Text)
@@ -313,21 +296,17 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
         app.MapPost("/api/mod/delete", async (DeleteMessageRequest request) =>
             await RunAsync(() => context.Api.DeleteMessageAsync(RequireBroadcaster(), request.MessageId)).ConfigureAwait(false));
 
-        // Only half of pinning is a Twitch call. Nailing a line to the dock's own strip never leaves
-        // the browser and needs neither a login nor a mod role, so it has no endpoint at all; putting
-        // the same line in front of the viewers is a moderator action and goes through Helix.
-        // Twitch pushes nothing back when a pin changes, so nothing here can be polled into a state –
-        // these two are the whole feature on this side.
+        // Pinning in front of the viewers is a moderator action through Helix. Pinning to the
+        // dock's own strip stays in the browser and has no endpoint. Twitch pushes nothing back
+        // when a pin changes.
         app.MapPost("/api/chat/pin", async (PinMessageRequest request) =>
             await RunAsync(() => context.Api.PinMessageAsync(RequireBroadcaster(), request.MessageId)).ConfigureAwait(false));
 
         app.MapPost("/api/chat/unpin", async (PinMessageRequest request) =>
             await RunAsync(() => context.Api.UnpinMessageAsync(RequireBroadcaster(), request.MessageId)).ConfigureAwait(false));
 
-        // What the emote picker may offer. Behind a login for the same reason the composer is: the
-        // point of the list is to type something into the chat, and Twitch decides what this account
-        // may send. Answered from the app's own copy, which is the same one our echoed lines are
-        // drawn from – so the picker and the column can never disagree about what an emote is.
+        // What the emote picker may offer. Behind a login like the composer. Answered from the
+        // catalogue our echoed lines are resolved against, so the picker and the column agree.
         app.MapGet("/api/emotes", async () =>
         {
             if (!context.Session.IsLoggedIn) return Problem("Du är inte inloggad på Twitch.");
@@ -355,18 +334,14 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
         app.MapPost("/api/raid/cancel", async () =>
             await RunAsync(() => context.Api.CancelRaidAsync(RequireOwnChannel())).ConfigureAwait(false));
 
-        // The species list for the pet inspector, which has no socket: it is one page looking at one
-        // pet, and a browser source's worth of chat frames is not its business. Behind the key like
-        // everything under /api.
+        // The species list for the pet inspector, which has no socket.
         app.MapGet("/api/pets/catalog", () => Results.Json(context.Hub.BuildPetCatalog(), DockJson.Options));
 
-        // The overlay's own settings, for the same page: how fast the creatures are animated is the
-        // streamer's choice rather than the sheet's, so the inspector has to be told it to show what
-        // the lawn will actually do.
+        // The overlay's settings, for the same page: the animation speed is a setting, not a
+        // property of the sheet.
         app.MapGet("/api/pets/settings", () => Results.Json(context.Hub.BuildPetSettings(), DockJson.Options));
 
-        // Pet drawings live in the user's pets folder, so an edited pet reaches the overlay after a
-        // reload without the app shipping a new build.
+        // Pet drawings are served from the user's pets folder.
         app.MapGet("/pets/body/{id}", (string id) =>
             context.Pets.TryGetBody(id, out string svg) ? Results.Text(svg, "image/svg+xml") : Results.NotFound());
 
@@ -432,9 +407,9 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
         : throw new TwitchApiException("Kanalen är inte ansluten än.");
 
     /// <summary>
-    /// Raiding is only legal out of your own channel. The dock hides the button elsewhere, but the
-    /// endpoint has to check it as well so a stray request cannot raid away your own viewers while
-    /// you are sitting in someone else's chat as a moderator.
+    /// The logged-in user's own channel id. Throws unless that is the channel currently joined:
+    /// the dock hides the raid button elsewhere, but a stray request must not raid your viewers
+    /// away while you moderate someone else's chat.
     /// </summary>
     private string RequireOwnChannel()
     {
@@ -462,11 +437,8 @@ public sealed class DockServer(DockServerContext context) : IAsyncDisposable
     private static string Pick(string? displayName, string? login) =>
         !string.IsNullOrWhiteSpace(displayName) ? displayName : login ?? string.Empty;
 
-    /// <summary>
-    /// A decision the service did not recognise is answered as an ordinary problem rather than as a
-    /// failure: the usual cause is a bar that was showing a reading which has since been answered
-    /// somewhere else, and the frame that follows will put that right by itself.
-    /// </summary>
+    // An unrecognised decision is an ordinary problem, not a failure: usually the bar was showing
+    // a reading that has since been answered elsewhere, and the next frame corrects it.
     private static IResult TtsAnswer(bool handled) =>
         handled ? Results.Ok() : Problem("Uppläsningen är redan besvarad.");
 

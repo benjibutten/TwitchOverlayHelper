@@ -10,9 +10,8 @@ namespace TwitchOverlayHelper.Overlay;
 /// address and is safe to cache negatively. Transient network failures are deliberately evicted so
 /// a later message retries.
 ///
-/// <para>The two uses are the same machinery with different ceilings, which is why the limits are
-/// constructor arguments: an emote is a small picture on a fixed CDN, while a chat GIF is somebody
-/// else's file and routinely a few megabytes.</para>
+/// <para>The limits are constructor arguments because the two uses differ: an emote is a small
+/// picture on a fixed CDN, while a chat GIF is somebody else's file and routinely a few megabytes.</para>
 /// </summary>
 internal sealed class AnimatedEmoteLoader
 {
@@ -20,9 +19,9 @@ internal sealed class AnimatedEmoteLoader
     private const int MaxCacheEntries = 256;
 
     /// <summary>
-    /// What the cache may actually hold. Counting entries is the wrong measure on its own: 256 of
-    /// them at the per-animation limit is half a gigabyte, and this runs on the machine that is
-    /// also playing the game and encoding the stream. Whichever ceiling is reached first evicts.
+    /// The byte ceiling of the cache. The entry limit alone would allow half a gigabyte – 256
+    /// animations at the per-animation limit – on the machine that is also playing the game and
+    /// encoding the stream. Whichever ceiling is reached first evicts.
     /// </summary>
     internal const long DefaultMaxCacheBytes = 48L * 1024 * 1024;
 
@@ -56,12 +55,9 @@ internal sealed class AnimatedEmoteLoader
     /// <summary>
     /// One id's animation, and what it is counted as holding.
     ///
-    /// <para>An object rather than a bare <see cref="Lazy{T}"/> with the size kept alongside so the
-    /// download can be handed the very entry it belongs to. Booking a finished download against the
-    /// id alone is wrong: a download can outlive the entry that started it – the emote is marked
-    /// unavailable while it is still in flight, or it is evicted and asked for again – and its bytes
-    /// would then be charged to whatever entry holds the id by the time it lands. The budget would
-    /// drift away from what is actually cached, in either direction, and never come back.</para>
+    /// <para>An object rather than a bare <see cref="Lazy{T}"/> so a finished download can be booked
+    /// against the very entry that started it. A download can outlive its entry, and booking by id
+    /// would charge its bytes to whatever entry holds the id by the time it lands.</para>
     /// </summary>
     private sealed class Entry
     {
@@ -73,9 +69,8 @@ internal sealed class AnimatedEmoteLoader
     }
 
     /// <summary>
-    /// How many entries the eviction queue is holding. Only the tests read it, and what they are
-    /// guarding is that it tracks the cache rather than the number of times the cache was written
-    /// to – which is what it used to do.
+    /// How many entries the eviction queue is holding. Read by the tests that guard it tracking the
+    /// cache rather than the number of times the cache was written to.
     /// </summary>
     internal int TrackedOrderEntries
     {
@@ -101,9 +96,8 @@ internal sealed class AnimatedEmoteLoader
     }
 
     /// <summary>
-    /// One chat GIF, fetched from the address Twitch handed over and cached under it. The address is
-    /// the identity here: there is no id we could rebuild it from, and two messages carrying the
-    /// same GIF carry the same URL, which is what makes the deduplication work.
+    /// One chat GIF, fetched from the address Twitch handed over and cached under it: two messages
+    /// carrying the same GIF carry the same URL.
     /// </summary>
     public Task<byte[]?> GetGifAsync(string url, CancellationToken cancellationToken = default)
     {
@@ -190,9 +184,8 @@ internal sealed class AnimatedEmoteLoader
         await using Stream source = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
         byte[] bytes = await ReadWithLimitAsync(source, _maxAnimationBytes).ConfigureAwait(false);
         byte[]? animation = HasGifHeader(bytes) ? bytes : null;
-        // Now that the size is known the byte ceiling can be applied. Anything this download pushed
-        // over the limit goes, oldest first – possibly including this one, which is the right
-        // answer: it has already been handed to the caller and only the cache copy is dropped.
+        // With the size known the byte ceiling applies. Whatever this download pushed over the limit
+        // is evicted, oldest first – possibly this one, which the caller receives all the same.
         RecordSize(key, entry, animation?.Length ?? 0);
         return animation;
     }
@@ -223,16 +216,15 @@ internal sealed class AnimatedEmoteLoader
     }
 
     /// <summary>
-    /// Books a finished download against the entry that started it. The identity check is the whole
-    /// point: this runs on a continuation, so the entry may have been evicted or replaced while the
-    /// bytes were on the wire – by a decode failure marking the emote unavailable, or by a retry
-    /// after a transient error. Charging those bytes to whoever holds the id now would leave the
-    /// budget counting an animation the cache is not holding, and it would never be given back.
+    /// Books a finished download against the entry that started it, if that entry is the current
+    /// one for its id.
     /// </summary>
     private void RecordSize(string emoteId, Entry entry, int size)
     {
         lock (_cacheLock)
         {
+            // The entry may have been evicted or replaced while the bytes were on the wire. Charging
+            // them to whoever holds the id by then would count an animation the cache does not hold.
             if (!IsCurrent((emoteId, entry))) return;
             _cachedBytes += size - entry.Size;
             entry.Size = size;
@@ -255,15 +247,13 @@ internal sealed class AnimatedEmoteLoader
     }
 
     /// <summary>
-    /// Makes room, and – just as importantly – keeps <see cref="_insertionOrder"/> from growing on
-    /// its own. The queue holds one entry per insertion where the cache holds one per id, so every
-    /// eviction by <see cref="EvictIfCurrent"/> and every repeated <see cref="MarkUnavailable"/>
-    /// leaves an entry in here that no longer names anything. Those used to be dropped only while
-    /// the cache was full, which meant a loader that never filled up – the ordinary case, a channel
-    /// with a few dozen emotes – grew a queue that never shrank.
+    /// Evicts down to the ceilings, and drops the entries in <see cref="_insertionOrder"/> that
+    /// <see cref="EvictIfCurrent"/> and repeated <see cref="MarkUnavailable"/> calls left stale.
     /// </summary>
     private void TrimCache()
     {
+        // On every trim, not only when the cache is full: a loader that never fills up – a channel
+        // with a few dozen emotes – would otherwise grow the queue without bound.
         DropStaleOrder();
         while ((_cache.Count > MaxCacheEntries || _cachedBytes > _maxCacheBytes)
                && _insertionOrder.TryDequeue(out (string Id, Entry Entry) oldest))
@@ -272,9 +262,8 @@ internal sealed class AnimatedEmoteLoader
             DropStaleOrder();
         }
 
-        // A stale entry sitting behind a current one is only reached once that current one is
-        // itself replaced, which happens in every pattern worth worrying about but is not something
-        // the head drain above can promise. One filtering pass settles it outright.
+        // The head drain cannot reach a stale entry sitting behind a current one, so an oversized
+        // queue gets one filtering pass.
         if (_insertionOrder.Count > MaxCacheEntries * 2) CompactOrder();
     }
 

@@ -21,15 +21,13 @@ let nextDuetAt = Date.now() + 12000;
 const EDGE = 10;
 const BASE_SIZE = 90;
 
-/* ------------------------------------------------------------------ transport */
+/* Transport */
 
 let socket = null;
 let reconnectDelay = 1000;
 
-/* view=pets is how the app tells this page apart from a dock somebody left open in a browser tab.
-   It decides two things on the server: this page gets a greeting cut to the pets instead of the
-   whole chat history, and a redemption that can pay back knows whether anyone is going to see the
-   pet it bought. */
+/* view=pets tells the app this is the pets overlay rather than a dock: the greeting is cut to the
+   pets, and a refundable redemption knows whether anyone will see the pet it bought. */
 function connect() {
   socket = new WebSocket(`ws://${location.host}/ws?view=pets&key=${encodeURIComponent(KEY)}`);
   socket.onopen = () => { reconnectDelay = 1000; };
@@ -41,11 +39,8 @@ function connect() {
   socket.onerror = () => socket.close();
 }
 
-/* The receipt for one pet. Sent once it is in the DOM, so the app can tell a pet that was drawn
-   from one it only sent: a browser source that failed to come up in OBS accepts the frame and
-   renders nothing, and the viewer who paid for it deserves their points back rather than an empty
-   lawn. Sent on a best effort – a socket that closed between the frame and here says the same
-   thing by being gone. */
+/* Tells the app a pet is in the DOM, so it can refund one nobody saw: a browser source that failed
+   to come up accepts the frame and renders nothing. Best effort; a closed socket says the same. */
 function reportShown(id) {
   if (!socket || socket.readyState !== WebSocket.OPEN) return;
   try { socket.send(JSON.stringify({ type: "petShown", id })); } catch { /* the reconnect answers for it */ }
@@ -75,9 +70,8 @@ function handle(frame) {
   // Chat frames from the shared socket are someone else's business.
 }
 
-/* The streamer's animation speed, as a multiplier. Read at the moment it is needed rather than
-   cached on each pet: the slider is meant to be dragged while watching the lawn, and a pet already
-   walking should change pace with it rather than keep the speed it spawned under. */
+/* The streamer's animation speed, as a multiplier. Read when needed rather than cached per pet,
+   so a pet already walking follows the slider. */
 function animationSpeed() {
   const speed = settings.animationSpeed;
   return speed > 0 ? speed : 1;
@@ -87,14 +81,13 @@ function applySettings(next) {
   if (!next) return;
   settings = next;
   stage.style.setProperty("--pet-scale", settings.scale);
-  // SVG pets have no frames to step; pets.css animates them, and this is how the same slider
-  // reaches those durations. A spritesheet pet ignores it – its pace is spriteFrameAt's business.
+  // SVG pets are animated by pets.css, which reads the speed from this property. Spritesheet pets
+  // are paced by spriteFrameAt.
   stage.style.setProperty("--pet-anim-speed", animationSpeed());
   stage.classList.toggle("disabled", !settings.enabled);
   stage.classList.toggle("hide-names", settings.showNames === false);
   stage.classList.toggle("rarity-fx", settings.rarityEffects !== false);
-  // A pet already on the lawn when the streamer changes their mind gets its full moment again,
-  // rather than sitting there faded because it happened to arrive before the change.
+  // Pets already on the lawn get their full rarity moment again under the changed settings.
   for (const pet of pets.values()) armRarityFade(pet);
 }
 
@@ -111,9 +104,8 @@ function applyCatalog(list) {
   for (const pet of pets.values()) applyBody(pet);
 }
 
-/* The server list is the truth: drop pets it no longer knows, add the ones it does. Every pet that
-   ends up on screen is reported, this time included: a reload in OBS lands here, and a pet that
-   came back deserves the same receipt as one that arrived fresh. */
+/* The server list is the truth: drop pets it no longer knows, add the ones it does. Every pet on
+   screen is reported, including ones that came back after an OBS reload. */
 function syncPets(list) {
   const alive = new Set(list.map((p) => p.id));
   for (const id of [...pets.keys()]) if (!alive.has(id)) removePet(id, false);
@@ -129,12 +121,11 @@ function syncPets(list) {
   }
 }
 
-/* ------------------------------------------------------------------ the drawings
+/* The drawings
 
-   Every pet is a folder in the user's pets folder, so the bodies are fetched from the app rather
-   than kept here. A body is a plain SVG in a 100×100 box that shares a part contract with the CSS:
-   .eye blinks, .glow pulses, .arm-left/.arm-right swing and wave, .leg-a/.leg-b walk. A pet
-   without legs simply bobs along instead. */
+   Every pet is a folder in the user's pets folder, so bodies are fetched from the app. A body is a
+   plain SVG in a 100×100 box that shares a part contract with the CSS: .eye blinks, .glow pulses,
+   .arm-left/.arm-right swing and wave, .leg-a/.leg-b walk. A pet without legs bobs along instead. */
 
 const bodies = new Map(); // species id -> svg markup
 const pending = new Map(); // species id -> in-flight fetch
@@ -181,13 +172,10 @@ function applyRarity(pet) {
   armRarityFade(pet);
 }
 
-/* The aura is for the moment a pet arrives; six of them glowing for five minutes each is a lawn
-   competing with the game behind it. So it is given a short while and then fades out, and what is
-   left is the creature. Zero seconds means it stays lit, for a channel that wants it that way.
+/* The aura marks a pet's arrival and fades after a short while; zero seconds keeps it lit.
 
-   Timed from now rather than from the redemption: a pet is re-drawn on a browser source reload and
-   after a pets folder edit, and both are the creature arriving again as far as anyone watching is
-   concerned. */
+   Timed from now rather than from the redemption: a browser source reload or a pets folder edit
+   redraws the pet, which counts as arriving again. */
 function armRarityFade(pet) {
   clearTimeout(pet.fadeTimer);
   pet.fadeTimer = 0;
@@ -206,7 +194,7 @@ function accentFor(pet) {
   return `hsl(${hash % 360}, 78%, 62%)`;
 }
 
-/* ------------------------------------------------------------------ lifecycle */
+/* Lifecycle */
 
 function petWidth() { return BASE_SIZE * (settings.scale || 1); }
 function clampX(x) { return Math.min(Math.max(x, EDGE), Math.max(EDGE, innerWidth - petWidth() - EDGE)); }
@@ -226,16 +214,14 @@ function applyBody(pet) {
   pet.lookAngle = null;
 
   if (def && def.kind === "sprite" && def.spriteUrl) {
-    // The generation in the URL is what makes "Ladda om pets" reach an edited sheet: the same
-    // address again could hand back the image the browser already holds.
+    // The generation in the URL makes "Ladda om pets" bypass the browser's cached sheet.
     const url = `${def.spriteUrl}?g=${generation}`;
     wrap.innerHTML = `<div class="sprite" style="background-image:url('${url}')"></div>`;
     pet.spriteEl = wrap.querySelector(".sprite");
     pet.spriteFps = def.fps || 10;
     pet.spriteRows = def.spriteVersion === 2 ? 11 : 9;
     pet.spriteEl.style.backgroundSize = `800% ${pet.spriteRows * 100}%`;
-    // The sheen's mask is the sheet itself; pets.html only ever reads these, so setting them for
-    // every sprite pet costs nothing and keeps the rarity a matter of one class.
+    // The sheen's mask is the sheet itself. Set for every sprite pet; only the rarity class uses it.
     pet.spriteEl.style.setProperty("--sprite-mask", `url('${url}')`);
     pet.spriteEl.style.setProperty("--sprite-size", `800% ${pet.spriteRows * 100}%`);
     pet.el.classList.add("is-sprite");
@@ -341,7 +327,7 @@ function removePet(id, withGoodbye) {
   setTimeout(() => pet.el.remove(), 950);
 }
 
-/* ------------------------------------------------------------------ behaviors */
+/* Behaviors */
 
 function showBubble(pet, text) {
   pet.bubble.textContent = text;
@@ -350,23 +336,16 @@ function showBubble(pet, text) {
   pet.bubble.classList.add("show");
 }
 
-/* A behavior worn for as long as it takes, then taken off. The written duration is what an SVG pet
-   gets, since its stylesheet keeps its own time; a sprite pet is measured instead, so the class
-   comes off on the frame the animation ends rather than a fixed number of milliseconds later that
-   cut a wave off in the middle of its fourth pass. */
+/* Adds a behavior class and removes it when the animation is done: after the written duration for
+   an SVG pet, after one measured pass of the row for a sprite pet. */
 function playClass(pet, name, ms) {
   pet.el.classList.add(name);
   setTimeout(() => pet.el.classList.remove(name), playMs(pet, name, ms));
 }
 
-/* One pass of the row this pet's own sheet carries. A pet with no sheet, a behavior that loops, or
-   a row this sheet left empty all fall back to the written duration – the last because an empty row
-   is drawn as idle, which has no ending to wait for.
-
-   The fallback is scaled too. For an SVG pet it is the length of the matching animation in pets.css,
-   and that stylesheet now divides its durations by the same setting: a wave whose class came off on
-   the written 1600 ms while the arm was still swinging through a slowed-down animation would be cut
-   off mid-gesture. */
+/* How long one pass of the behavior takes for this pet. A pet with no sheet, a looping behavior or
+   a row the sheet left empty falls back to the written duration, scaled by the animation speed
+   because pets.css divides its durations by the same setting. */
 function playMs(pet, name, fallbackMs) {
   const behavior = SPRITE_BEHAVIOR_BY_CLASS.get(name);
   const meta = pet.spriteEl ? spriteMeta.get(pet.species) : null;
@@ -412,9 +391,8 @@ function decide(pet) {
   setTimeout(() => { if (!pet.removed && !pet.busy) pet.el.classList.remove("sleep"); }, wake - Date.now());
 }
 
-/* A glance or two: usually at a neighbour when one is around, otherwise at nothing in
-   particular. Purely a matter of which look frame is shown, so anything real – a walk, a duet –
-   simply plays over it. */
+/* A glance or two, usually at a neighbour when one is around. Only changes which look frame is
+   shown, so a walk or a duet simply plays over it. */
 async function lookAround(pet) {
   pet.nextDecideAt = Date.now() + 60000; // released below
   const glances = 1 + Math.floor(Math.random() * 2);
@@ -445,7 +423,7 @@ function angleTo(pet, other) {
   return dx >= 0 ? 90 + tilt : 270 - tilt;
 }
 
-/* ------------------------------------------------------------------ duets */
+/* Duets */
 
 async function runDuet(a, b) {
   duetActive = true;
@@ -553,7 +531,7 @@ function sparkle(x, y, emojis) {
   stage.appendChild(span);
 }
 
-/* ------------------------------------------------------------------ sprite frames
+/* Sprite frames
 
    Hatch-pet spritesheets carry 8 columns of animation frames per row. Version 1 has nine rows –
    idle, running-right, running-left, waving, jumping, failed, waiting, running, review – and
@@ -561,9 +539,8 @@ function sparkle(x, y, emojis) {
    straight up and the angle growing clockwise. A short animation leaves the rest of its row
    empty, so the true frame count per row is measured from the pixels, once per species.
 
-   How fast a row plays and whether it plays once are the behavior's rather than the sheet's, and
-   live in SPRITE_BEHAVIORS next to the row numbers – the inspector plays them by the same
-   arithmetic, which is the only reason it can be trusted to show what the lawn will do. */
+   Pace and one-shot playback belong to the behavior and live in SPRITE_BEHAVIORS, which the
+   inspector shares. */
 
 const spriteMeta = new Map(); // species id -> { rows, frames per row, lookUsed per direction, hasLook }
 
@@ -594,16 +571,14 @@ function updateSprite(pet, nowMs) {
   }
   const rows = pet.spriteRows;
   let behavior = spriteBehaviorFor(pet.el.classList);
-  // A behavior the pet was not playing a moment ago starts now. Watching the classes rather than
-  // being told is what keeps every corner that sets one – a walk, a duet, a nap – from having to
-  // remember to say so, and it tells a dance from a fight, which share a row but not an ending.
+  // A behavior starts when its class appears. Watching the classes means no caller has to announce
+  // it, and tells a dance from a fight, which share a row but not an ending.
   if (behavior !== pet.spriteBehavior) {
     pet.spriteBehavior = behavior;
     pet.spriteStart = nowMs;
   }
   let row = spriteRowFor(pet.el.classList, pet.facingLeft);
-  // An animation this sheet does not carry falls back to idle – and to idle's endless pace with it,
-  // since there is no single pass of a row that was never drawn.
+  // An animation this sheet does not carry falls back to idle, pace included.
   if (meta && !meta.frames[row]) { row = 0; behavior = IDLE_BEHAVIOR; }
   let frame = null;
 
@@ -621,32 +596,27 @@ function updateSprite(pet, nowMs) {
   pet.spriteFrame = frame;
   const position = `${(frame * 100) / 7}% ${(row * 100) / (rows - 1)}%`;
   pet.spriteEl.style.backgroundPosition = position;
-  // The sheen is masked with the cell on screen, so the mask has to follow the animation frame by
-  // frame – otherwise the light lands on the pose the pet was in when it spawned.
+  // The sheen is masked with the cell on screen, so the mask follows the animation frame by frame.
   if (pet.shimmer) pet.spriteEl.style.setProperty("--sprite-pos", position);
 }
 
-/* ------------------------------------------------------------------ lyckosnurren
+/* Lyckosnurren
 
    A reel of portraits that slides in from one edge, loops through everything winnable, slows down
-   and lands on the winner. Pure theatre: the app drew the winner and wrote it to disk before this
-   frame was ever sent, so nothing here can change who won – and nothing here failing can cost
-   anybody their prize.
+   and lands on the winner. Theatre only: the app drew and saved the winner before sending the
+   frame, so nothing here can change or lose the prize.
 
-   The portrait is the first cell of a hatch-pet sheet (row 0, column 0), which is the standing
-   still frame every sheet carries. SVG pets draw their whole body instead. */
+   The portrait is the first cell of a hatch-pet sheet (row 0, column 0), the standing still frame
+   every sheet carries. SVG pets draw their whole body instead. */
 
 let spinBusy = false;
 
-/* Spins waiting for the stage. The app sends one at a time and waits for the curtain call, so this
-   normally holds nothing – but several overlays share one broadcast, and a slower one can still be
-   finishing when the faster one's acknowledgement has already released the next spin. Queued rather
-   than dropped: a dropped spin is one nobody ever sees and nobody ever answers for, which leaves the
-   app waiting out its timeout for a reel that was thrown away. */
+/* Spins waiting for the stage. The app sends one at a time, but several overlays share one
+   broadcast and a slower one can still be playing when the next spin is released. Queued rather
+   than dropped, so every spin is played and acknowledged. */
 const spinQueue = [];
 
-/* How many times the reel passes the full list before the winner comes up. Enough that the
-   individual pets stop being readable in the middle of the spin, which is what makes it feel fast. */
+/* Passes of the full list before the winner comes up; enough that the pets blur mid-spin. */
 const SPIN_LOOPS = 6;
 
 function reportSpinDone(id) {
@@ -654,8 +624,7 @@ function reportSpinDone(id) {
   try { socket.send(JSON.stringify({ type: "spinDone", id })); } catch { /* the app's own timeout answers for it */ }
 }
 
-/* One portrait cell. Sprite pets are the sheet's first frame, held still; anything else falls back
-   to its drawing, so a channel mixing SVG pets and spritesheets still gets a full reel. */
+/* One portrait cell: a sprite pet's first frame held still, or an SVG pet's drawing. */
 function portrait(species) {
   const cell = document.createElement("div");
   const def = catalog.get(species);
@@ -679,9 +648,8 @@ function portrait(species) {
   return cell;
 }
 
-/* The sheets are fetched before the reel starts rather than during it: a portrait arriving mid-spin
-   is a blank cell going past at speed, which reads as a broken overlay. Given up on after a moment
-   so a slow or missing file delays the show instead of cancelling it. */
+/* Fetches the sheets before the reel starts, so no blank cell goes past mid-spin. Gives up after
+   a moment so a slow or missing file only delays the show. */
 function preload(speciesList) {
   const jobs = speciesList.map((species) => {
     const def = catalog.get(species);
@@ -722,15 +690,14 @@ async function playSpin(spin) {
 
     await preload(list);
 
-    // The strip is the whole list a few times over, with the winner as the final cell – so landing
-    // is simply a matter of stopping on the last one, and the reel can never disagree with the app.
+    // The strip is the list a few times over with the winner as the final cell, so the reel stops on
+    // the last one and cannot disagree with the app.
     const cells = [];
     for (let loop = 0; loop < SPIN_LOOPS; loop++) for (const id of list) cells.push(id);
     cells.push(spin.winnerPetId);
     for (const id of cells) reel.appendChild(portrait(id));
 
-    // Sliding in and spinning are two different moments; without the gap the reel appears to be
-    // already running as it arrives.
+    // A gap between sliding in and spinning, so the reel does not arrive already running.
     await nextFrame();
     panel.classList.add("in");
     await sleep(700);
@@ -745,22 +712,20 @@ async function playSpin(spin) {
 
     panel.classList.remove("spinning");
     panel.classList.add("landed", spin.duplicate ? "is-duplicate" : "is-win");
-    // The window lights up in the winner's own tier, so a legendary landing looks like more than
-    // an ordinary one did.
+    // The window lights up in the winner's rarity tier.
     const tier = RARITY_CLASSES[(catalog.get(spin.winnerPetId)?.rarity || "").toLowerCase()];
     if (tier) panel.classList.add(tier);
     const winner = panel.querySelector(".spin-winner");
     winner.textContent = spin.winnerName || "";
-    // Confetti for a fresh win; a duplicate is good news of a quieter kind, and its story carries
-    // on in chat rather than here.
+    // Confetti for a fresh win only; a duplicate's story carries on in chat.
     if (!spin.duplicate) celebrate(panel);
     await sleep(2600);
 
     panel.classList.remove("in");
     await sleep(700);
   } catch {
-    // Whatever went wrong on stage, the prize is already the viewer's. Falling through to the
-    // curtain call is what keeps one bad spin from stopping every spin after it.
+    // The prize is already the viewer's. Falling through to the curtain call keeps one bad spin
+    // from blocking the ones after it.
   } finally {
     panel.remove();
     spinBusy = false;
@@ -769,8 +734,7 @@ async function playSpin(spin) {
   }
 }
 
-/* Confetti over the panel itself rather than the whole screen: this is one viewer's moment in a
-   corner of the overlay, not a takeover of the stream. */
+/* Confetti over the panel only, not the whole screen. */
 function celebrate(panel) {
   const colors = ["#FFD166", "#EF476F", "#06D6A0", "#7EF0FF", "#C77DFF"];
   for (let i = 0; i < 26; i++) {
@@ -788,12 +752,11 @@ function celebrate(panel) {
 
 function nextFrame() { return new Promise((resolve) => requestAnimationFrame(() => resolve())); }
 
-/* ------------------------------------------------------------------ preview
+/* Preview
 
-   pet-preview.html runs this same file with one species named in its address, so the creature it
-   shows is drawn, sized and paced exactly as on stream. It never opens the socket: nothing it does
-   reaches the app, the real lawn or the viewers, and the settings and the catalog are read once over
-   HTTP the way the inspector reads them. */
+   pet-preview.html runs this file with one species named in its address, so the creature is drawn,
+   sized and paced exactly as on stream. It never opens the socket; settings and catalog are read
+   once over HTTP. */
 
 const PREVIEW_ID = "preview";
 let previewReturning = false;
@@ -827,8 +790,7 @@ function spawnPreview() {
   if (def) spawnPet({ id: PREVIEW_ID, name: def.name, species: def.id, expiresAt: Infinity });
 }
 
-/* The page's own button: the pet leaves the way it leaves the lawn and arrives again, so the
-   entrance can be watched as often as it takes. */
+/* Makes the pet leave and arrive again, so the entrance can be watched repeatedly. */
 function respawnPreview() {
   if (previewReturning) return;
   if (!pets.has(PREVIEW_ID)) { spawnPreview(); return; }
@@ -860,7 +822,7 @@ function spawnBuddy() {
   setTimeout(arrive, 1100);
 }
 
-/* ------------------------------------------------------------------ main loop */
+/* Main loop */
 
 let lastTick = performance.now();
 
@@ -883,15 +845,11 @@ function tick(now) {
     if (pet.targetX !== null) {
       const dir = Math.sign(pet.targetX - pet.x);
       setFacing(pet, dir < 0);
-      // Ground speed follows both sliders for the same reason: a walk cycle that steps at one rate
-      // while the creature slides across the lawn at another has its feet skating. Size already
-      // scales it – a pet drawn twice as big covers twice the ground per step – and the animation
-      // speed does now too, so the walk stays locked to the row that draws it.
+      // Ground speed follows both size and animation speed, so the feet do not skate against the walk
+      // cycle.
       //
-      // The step is stopped at the target rather than taken past it. A big pet, a fast setting and
-      // a dropped frame together are enough to cover the last few pixels and overshoot, and an
-      // overshoot flips the direction: the creature would tick back and forth across its target
-      // forever, never near enough to finish, and the walk that is waiting on it would never end.
+      // The step is clamped at the target: an overshoot would flip the direction and the pet would tick
+      // back and forth across its target without ever finishing the walk.
       const step = pet.speed * (settings.scale || 1) * animationSpeed() * dt;
       pet.x = dir < 0 ? Math.max(pet.targetX, pet.x - step) : Math.min(pet.targetX, pet.x + step);
       pet.el.style.left = `${pet.x}px`;

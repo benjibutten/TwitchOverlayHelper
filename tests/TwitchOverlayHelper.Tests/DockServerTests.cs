@@ -55,8 +55,7 @@ public sealed class DockServerTests
         var petCatalog = new PetCatalog(Path.Combine(Path.GetTempPath(), "toh-tests-pets"));
         var nicknames = new NicknameBook();
         var hub = new ChatHub(settings, new TwitchBadgeCatalog(), session, new PetRegistry(), petCatalog, nicknames);
-        // The same wiring the app does: the book is what a nickname change is announced from, so
-        // every open dock hears about one made through any of them.
+        // Wired as in the app: a nickname change made through one dock reaches every open dock.
         nicknames.Changed += hub.PublishNickname;
         var api = new TwitchApiClient(new HttpClient(), session);
         var server = new DockServer(new DockServerContext
@@ -107,10 +106,8 @@ public sealed class DockServerTests
     }
 
     /// <summary>
-    /// The pet inspector is its own page, but it draws the creature with the overlay's stylesheet
-    /// and the overlay's sprite arithmetic – that shared pair is the only reason to trust what it
-    /// shows. If either file stopped being served, the inspector would quietly become a second
-    /// opinion instead of the same one.
+    /// The pet inspector draws the creature with the overlay's stylesheet and sprite arithmetic, so
+    /// both files have to be served to it.
     /// </summary>
     [Fact]
     public async Task ServesTheInspectorAndTheFilesItSharesWithTheOverlay()
@@ -453,9 +450,8 @@ public sealed class DockServerTests
         client.Dispose();
     }
 
-    // A train belongs to the channel it ran in; carrying it into the next one would put a strip over
-    // someone else's chat for a train they were never part of. It goes even while the sample lines
-    // are still up, because a train needs nobody to have said anything to be running.
+    // A train belongs to the channel it ran in. It goes even while the sample lines are up, because
+    // a train needs nobody to have said anything to be running.
     [Fact]
     public async Task ForgetsTheHypeTrainWhenSwitchingChannels()
     {
@@ -475,9 +471,8 @@ public sealed class DockServerTests
     }
 
     /// <summary>
-    /// The strip is only ever taken down by a frame that says so. It used to ride along on the clear
-    /// frame, which also fires when the first real line replaces the sample lines – so a train
-    /// running in a quiet room was wiped off the strip by a stranger's first "hej".
+    /// The strip is only taken down by a frame that says so. The clear frame also fires when the
+    /// first real line replaces the sample lines, and must not wipe a train running in a quiet room.
     /// </summary>
     [Fact]
     public async Task LeavesTheHypeTrainAloneWhenTheFirstRealLineReplacesTheSamples()
@@ -500,9 +495,8 @@ public sealed class DockServerTests
         client.Dispose();
     }
 
-    // Losing the connection means nothing can tell us the train ended, so the docks that are open
-    // right now have to hear that the strip is over – waiting for its deadline would leave it
-    // claiming a train is running long after we stopped listening.
+    // Losing the connection means nothing can tell us the train ended, so the open docks have to
+    // hear that the strip is over rather than wait for its deadline.
     [Fact]
     public async Task TellsOpenDocksWhenThereIsNoTrainAnyMore()
     {
@@ -565,7 +559,7 @@ public sealed class DockServerTests
         client.Dispose();
     }
 
-    // ------------------------------------------------------------- the stream overlay
+    // The stream overlay
 
     [Fact]
     public async Task ServesTheStreamOverlayAndTheRendererBothPagesShare()
@@ -610,9 +604,8 @@ public sealed class DockServerTests
     }
 
     /// <summary>
-    /// Deeper than the overlay draws, because the page still has to throw away bots, commands and
-    /// switched-off cards: a quiet stretch that ended in bot chatter must not open onto an empty
-    /// column with good lines sitting just above the cut. Deep is not the whole timeline either.
+    /// Deeper than the overlay draws, because the page still throws away bots, commands and
+    /// switched-off cards and must not open onto an empty column. Not the whole timeline either.
     /// </summary>
     [Fact]
     public async Task StreamHelloCarriesMoreThanTheOverlayDrawsButNotEverything()
@@ -636,14 +629,8 @@ public sealed class DockServerTests
     }
 
     /// <summary>
-    /// The preview lines are the only thing the stream overlay has to aim at while nothing is
-    /// connected, which is exactly when somebody is dragging the browser source into place in OBS.
-    ///
-    /// <para>They used to arrive as ordinary chat, every one of them carrying the moment the app
-    /// started – and the page drops a replayed line once it is older than the window it would
-    /// honestly replay. A few minutes in, every reload of the source therefore met an empty page,
-    /// and only restarting the whole app brought the lines back. Saying what they are is what lets
-    /// the page leave them alone.</para>
+    /// The preview lines are all the stream overlay has to aim at while nothing is connected. They
+    /// are marked as samples so the page does not drop them as replayed lines that have grown too old.
     /// </summary>
     [Fact]
     public async Task TheStreamOverlayIsToldWhenItsLinesAreThePreview()
@@ -661,9 +648,8 @@ public sealed class DockServerTests
     }
 
     /// <summary>
-    /// Joining the channel is what ends the preview, not the first line somebody happens to write.
-    /// A quiet first quarter of an hour is an ordinary way for a stream to start, and until this the
-    /// invented lines sat in front of the viewers for the whole of it.
+    /// Joining the channel is what ends the preview, not the first line somebody writes: a stream
+    /// can start with a long quiet stretch.
     /// </summary>
     [Fact]
     public async Task ConnectingToTheChannelTakesThePreviewDown()
@@ -727,7 +713,6 @@ public sealed class DockServerTests
                 hub.PublishMessage(new ChatMessage("1", "Kajsa_92", "hej", null, [], false, false, DateTimeOffset.Now));
             }, "stream");
 
-            // Had the nickname reached this socket it would be sitting here instead of the message.
             Assert.Contains("\"type\":\"message\"", frames[0]);
             Assert.DoesNotContain("nickname", frames[0]);
         }
@@ -779,9 +764,7 @@ public sealed class DockServerTests
         $"ws://127.0.0.1:{settings.DockServerPort}/ws?key={settings.DockAccessKey}"
         + (view.Length > 0 ? $"&view={view}" : string.Empty);
 
-    // ------------------------------------------------------------- the pet overlay
-    //
-    // The pet lawn is the one view that has to answer "is anybody going to see this", because a
+    // The pet overlay: the one view that has to answer "is anybody going to see this", because a
     // reward that can pay back refuses rather than spend a viewer's points on an empty screen.
 
     [Fact]
@@ -807,9 +790,8 @@ public sealed class DockServerTests
     }
 
     /// <summary>
-    /// The overlay draws the rarity aura from the greeting alone – it never asks a second time – so
-    /// a species without a tier in the catalogue, or a toggle and a fade time that never reach the
-    /// lawn, is a legendary pet walking around looking like every other one.
+    /// The overlay draws the rarity aura from the greeting alone, so the tier, the toggle and the
+    /// fade time all have to be in it.
     /// </summary>
     [Fact]
     public async Task TheGreetingCarriesEverySpeciesRarityAndWhetherTheLawnShouldShowIt()
@@ -902,9 +884,8 @@ public sealed class DockServerTests
             await lawn.ReceiveAsync(buffer, timeout.Token);
             await SendAsync(lawn, "inte ens json", timeout.Token);
             await SendAsync(lawn, """{"type":"nagot-annat","id":"viewer-8"}""", timeout.Token);
-            // Well-formed JSON of the wrong shape. Reading these without checking the kind first
-            // throws InvalidOperationException, which is not a JsonException and would travel
-            // straight out of the socket loop – a browser source could end its own connection.
+            // Well-formed JSON of the wrong shape: reading it without checking the kind first throws
+            // InvalidOperationException, which is not a JsonException and would end the socket loop.
             await SendAsync(lawn, """{"type":1}""", timeout.Token);
             await SendAsync(lawn, """{"type":{"petShown":true},"id":"viewer-8"}""", timeout.Token);
             await SendAsync(lawn, """{"type":"petShown","id":17}""", timeout.Token);
@@ -936,9 +917,8 @@ public sealed class DockServerTests
         client.Dispose();
     }
 
-    // The lawn reads no chat, and being sent it is not free: its outbound queue is bounded, and a
-    // client that fills one is dropped. During a raid that would close the pet socket – which is
-    // now the thing that refunds every pet on screen.
+    // The lawn reads no chat, and being sent it is not free: its outbound queue is bounded and a
+    // client that fills one is dropped. A raid would close the pet socket and refund every pet on screen.
     [Fact]
     public async Task ThePetOverlayIsNotSentTheChat()
     {
@@ -964,8 +944,8 @@ public sealed class DockServerTests
         client.Dispose();
     }
 
-    // A lawn added as a browser source before the pet view existed connects as a dock. Narrowing
-    // the pet frames to the new view would leave it showing nothing at all.
+    // A lawn whose browser source URL names no view connects as a dock, and has to be sent the pet
+    // frames all the same.
     [Fact]
     public async Task APetOverlayConnectedAsADockStillGetsItsPets()
     {
@@ -994,17 +974,13 @@ public sealed class DockServerTests
         client.Dispose();
     }
 
-    // ------------------------------------------------------------- the reading page
-    //
-    // A browser source added to the scene so OBS has somewhere to mix the readings. Its answer at the
-    // end of a clip is what releases the next one in the queue – and, on the channel points route, the
-    // only evidence the reading was delivered at all.
+    // The reading page: a browser source OBS mixes the readings through. Its answer at the end of a
+    // clip releases the next one in the queue and, on the channel points route, is the only evidence
+    // the reading was delivered.
 
     /// <summary>
-    /// A reading page that goes away mid-clip cannot report anything: its report would travel over the
-    /// socket that has just closed, and a source taken out of the scene never runs another line of
-    /// script. So the app has to notice for itself – otherwise the queue stands still for the whole
-    /// five minute timeout, and the viewer waits it out for points they were going to get anyway.
+    /// A reading page that goes away mid-clip cannot report it, so the app has to notice the closed
+    /// socket itself rather than hold the queue for the whole five minute timeout.
     /// </summary>
     [Fact]
     public async Task AReadingPageThatLeavesMidClipDoesNotHoldTheQueue()
@@ -1036,9 +1012,8 @@ public sealed class DockServerTests
     }
 
     /// <summary>
-    /// The reading page draws a card as well as playing sound, so it is now handed something when it
-    /// connects. Still only its own appearance: the chat history, who is logged in and the nicknames
-    /// are the streamer's business, and this page sits on the broadcast machine.
+    /// The reading page is handed its own appearance when it connects and nothing else: the chat
+    /// history, who is logged in and the nicknames stay off the broadcast machine.
     /// </summary>
     [Fact]
     public async Task TheReadingPageIsToldWhatTheCardShouldLookLike()
@@ -1060,9 +1035,8 @@ public sealed class DockServerTests
     }
 
     /// <summary>
-    /// With no card, the page has nothing that could show a name or a message – so it is not sent
-    /// either. A stranger's words reaching a browser source on the broadcast machine for no reason at
-    /// all is the sort of thing that is only ever noticed after it has gone out.
+    /// With no card the page has nothing that could show a name or a message, so it is not sent
+    /// either.
     /// </summary>
     [Fact]
     public async Task AClipCarriesTheViewersWordsOnlyWhenThereIsACardToDrawThemOn()
@@ -1173,9 +1147,8 @@ public sealed class DockServerTests
     }
 
     /// <summary>
-    /// The earlier-sitting button. It goes through the app rather than hiding nodes in the browser
-    /// precisely so that this happens: the timeline itself loses the lines, which is what keeps them
-    /// off the overlay and out of the file that survives a restart.
+    /// The earlier-sitting button goes through the app so the timeline itself loses the lines, which
+    /// keeps them off the overlay and out of the file that survives a restart.
     /// </summary>
     [Fact]
     public async Task HidesTheEarlierSittingForEveryDock()

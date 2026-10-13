@@ -5,13 +5,11 @@ using TwitchOverlayHelper.Storage;
 namespace TwitchOverlayHelper.Diagnostics;
 
 /// <summary>
-/// The app's only log. Deliberately a plain text file rather than a logging framework: what it has
-/// to answer is "why did it disappear while she was live", and that question is asked hours later by
-/// someone reading the file in Notepad on another machine.
+/// The app's only log. A plain text file rather than a logging framework: it is read hours later,
+/// in Notepad, on another machine.
 ///
-/// <para>Nothing here may throw. A logger that takes the app down while reporting that the app is
-/// going down is worse than no logger at all, so every path swallows its own failures – a missing
-/// line is a cost worth paying, a crash inside the crash handler is not.</para>
+/// <para>Nothing here may throw. Every path swallows its own failures: a missing line is a cost
+/// worth paying, a crash inside the crash handler is not.</para>
 /// </summary>
 public static class AppLog
 {
@@ -59,8 +57,7 @@ public static class AppLog
 
     /// <summary>
     /// Marks the start of a run and clears out old files. The version and the process id are on the
-    /// first line so two runs in the same file can be told apart – which is exactly the case when
-    /// the app died and was started again, and the whole question is where the first run stopped.
+    /// first line so two runs in the same file can be told apart.
     /// </summary>
     public static void StartSession()
     {

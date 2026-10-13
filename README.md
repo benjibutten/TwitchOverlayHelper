@@ -1,367 +1,74 @@
 # Twitch Overlay Helper
 
-En Windows-app som läser Twitch-chatten och visar den på tre ställen: som en stor, lugn och klickigenom overlay ovanpå ett spel, som en dyslexianpassad chatt i OBS via en Custom Browser Dock, och som en genomskinlig chattruta på själva sändningen för tittarna. Gränssnittet prioriterar låg visuell trängsel, tydlig avsändare, generöst radavstånd och få beslut per vy.
+En Windows-app som läser Twitch-chatten och visar den där du behöver den: som en overlay ovanpå spelet, som en lättläst dock i OBS och som en genomskinlig chattruta på sändningen. Den är byggd för att vara lätt att läsa, även med dyslexi: stor text, generöst radavstånd och få val per vy.
 
-## Chatt-dock i OBS
+[**Hämta för Windows**](https://github.com/benjibutten/TwitchOverlayHelper/releases/latest)
+· Windows x64 · fristående, ingen .NET-installation · Apache-2.0
 
-Appen kör en lokal webbserver som serverar en chatt byggd för läsbarhet. Adressen klistras in i OBS under **Vy → Dockor → Anpassade webbläsardockor**; den finns färdig att kopiera i appens inställningsfönster.
+## Vad den gör
 
-- Egna reglage för teckenstorlek, radavstånd, **teckenmellanrum och ordmellanrum** – de två sistnämnda hjälper mest vid dyslexi men saknas i Twitchs egen dock.
-- Fem lugna teman med gräddvit grund i stället för hård svartvit kontrast.
-- **Tempobroms** som håller igen hur snabbt nya meddelanden dyker upp, så de hinner läsas när chatten går varmt.
-- **Fastnålade mentions**: meddelanden till dig läggs i en remsa överst så frågor inte scrollar bort.
-- **Nåla fast för hand**: klicka på ett namn och nåla raden i remsan. Fungerar utan inloggning – nålen syns bara för dig. Är du inloggad med modbehörighet kan samma rad nålas i chatten så tittarna ser den.
-- **Chatten ligger kvar över en omstart**, och en avdelare i spalten låter dig dölja ett tidigare pass med en knapp. Se [Chatten ligger kvar](#chatten-ligger-kvar).
-- Länkar kortas till en `🔗 länk`-knapp, VERSALER dämpas och `!kommandon` tonas ner.
-- Paus, zebra-rader, namn på egen rad och val av typsnitt.
-- **Smeknamn**: klicka på ett namn och ge chattaren ett namn du känner igen. Det visas bredvid Twitch-namnet i både docken och overlayen. Se [Smeknamn på chattare](#smeknamn-på-chattare).
-- Moderering med stora knappar: klicka på ett namn för timeout, ban eller att ta bort meddelandet. Ban kräver bekräftelse och åtgärder går att ångra direkt i notisen.
-- Raid-väljare som listar de kanaler du följer som är live just nu.
-- Skrivfält för att svara i chatten, med **@-förslag** och **emote-väljare**. Se [Skriva i chatten](#skriva-i-chatten).
-- Docken innehåller inga inställningar – allt utseende styrs från appen under **Ändra chattens läsbarhet** och slår igenom direkt. Docken visar exempelmeddelanden innan chatten är ansluten, så det går att ställa in läsbarheten i lugn och ro.
+- **Overlay över spelet.** En transparent chattruta som ligger överst och släpper igenom musklick, med kantljus när en mod behöver dig. [Mer](docs/overlay.md)
+- **Chatt-dock i OBS.** Chatt med reglage för teckenmellanrum och ordmellanrum, tempobroms, fastnålade mentions, smeknamn, moderering och skrivfält. [Mer](docs/chatt.md)
+- **Chatt på streamen.** Samma chatt för tittarna som Browser Source, utan något privat. [Mer](docs/chatt.md#chatt-på-streamen)
+- **Händelsekort.** Subs, raids, belöningar, shoutouts, power-ups och hypetåg, med reglage per typ i varje vy. [Mer](docs/handelser.md)
+- **Pets och lyckosnurren.** Belöningar som släpper ut pets på skärmen och betalas tillbaka om peten aldrig syntes, och en snurr där tittare vinner pets att behålla. [Mer](docs/pets.md)
+- **Väntskärm med fajt.** Två karaktärer slåss medan streamen står still, och chatten röstar, hejar och helar. [Mer](docs/fajt.md)
+- **Uppläsning.** Svårlästa namn upplästa för dig, och meddelanden som tittare köpt med bits eller channel points upplästa i sändningen. [Mer](docs/upplasning.md)
+- **Chatbot.** Berättar för tittaren varför poängen kom tillbaka, och svarar på kommandon du skriver själv. [Mer](docs/chatbot.md)
 
-Moderering fungerar i alla kanaler där du är moderator, inte bara i din egen. Raid går däremot bara att starta från din egen kanal – Twitch tillåter inget annat – så raid-knappen döljs när du tittar på någon annans chatt.
-- Serverns adress innehåller en hemlig nyckel och är bunden till `127.0.0.1`, så den är varken nåbar från nätverket eller användbar för andra sidor på datorn.
+## Kom igång
 
-Moderering, raid och skrivfältet kräver inloggning; utan den fungerar docken som en ren läsvy.
+1. Hämta zip-filen från [senaste släppet](https://github.com/benjibutten/TwitchOverlayHelper/releases/latest), packa upp den i en mapp och starta `TwitchOverlayHelper.exe`.
+2. Skriv kanalnamnet eller klistra in en Twitch-länk och välj **Anslut**. Det fungerar utan inloggning.
+3. Välj **Redigera overlay**, placera rutan och välj **Lås overlay** så att klick går igenom till spelet.
+4. För OBS: kopiera adresserna under fliken **OBS-dock**. Docken läggs in under **Vy → Dockor → Anpassade webbläsardockor**, streamchatten som **Browser Source**.
 
-## Chatt på streamen
-
-Samma chatt en gång till, fast för tittarna: en genomskinlig sida som läggs in som **Browser Source** i OBS. Adressen finns att kopiera bredvid dockens, under fliken **OBS-dock**, och utseendet ställs in under **Ändra utseende på streamchatten**.
-
-Det är avsiktligt inte docken med bakgrunden bortskruvad. De två läses av olika personer på olika avstånd, och därför skiljer sig både vad som visas och hur:
-
-- **Ingenting privat följer med.** Smeknamn, moderering, inloggning, fastnålade meddelanden, uppläsningsknappen och anslutningsstatusen finns inte på sidan – och skickas inte ens dit. Sidan säger vid anslutningen vilken vy den är, och servern håller de bitarna kvar hos docken.
-- **Borttaget är borta.** Docken stryker över ett raderat meddelande så du ser att det hände; på sändningen försvinner det direkt, tillsammans med allt som ännu inte hunnit ritas ut.
-- `!kommandon` **döljs helt** i stället för att tonas ner, och du kan lista konton som aldrig får synas – chattbottarna är ifyllda från början.
-- Egna reglage för storlek, platta bakom texten, mörk kontur runt bokstäverna, antal rader och hur länge de ligger kvar. Sätt en tid om rutan ligger ovanpå spelet, så städas den av sig själv när det är tyst; låt den vara noll om chatten har ett eget hörn.
-- Nyaste raden underst som i vanlig chatt, eller överst om rutan sitter i överkanten.
-- Egna val för vilka händelsekort tittarna ska se – ett annat beslut än vad du själv vill ha i spalten.
-
-Sidan delar renderare med docken, så en emote, en länkknapp eller en förstorad emote ser likadan ut på båda ställena. Under en raid ritas nya rader några stycken per bildruta i stället för allihop på en gång, och det som ändå aldrig hade hunnit synas kastas – rutan håller ett dussin rader, och en kö tre gånger så djup är redan historia.
-
-## Väntskärm med fajt
-
-När streamen står still – karaktären ligger medvetslös, du är AFK, något krånglar – finns en väntskärm där två karaktärer gör upp med varandra, runda efter runda. Den sköter sig själv: de går fram, slår, sparkar, väjer, åker i backen, och vinnaren tar segerposen innan nästa runda. Rundorna hålls jämna – den som ligger under slår lite hårdare – så ingen vinner varje gång, och en stjärna per vunnen runda räknas upp under namnet.
-
-Allt ställs in under fliken **Fajt**. Lägg adressen som en Browser Source på 1920 × 1080 i en egen scen. Det du ändrar i fliken – karaktärer, arena, texten och kommandona – syns direkt i OBS, så adressen behöver aldrig bytas.
-
-- **Texten längst ned** skriver du själv i två fält, en rubrik och en rad under. Förslagen i listan (Strax tillbaka, AFK, medvetslös, tekniskt strul …) fyller bara i fälten, och sedan går det att skriva om dem fritt. Tomma fält visar ingen text. **💾 Spara text** lägger det du skrivit överst i listan, markerat med ★, så det går att välja igen med ett klick. **Ta bort sparad** tar bort den valda.
-- **Match och karaktärsval**: varje match börjar med ett karaktärsval där alla karaktärer visas i ett rutnät och chatten röstar: `!p1 my` röstar på My till spelare 1, `!p2 zelda2` på Zelda i klädsel 2 till spelare 2. En siffra direkt efter namnet väljer klädsel, och namn med mellanslag går att skriva som de är (`!p1 dj jenni`). En tittare har en röst per hörn, och röstar man igen flyttas rösten. När tiden är ute får varje hörn den karaktär och klädsel som fått flest röster. Ett hörn ingen röstat på behåller den som stod där. Matchen spelas först till 3 vunna ronder (eller 1, 2, 4, 5, 7 eller utan slut), sedan koras vinnaren och det är dags att välja igen. Rutnätet anpassar sig efter hur många karaktärer som finns, och när de inte får plats med läsbar storlek bläddrar det mellan sidor av sig självt. Tid att rösta, matchlängd och röstorden ställs in i appen, och karaktärsvalet kan stängas av.
-- **Matchen**: vem som står i hörnet för spelare 1 (vänster) och spelare 2 (höger) innan chatten har valt, i vilken klädsel, och var de slåss. *Transparent – ingen bakgrund* visar bara fajten, med streamen bakom. *Svävande ringen* är en jetdriven ring mitt i bild, med strålkastare i hörnen och publik som kikar upp underifrån. Resten är genomskinligt. *Garaget* täcker hela bilden.
-- **Chattens kommandon**: `!heja 1` / `!heja 2` fyller hörnets supermätare, och full mätare gör nästa spark till en super som alltid träffar och tar ungefär en tredjedel av livet. `!hela 1` / `!hela 2` ger hälsa tillbaka. **Hur mycket ett kommando ger beror på hur många som hjälper hörnet.** Är du ensam där räknas du två och en halv gånger från början – två hejarop laddar supern, en helning ger 25 HP – och ju fler ni blir i samma hörn desto mindre betyder var och en. Hur mycket den ensamme räknas (1–5 gånger) ställs in i appen under **Ensam räknas**. Tjugo bakom ett hörn gör fortfarande mer sammanlagt än två, men inte tio gånger mer, så ett par trogna i chatten räcker för att hörnet ska ha något att säga till om. Bara de som skrivit nyligen räknas, så ett hörn chatten tröttnat på är ett litet hörn igen. Det går också att skriva `p1`/`p2` eller karaktärens namn. Siffran är hörnet, inte karaktären, så kommandona är desamma vem du än sätter i ringen. P1/P2 syns vid livsmätarna. Tittarens namn syns på skärmen i chattfärgen. Orden och väntetiden per tittare går att ändra. Kommandon som skrivs när ingen väntskärm är öppen ignoreras. På var sida av ringen finns en lista över chattarna som hjälper det hörnet, med vad de gjort och en nedräkning för när varje kommando fungerar för dem igen. Listan rullar när den blir längre än rutan och kan stängas av.
-
-### Egna karaktärer och arenor
-
-Karaktärer och arenor är mappar på disken, som pets: `%LOCALAPPDATA%\TwitchOverlayHelper\fight\fighters\<id>` med `fighter.json` och `sprite.webp`, och `...\arenas\<id>` med `arena.json` och en bild. Det som följer med appen (Silver, Ink, Garaget och Svävande ringen) skrivs dit vid första start och är sedan ditt att ändra. Lägg till en mapp, klicka **Ladda om**, och den går att välja. `LÄS MIG.txt` i mappen beskriver formatet.
-
-En karaktär kan ha flera klädslar: `sprite.webp` är klädsel 1, och `sprite2.webp`, `sprite3.webp` … i samma mapp blir klädsel 2, 3 och så vidare. Klädslarna kan få namn i `fighter.json`.
-
-En karaktär kan också ha en egen **specialattack**, som blir dess super: när chatten har fyllt mätaren gör den sin special i stället för supersparken, och en gång per rond kan den ta till specialen som sista utväg när den ligger illa till. Det finns tre sorter. *throw* kastar något i en båge som slår upp i eld (Zeldas molotov), *swing* är ett enda jätteslag (My:s lollipopklubba), och *saw* är en serie snabba träffar (DJ Jennis motorsåg). Specialen beskrivs i `fighter.json` och har egna poser i `special.webp` – tre rutor: stans, laddning, slag – och för ett kast en bild på det som kastas, `prop.webp`. En klädsel kan ha en egen special i sina egna kläder (`special2.webp` för klädsel 2). Annars använder den karaktärens. En figurremsa har åtta rutor i samma ordning – stå, stå (andning), gå, slag, spark, träffad, knockad, seger – 640 × 560 px per ruta, alla vända åt höger med fötterna på samma linje. En arena är vilken 16:9-bild som helst. `floor`, `left` och `right` i `arena.json` säger var fötterna står och hur långt karaktärerna får gå. Genomskinliga delar släpper igenom streamen.
-
-Nya karaktärer, outfits och arenor tas fram med Codex bildgenerering och verktygen i `tools/fight-assets`. Skripten där gör om en bild på grön bakgrund till rätt format. I Claude Code finns skillen `fight-assets` som går igenom hela vägen, från referensbild till färdig mapp.
-
-## Händelser i chatten
-
-Subs, raids, meddelanden från streamern och annat som händer i chatten visas som egna kort bland meddelandena – i både docken och overlayen. Ett hypetåg är ingen enskild rad utan ett tillstånd som lever i minuter, så det får en remsa överst i docken med nivå, mätare och toppbidrag; overlayen visar i stället två kort, ett när tåget startar och ett när det tar slut.
-
-Det mesta kommer via IRC och fungerar **utan inloggning i vilken kanal som helst**: prenumerationer och gåvor, raids, `/announce`, cheers (som en markör på meddelandet), bits-märken, tittarstreaks och nya chattare. Något Twitch skickar som saknar eget kort visas med Twitchs egen text i stället för att försvinna.
-
-Resten kommer via EventSub och kräver inloggning, rätt behörighet och – för de flesta – **din egen kanal**:
-
-| Funktion | Kräver inloggning | Var det fungerar |
-|---|---|---|
-| Subs, gåvor, raids, `/announce`, cheers, bits-märken, streaks, nya chattare | Nej | Alla kanaler |
-| Inlösta belöningar med namn och kostnad | Ja (`channel:read:redemptions`) | Bara din egen kanal |
-| Återbetalning av pet-belöningar | Ja (`channel:manage:redemptions`) | Bara din egen kanal, och bara belöningar appen själv skapat |
-| Power-ups: förstorad emote, firande | Ja (`bits:read`) | Bara din egen kanal |
-| Hypetåg | Ja (`channel:read:hype_train`) | Bara din egen kanal |
-| Shoutouts | Ja (`moderator:read:shoutouts`) | Kanaler där du är moderator |
-| Nåla fast för tittarna | Ja (`moderator:manage:chat_messages`) | Kanaler där du är moderator |
-| Timeout, ban, ta bort meddelande | Ja | Kanaler där du är moderator |
-| Raid | Ja | Bara din egen kanal |
-| Skriva i chatten | Ja | Alla kanaler |
-| Dina egna emotes i emote-väljaren | Ja (`user:read:emotes`) | Alla kanaler |
-
-Saknas något slutar det alltid med *färre kort* – aldrig med en chatt som slutar läsa. Appen skriver under **5. Logga in för moderering** vilka extra händelser som är påslagna just nu, och skiljer på de två orsakerna till att något inte syns: en behörighet du inte gett, och en kanal som inte är din. En sparad inloggning från innan en behörighet fanns fixas med knappen **Logga in igen** – en förnyad token ger tillbaka gamla behörigheter, aldrig nya.
-
-Power-upen *förstorad emote* ritas i full storlek på en egen rad. Meddelandeeffekter (`animation-id`) kommer över IRC och visas som en markör i alla kanaler, även utloggad – animationen i sig återges inte.
-
-Varje typ går att stänga av för sig: overlayens val ligger under **Händelser i overlayen** i appen, dockens under **Ändra chattens läsbarhet → Händelser i chatten** och streamchattens under **Ändra utseende på streamchatten → Händelser i chatten**. De är separata, eftersom en overlay ovanpå ett spel tål mindre än en dock man läser i lugn och ro – och vad tittarna ska se firas är en tredje fråga. Att stänga av en typ tar bort korten som redan står kvar; att slå på den igen gäller det som händer sedan (docken hämtar tillbaka historiken vid omladdning). Reglagen styr bara korten – en belöning triggar fortfarande pets, och en cheer är fortfarande en markör på meddelandet den kom med.
-
-## Pets som kan betalas tillbaka
-
-En pet som aldrig syntes ska inte kosta tittaren någonting. Appen kan därför skapa pet-belöningen åt dig i Twitch och svara på varje inlösen: **klart** när peten levde ut sin tid, **återbetalning** när den aldrig kom fram.
-
-Det kräver att belöningen är skapad **härifrån**. Twitch låter en app besvara en inlösen bara på belöningar som appens eget Client ID har skapat – en belöning du gjort för hand i Twitchs dashboard går inte att adoptera, och svaret blir 403 hur behörigheterna än ser ut. Appen skapar den därför med kön påslagen (`should_redemptions_skip_request_queue` = false); hoppar en belöning över kön blir den klarmarkerad i samma sekund och kan aldrig återbetalas.
-
-Så här byter du över:
-
-1. Logga in igen efter uppdateringen – `channel:manage:redemptions` är nytt.
-2. Döp om eller ta bort den gamla, handgjorda belöningen. Twitch vägrar skapa två med samma namn.
-3. Fyll i namn, tid och poäng på raden under **Pets → Belöningar som ger pets** och klicka **⚡**. Raden får ett 🔒 när den är appens egen.
-4. Sätt bilden i Twitchs dashboard efteråt – den går inte att ladda upp via API:t.
-5. Kryssa i **Shutdown source when not visible** på pet-källan i OBS. Då märker appen när gräsmattan faktiskt är borta i stället för att gissa.
-
-Inlösen markeras **inte** som klar när peten spawnar, utan när den levt färdigt. Det är enda sättet att hålla återbetalningen möjlig hela vägen: att servern lade till en pet och skickade en frame betyder inte att någon såg den. Overlayen kvitterar därför varje pet den faktiskt ritar, och en inlösen betalas tillbaka när
-
-- kvittot uteblir – browser-källan är uppe men ritade aldrig något,
-- gräsmattan är full, eller peten knuffas ut i förtid av en annan,
-- ingen pet-overlay är igång,
-- overlayen försvinner mitt i (en omladdning i OBS hinner tillbaka och kostar ingenting),
-- du stänger av pets i appen medan pets lever – hela gräsmattan göms, så ingen ser vad de betalat för.
-
-Återbetalar du själv i Twitchs kö går peten ned här också. Byter du kanal töms gräsmattan – en pet köpt i en annan kanal hör inte hemma på den nya.
-
-Allt som lösts in **medan appen inte lyssnade** betalas tillbaka när den kopplar upp igen: förra körningen, en krasch mitt i sändningen, ett svep i en annan kanal, ett tapp i EventSub mitt i sändningen, eller bara sekunderna innan socketen kom upp. De petsen finns inte längre, så poängen ska tillbaka. Inlösen som EventSub redan levererat rörs inte, och går genomgången inte att slutföra görs den om vid nästa anslutning i stället för att bockas av. Har en kö vuxit förbi 2 000 väntande inlösen tas resten inte här – det står i loggen, och Twitchs egen kö har dem kvar.
-
-Är EventSub nere spawnar en 🔒-belöning ingen pet alls. Chattvägen ser bara belöningens ID, aldrig inlösens eget, så en pet utdelad där hade aldrig kunnat bokföras – tittaren hade fått både peten och poängen tillbaka. Inlösen ligger i stället kvar i Twitchs kö tills appen är tillbaka.
-
-Belöningar du redan har fungerar precis som förut: peten spawnar, poängen är spenderade, ingenting nytt händer, och chattvägen bär dem även utan EventSub. Bara rader med 🔒 kan besvaras – och deras ID är låst, eftersom det är det enda som binder raden till belöningen Twitch låter oss svara på. Peka om en rad genom att ta bort den och skapa en ny.
-
-## Lyckosnurren
-
-En egen belöning som snurrar fram en pet tittaren får **behålla**. Snurren glider in i pet-overlayen från den kant du väljer, loopar igenom allt som går att vinna och stannar på vinsten – som sedan hoppar ut på gräsmattan. Ingen ny källa i OBS behövs.
-
-Vinsten knyts till **Twitch-ID:t**, inte namnet. Byter någon namn följer samlingen med, och `!mina` svarar likadant efteråt. Allt sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\spinwins.json`, som skrivs atomiskt vid varje ändring med en daterad kopia bredvid – går huvudfilen sönder läses den nyaste kopia som fortfarande går att tolka.
-
-**Vad som går att vinna** väljer du under **Pets → Lyckosnurren**. Varje pet har en kryssruta och en sällsynthet: `vanlig`, `ovanlig`, `sällsynt` eller `legendarisk`, där en vanlig är ungefär trettio gånger så trolig som en legendarisk. Valen skrivs i petens egen `pet.json` (`winOnly` och `rarity`), så de följer med mappen till en annan dator – och fält appen inte känner till, som Codex egna, lämnas orörda.
-
-**Sällsyntheten syns på gräsmattan.** En ovanlig pet går omkring i en svag grön skimrande aura, en sällsynt i lila med ett ljus som sveper över kroppen då och då, och en legendarisk i guld med gnistor och en varmare fläck mark under sig. Vanliga pets ser ut precis som förut – en effekt alla bär är ingen effekt. Samma färger lyser upp snurrens fönster när den stannar. Auran är till för ögonblicket peten kommer in, så den **tonar bort efter tio sekunder** och lämnar kvar bara varelsen – annars står sex pets och lyser i fem minuter var ovanpå spelet. Tiden ändrar du under **Pets → Inställningar**, och `0` låter dem lysa hela tiden. Vill du ha overlayen helt ren stänger du av alltihop med **Visa sällsynthet med skimmer**.
-
-**🔍 öppnar peten ensam i webbläsaren.** Knappen längst till höger på varje rad startar en fristående testvy: en enda pet, i den storlek du vill, mot rutmönster, svart, vitt, greenscreen eller en färg du väljer själv. Där kan du spela varje beteende overlayen kan sätta peten i, stega ruta för ruta, låsa en enskild rad i spritesheeten, vrida blicken runt hela varvet och prova hur den ser ut i varje sällsynthet. Under den ligger hela arket med sitt rutnät – tomma rutor är streckade, och ett klick fryser peten på just den rutan – och en ruta som säger vad appen läser ut ur filen: bildstorlek, cellstorlek, antal rader, hur många blickriktningar som är ifyllda, och varningar när något inte stämmer (en tom rad, en lucka mitt i en animation, ett `spriteVersion` som säger något annat än arket).
-
-Vyn ritas med overlayens egen stilmall, så det som ser fel ut där ser fel ut i OBS också. Den är till för när du sätter upp en pet: den startar inget, ändrar ingenting och påverkar varken overlayen eller det tittarna ser – att stänga fliken är hela avstängningen. Kräver att appens lokala server är igång, samma som pet-overlayen. Har du ändrat i `pet.json` klickar du **Ladda om pets** i appen först; har du ritat om bilden räcker **↻ Ladda om** i vyn.
-
-En pet markerad som vinstbar försvinner ur den vanliga pet-belöningen för alla utom den som vunnit den. Ber någon annan om den med namn betalas inlösen tillbaka och boten säger varför; kan belöningen inte återbetalas får de en vanlig pet i stället. Du och dina moderatorer kommer fortfarande åt alla arter med `!pet namn`.
-
-**Dubbletter blir gåvor.** Landar snurren på något vinnaren redan äger får de skänka bort den: boten ber om ett namn, och `!ge kajsa` knyter vinsten till det kontot. Poängen kommer aldrig tillbaka för en dubblett – inlösen bokförs som levererad i samma stund den dras, precis som en vanlig vinst. Det snurren köpte är en chans att placera peten, och den chansen är slut när tiden du satt går ut, och när namnet de väljer visar sig äga peten redan. Ett namn som inte finns på Twitch räknas inte som ett försök, så där ligger gåvan kvar. Kan boten inte skriva just då finns ingen som kan hålla samtalet – avstängd, utloggad, chatten nere, eller raden avslagen under **Vad boten säger** – och då hoppar dragningen i stället över det de redan har, så att bara den som samlat allt får sina poäng tillbaka. Snurrar någon igen medan deras förra gåva fortfarande letar mottagare ersätts den av den nya, och den gamla chansen är över.
-
-**Vinnaren är dragen och sparad innan animationen ens börjar.** Går overlayen ner mitt i snurren, eller kvitterar den aldrig, gäller vinsten ändå – det enda som går förlorat är showen. Inlösen betalas tillbaka när snurren aldrig blev av: lyckosnurren avstängd, pets avstängda, ingen pet-overlay igång, ingenting markerat som vinstbart, eller hela samlingen redan vunnen. Och en vinst som hann bokföras men inte kvitteras hos Twitch innan appen stängdes ligger kvar som en skuld på disk: den kvitteras när appen är uppkopplad igen, i stället för att städas bort som obetald och ge tittaren både peten och poängen.
-
-Kommandona (`!mina` och `!ge` som standard) och all text boten säger går att byta – under **Vad boten säger** finns elva nya rader för snurren, och `{pets}`-orden du valt fungerar i dem precis som i resten.
-
-## Chatten ligger kvar
-
-Chatten sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\chat-history.json` och läggs tillbaka när appen startar, så en omstart mitt i strömmen inte lämnar en tom spalt. Det som sparas är bara det appen själv har sett: Twitch skickar ingen historik när man ansluter, och det finns ingen Helix-endpoint för chatt.
-
-- **Som mest 12 timmar bakåt och 200 rader.** Åldern räknas per rad och inte per kalenderdygn – "dagens chatt" hade tömts vid midnatt, vilket är mitt i kvällen för en ström som började nio, och en omstart 00:05 är precis när historiken behövs mest. Rader äldre än så läggs aldrig tillbaka, så det finns ingen historik veckor eller månader bakåt.
-- Historiken hör till en kanal. Byter du kanal slängs den, i stället för att visa fel rums chatt.
-- Är **Hämta tidigare meddelanden** påslaget vävs det som sades innan appen anslöt in ovanför de egna raderna, med samma 12-timmarsgräns.
-
-**Dölj tidigare pass.** Har det varit tyst i mer än sex timmar mellan två rader räknas det som ett nytt pass, och docken ritar en avdelare på just det stället: `Nytt pass · 9 timmar tyst`, med knappen **Dölj N rader ovanför**. Trycker du på den försvinner raderna på riktigt ur chattspalten, ur overlayen och ur filen på disk – så de kommer inte tillbaka vid nästa omladdning eller omstart. Ett undantag: rader du **nålat fast för hand** ligger kvar i remsan överst. En nål är ett eget beslut och tas bara ner för hand – att den överlever att spalten scrollar bort är hela poängen med remsan, och att dölja ett gammalt pass ska inte tysta en fråga du sparat att svara på. Sex timmar är gränsen eftersom tystnaden är det enda ärliga svaret som finns: varken Twitch eller appen vet när en ström började, men ingen är fortfarande i samma samtal efter sex timmar. Avdelaren ritas i spalten och inte i knappraden överst, för en knapp som erbjuder sig att dölja "äldre" chatt är värdelös om man inte ser var gränsen dras.
-
-## Skriva i chatten
-
-Skrivfältet längst ner i docken syns när du är inloggad. Två saker gör det snabbare att svara utan att lämna docken – båda öppnar sig **ovanför** fältet, eftersom fältet sitter i underkanten och en lista nedåt inte har någonstans att ta vägen.
-
-Ett skickat meddelande väntar på Twitchs svar innan det visas: kommer bekräftelsen läggs raden in i chatten som vilken annan som helst, och nekar Twitch den – slowmode, följarläge, en timeout, en dubblett – får du Twitchs egen förklaring och texten tillbaka i rutan i stället för en tom ruta och en rad som aldrig kom fram. Egna rader som Twitch inte gav något meddelande-ID får inga knappar för att nåla fast åt tittarna eller ta bort, eftersom de knapparna behöver just det ID:t.
-
-**@-förslag.** Skriv `@` så listas de som nyligen sagt något, senast först. Listan kommer ur chatten som redan rullat förbi, så den kräver varken inloggning eller extra anrop, och den söker på Twitch-namnet, visningsnamnet **och smeknamnet du satt** – tre stammisar vars namn börjar likadant är precis det som gör en @-lista svår, och namnet du känner igen är det som skiljer dem åt. Pilarna flyttar markeringen, Tabb eller Enter väljer, Esc stänger. Det som skrivs in är Twitch-namnet när visningsnamnet bara är samma namn med versaler, annars inloggningsnamnet – det är det Twitch känner igen som en mention för konton vars visningsnamn står i ett annat skriftsystem. Byter docken kanal glöms listan bort direkt: namnen i det förra rummet är inte de som är här nu.
-
-**Emote-väljare.** 🙂-knappen visar vad du faktiskt får skicka i just den här kanalen, i fyra avdelningar: *nyligen använda*, *kanalens emotes*, *dina emotes* och *globala*. Den översta är genvägen till dem du själv använder ofta – den samlas ur **dina egna rader**, inte ur chatten i stort: en emote som rullar förbi tillhör den som skrev den, och överst i din egen väljare vore den mest en inbjudan att skicka något som når chatten som lösa bokstäver. Sökrutan letar bland allihop. Väljaren stannar öppen när du klickar, så tre emotes i rad är tre klick.
-
-En vald emote hamnar i skrivfältet **som bild**, inte som sitt namn – annars säger fältet ingenting om du träffade rätt, vilket är hela poängen med en väljare. Det som skickas är fortfarande bara text; namnet läses tillbaka av bilden när du trycker skicka.
-
-Raden du själv skrev kommer tillbaka från Twitch utan att någon talat om vilka ord som var emotes – Twitch räknar ut det på vägen till tittarna och berättar det för alla **utom avsändaren**. Appen fyller därför i det själv, mot samma kontrollerade lista, innan meddelandet går ut till vyerna. Det sker i appen och inte i docken just för att båda ska visa samma sak: annars vore overlayen ovanpå spelet den enda vy som fortfarande stavade ut `Kappa` med bokstäver.
-
-Genomgående gäller att en emote du inte får skicka aldrig erbjuds – den skulle hamna i chatten som lösa bokstäver i stället för som en bild, och det märks först när meddelandet redan är ute. Det är inte gratis att veta: Twitch har ingen fråga som lyder "får det här kontot skicka den här emoten här", så svaret sätts ihop av tre listor. Kanalens lista innehåller allt kanalen har, prenumerationsnivåer inkluderat, oavsett om du får använda det; din personliga lista är precis vad du får skriva. Kanalens lista visas bara när den går att hålla mot din personliga – eller när det är **din egen kanal**, där du alltid får använda dina egna emotes.
-
-Går den inte att kontrollera visas den inte alls, och väljaren säger rakt ut varför i stället för att gissa. Det gäller två fall: behörigheten `user:read:emotes` saknas (en inloggning från innan den fanns), eller att din egen emote-lista är så lång att den slog i hämtningstaket – en lista som slutade i förtid går att läsa ur men inte att utesluta med. I det första fallet räcker knappen **Logga in igen** i appen; tills dess visas bara de globala emotes, som alla får skicka.
-
-Listan hämtas en gång per kanal och konto, och slängs så fort något av dem ändras.
-
-## Smeknamn på chattare
-
-Twitch-namn är valda för att se ut på ett visst sätt, inte för att kännas igen: `xXx`-utfyllnad, medvetna felstavningar och tre stammisar vars namn börjar likadant. Därför går det att ge en chattare ett eget namn som visas **bredvid** Twitch-namnet – aldrig i stället för det, eftersom hela poängen är att koppla ihop de två.
-
-- Klicka på ett namn i docken → **🏷 Sätt smeknamn**, eller klicka direkt på ett smeknamn som redan står där för att ändra det.
-- 🏷-knappen i dockens överkant listar alla smeknamn med sökruta, så ett namn du satte för ett halvår sedan går att hitta utan att vänta på att personen skriver något.
-- Smeknamnet syns i **både docken och overlayen**, på alla rader personen redan skrivit – även i historiken efter en omladdning. Overlayen är fortfarande klickigenom och inert; den visar smeknamnen men går inte att sätta dem från.
-- Det lämnar aldrig datorn. Ingen tittare ser det, ingenting skickas till Twitch, och det krävs varken inloggning eller modbehörighet – precis som den lokala nålen.
-- Namnet knyts i första hand till Twitch-ID:t, så det följer med om personen byter användarnamn. Ett tomt fält (eller **🗑 Ta bort**) tar bort smeknamnet, och notisen efteråt har en **Ångra**-knapp.
-
-Smeknamn sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\nicknames.json` – en egen fil, eftersom det är det enda i appen som är handskrivet och omöjligt att hämta tillbaka från Twitch. Filen skrivs i samma ögonblick som något ändras (inte på en timer), och skrivningen är atomisk: en avbruten sparning kan aldrig lämna en halv fil efter sig. Vid **varje** sparning läggs dessutom en daterad kopia i `%LOCALAPPDATA%\TwitchOverlayHelper\backups\`; de tjugo senaste sparas. Går huvudfilen sönder läses den nyaste kopian som fortfarande går att tolka, och den skrivs tillbaka på plats – i stället för att appen startar med en tom lista.
-
-## Uppläsning av namn
-
-Twitch-namn är skrivna för att titta på, inte för att säga: dekorativa x, dubblerade bokstäver och versala förkortningar. Med uppläsning påslagen får varje namn i docken en `🔊`-knapp. Ett klick skickar namnet till **DeepSeek** (`deepseek-v4-flash`), som svarar med en rad om hur en människa sannolikt skulle säga det, och den raden läses upp av **ElevenLabs** (`eleven_v4`) på datorn där appen körs – inte i webbläsaren, eftersom en dock i OBS ofta är dämpad eller ligger på en annan ljudenhet.
-
-Ställs in under **6. Uppläsning av namn** i appen:
-
-- Två API-nycklar, en per tjänst. De sparas krypterade med Windows DPAPI (`CurrentUser`) i `%LOCALAPPDATA%\TwitchOverlayHelper\speech.bin` och hamnar aldrig i `settings.json`.
-- Röst hämtas från ElevenLabs-kontot, eller klistras in som röst-ID. Modellnamnen går att byta om kontot saknar den senaste modellen.
-- En testruta som visar den tolkade raden och läser upp den, så hela kedjan kan provas innan knappen släpps in i docken.
-
-Knappen syns bara när nycklar, röst och inställningen är på plats – är något ofyllt finns den inte alls. Båda tjänsterna kostar per anrop, så inget hämtas två gånger i onödan:
-
-- Ljudklippet sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\namecache` och överlever omstart. ElevenLabs-anropet görs alltså en gång per namn och röst.
-- Tolkningen från DeepSeek sparas så länge appen är igång. Efter en omstart frågas DeepSeek en gång till för samma namn – ett kort och billigt anrop, och ljudet återanvänds ändå.
-
-Om DeepSeek inte svarar läses namnet upp som det står, med en notis om varför det kan låta fel. Den tolkningen sparas inte, så nästa klick försöker igen.
-
-## Uppläsning av tittarnas meddelanden
-
-Tittare betalar för att få ett meddelande uppläst i sändningen. Två sätt att sälja det, ett val i appen:
-
-- **Power-up (bits).** En *custom Power-up* som du skapar i Twitchs Creator Dashboard – appen läser dem, men Twitch har inget API för att skapa eller ändra dem. Appen prenumererar på `channel.custom_power_up_redemption.add` (kräver `bits:read` och din egen kanal) och plockar upp texten tittaren skrev.
-- **Belöning (channel points).** Skapas härifrån med `⚡`, precis som pet-belöningarna, med kön påslagen så att inlösen går att svara på.
-
-**Appen kan inte betala tillbaka bits.** Twitch har ingen endpoint för att fullfölja, avbryta eller återbetala en Power-up-inlösen; API:t kan bara *läsa* dem. Twitch personal bekräftade i [lanseringstråden](https://discuss.dev.twitch.com/t/introducing-api-and-eventsub-support-for-custom-power-ups/64708) att hantering av Power-ups är något de "kommer utvärdera senare". Därför heter knappen `🚫 Neka` på bits-spåret och `↩ Refundera` på channel points-spåret: att neka en Power-up betyder att meddelandet inte läses upp, inget mer. Vill du kunna ge tillbaka måste belöningen vara skapad av appen, eftersom Twitch bara låter en app svara på inlösen av belöningar dess eget client-ID skapat.
-
-Inlösen-eventet bär ett `status`-fält som appen inte använder. Twitch har alltså någon form av tillstånd på en Power-up-inlösen, men vad fältet kan innehålla står inte i dokumentationen och frågan om det i lanseringstråden blev obesvarad – så om du kan refundera för hand i Creator Dashboard är inget appen vet något om.
-
-### Godkännande
-
-Med godkännande påslaget hamnar varje inlöst meddelande i en rad högst upp i **OBS-docken**, med vem som betalade, vad det kostade och exakt den text som kommer läsas upp – och `Godkänn` / `Refundera`. Ett i taget, det äldsta först, med en räknare för hur många som står bakom. Raden överlever en omstart av OBS: kön ligger i appen, inte i webbläsaren.
-
-Du kan också låta **kantljuset** tändas när något väntar på svar, i egen färg. Det rankas mellan mod-anropet och nya chattare: en ström av förstagångshälsningar begraver aldrig något du måste ta ställning till, men en mod som kallar på dig går fortfarande före.
-
-Svarar ingen inom svarstiden släpps inlösen – med channel points betyder det att poängen går tillbaka.
-
-Stänger du appen eller byter kanal medan något väntar besvaras det medvetet *inte* från ett fönster som är på väg bort. Inlösen ligger kvar som UNFULFILLED i Twitchs kö, där du eller dina mods kan ta den för hand – och nästa gång appen ansluter städas den upp av samma svep som redan städar pet-belöningarna. Svepet hoppar över det som just nu står i docken och väntar på svar, så en tappad anslutning mitt i en sändning aldrig återbetalar den rad du håller på att läsa. Får appen inte tag i Twitch när den ska svara läggs verdicten tillbaka och försöks om, upp till fem gånger, i stället för att tyst försvinna.
-
-### Var ljudet hamnar
-
-Appens eget ljud går ut på skrivbordet och hörs bara av tittarna om OBS fångar Desktop Audio, vilket de flesta med flit låter bli. Därför är standardvalet en **egen Browser Source** – en sida som normalt bara låter. OBS tar in ljudet från en browserkälla av sig själv, med egen volym, egen ljudkanal och egen monitorering, och det blir en källa skild från både pets och overlay-chatten. Adressen kopieras från appen; lägg till den som Browser Source på 1×1 px så länge den bara ska låta.
-
-Sidan kvitterar varje klipp när det är slut. Det kvittot är vad som håller nästa uppläsning tillbaka tills den här är färdig, och på channel points-spåret det enda beviset för att uppläsningen faktiskt levererades: en inlösen som aldrig hördes – ingen browserkälla i scenen, inget svar från ElevenLabs – betalas tillbaka i stället för att bokföras som klar.
-
-Rösten är egen och behöver inte vara samma som läser upp namn; ElevenLabs-nyckeln delas med [Uppläsning av namn](#uppläsning-av-namn). En teckengräns styr vad en enskild inlösen kan kosta dig – längre meddelanden klipps vid närmaste ordslut – och upprepade tecken kortas, så `hejjjjjjjjjj` blir `hejjj`.
-
-### Rutan i bild
-
-Samma browserkälla kan också rita en ruta medan uppläsningen pågår: vem som betalade, vad de skrev, vad det kostade och en liten rad staplar som rör sig så länge rösten talar. Rutan hör ihop med ljudet – den kommer upp när klippet börjar och går ner när det tystnar – och därför sitter den på samma källa: en egen source hade behövt placeras för sig och kunnat hamna ur takt med det som faktiskt hörs.
-
-Den är **avstängd från början**, av två skäl: en uppdatering ska inte lägga en ruta på någons stream, och att slå på den är också stunden då källan måste göras om från 1×1 px till lika stor som scenen. Resten av sidan är genomskinlig, så rutan placerar sig själv i något av nio lägen i bilden utan att du behöver flytta källan.
-
-Under `Ställ in rutan` finns läge och avstånd från kanterna, största bredd, typsnitt, storlek, färg, platta, rundade hörn, hur den kommer in (glider, tonar, studsar eller ingenting), hur länge den ligger kvar efter sista ordet, och vad som står i den. `Visa rutan i OBS` ritar upp en påhittad uppläsning i fem sekunder så placeringen går att bestämma utan att en tittares pengar går åt till att ta reda på var rutan hamnade – den kostar inga tecken hos ElevenLabs och rör inte kön.
-
-Med rutan avstängd får den sidan aldrig veta vad någon skrev: namnet och meddelandet följer med klippet bara när det finns en ruta att rita dem i. Sidan ligger på sändningsdatorn som en browserkälla, och det som aldrig skickas kan inte hamna i bild av misstag. Av samma skäl går rutan aldrig upp medan något väntar på ditt godkännande – först när uppläsningen faktiskt spelas.
-
-Är ljudet satt till *den här datorns högtalare* får browserkällan aldrig något klipp, och då ritas ingen ruta heller; appen säger det i klartext i stället för att låta dig leta.
-
-## Chatbot
-
-Appen vet redan varför en inlösen betalades tillbaka, att en uppläsning fortfarande väntar på ditt svar och att pet-overlayen ligger nere. Hittills har den bara sagt det till dig, i en statusrad i appen – den enda som aldrig fick veta var tittaren som betalade. Boten säger det i chatten i stället.
-
-**Vem som skriver** väljs under fliken *Bot*:
-
-- **Eget botkonto.** Ett andra Twitch-konto med egen inloggning, egen token på disk (`credentials.bot.bin`, krypterad med DPAPI precis som din egen) och en egen IRC-anslutning – Twitch låter inte en anslutning tala som två konton. Inloggningen begär bara `chat:read` och `chat:edit`: ett botkonto ska kunna säga saker, inte vara en andra uppsättning moderatorrättigheter som ligger och skräpar med en token på disk. Samma Client ID som din egen inloggning används. Gör gärna boten till moderator i kanalen – det höjer Twitchs skrivtak från 20 till 100 meddelanden per 30 sekunder och släpper förbi follower- och slow mode.
-- **Mitt eget konto.** Går över anslutningen appen redan har. Fungerar direkt utan något andra konto, men meddelandena ser ut att komma från dig.
-- **Av.** Ingenting skrivs.
-
-Logga in som boten i ett privat webbläsarfönster, annars godkänns koden med ditt eget konto.
-
-### Vad boten säger
-
-Varje sak boten säger av sig själv är en egen rad som går att slå av och skriva om, med förhandsvisning under varje textruta. `{viewer}`, `{cost}`, `{reason}`, `{link}` och de andra byts ut när meddelandet skickas.
-
-Påslaget från början är den halvan en tittare är svarad skyldig: poängen kom tillbaka och varför, uppläsningen ligger kvar och väntar, gräsmattan är full, overlayen är nere så vänta med att lösa in, mod-anropet gick fram eller inte, välkommen till chatten, tack för raiden. Den festliga halvan – subs, hypetåg, en pet som levde klart – är avstängd, eftersom Twitch redan säger det mesta av det och en kanal ska få lägga till det själv i stället för att behöva stänga av det.
-
-### Egna kommandon
-
-Ovanför meddelandelistan skriver du dina egna kommandon: ett ord någon skriver i chatten, och vad boten svarar. Appen levereras utan några – vad din kanal vill kunna svara på är inget den kan gissa, och gissningar hade bara blivit kommandon någon måste gå och stänga av.
-
-Svaret är en mall som alla andra, så `{viewer}` blir den som skrev och dina egna ord för streamern och pets fungerar direkt:
-
-```
-!discord   →  Häng med i vår Discord: exempel.se/discord
-!regler    →  {viewer}: var schysst mot varandra, det är hela regeln.
-```
-
-Varje rad har en paus i sekunder innan samma kommando får svara igen — 30 från början. Det är den enda saken här tittare kan utlösa med flit, och därmed enda sättet ett rum kan tömma botens hela sändningsbudget genom att komma överens om att skriva samma ord. Rader kan också märkas som **endast mods**; andra som skriver dem får inget svar alls, inte en tillsägelse, eftersom en bot som annonserar varje avvisning är en bot chatten lär sig utlösa på skoj.
-
-Ett ord som står på fler än en rad varnar fönstret för — bara den första raden hade svarat.
-
-### Ord är kanalens, inte appens
-
-Kallar din kanal dem något annat än "pets" skriver du det under *Ord boten använder* – i tre rutor, för svenskan går inte att räkna ut: *en vän*, *två vänner*, *vännen*. Orden slår igenom överallt, också i förklaringen till varför något betalades tillbaka. Detsamma gäller dig själv: tomt fält betyder att boten säger "streamern", annars ditt namn.
-
-### Vad den vägrar göra
-
-- **Upprepa sig.** Twitch släcker tyst ett meddelande som är identiskt med ett från samma konto inom 30 sekunder – en bot som skickade det skulle se ut att ha slutat fungera. Det hoppas över här i stället, där det kan skrivas i loggen.
-- **Skrika.** Allt går genom en kö med Twitchs eget tak. Straffet för att gå över är skrivstopp på hela kontot, inte ett tappat meddelande.
-- **Läsa upp trettio återbetalningar.** Svepet efter en omstart svarar på allt som blev kvar från förra sändningen, ibland inom en sekund. Från tre och uppåt blir det en enda rad.
-- **Läcka ett felmeddelande.** Skälet till en misslyckad uppläsning är vad syntesen kastade – en HTTP-status, en kvotvarning, ordet "Unauthorized". Bara skäl appen känner igen släpps ut i chatten; allt annat blir en neutral formulering.
-- **Svara sig själv.** Botens egna rader triggar varken pets, kantljus eller välkomnanden.
-- **Lova en återbetalning som inte finns.** En uppläsning som inte blev av annonseras bara som återbetald när poängen faktiskt gick tillbaka.
-- **Fylla overlayen.** Botens rader döljs som standard i overlayen över spelet, men syns i docken.
-
-## Funktioner
-
-- Anslut anonymt genom att bara ange kanalnamn eller Twitch-länk.
-- Transparent, alltid-överst och fokusfri chatt-overlay.
-- Låst klickigenom-läge och separat redigeringsläge för flytt/storleksändring.
-- Globala snabbtangenter (fungerar även när spelet har fokus): visa/dölj overlay (standard `Ctrl+F9`) och redigeringsläge (standard `Ctrl+F10`). Ändra kombinationerna direkt i appen.
-- Twitch-emotes renderas som bilder inuti meddelanden, inklusive animerade emotes med automatisk statisk fallback – fungerar anonymt, ingen app-registrering behövs.
-- Unicode-emojis renderas i färg med [Twemoji](https://github.com/jdecked/twemoji) (CC-BY 4.0) eftersom WPF annars visar dem monokromt.
-- Separata reglage för hela rutans bakgrund och varje meddelandes bakgrund; båda kan dras till 0 % för helt ren overlay.
-- Valfri kantlinje runt texten som håller den läsbar utan bakgrund.
-- Liveinställningar för textstorlek, radavstånd, typsnitt och antal meddelanden.
-- Händelsekort för subs, raids, meddelanden från streamern, belöningar, shoutouts, power-ups och hypetåg – med reglage per typ i varje vy. Se [Händelser i chatten](#händelser-i-chatten).
-- **Kantljus**: ett mjukt, klickigenom ljus som tonar in längs skärmens kanter när mods skriver ett kommando (standard `!psst`, bara streamern och mods kan trigga det) eller när en ny chattare skriver sitt första meddelande – varsin färg, styrka och varaktighet, med testknappar i appen. Flera träffar tätt inpå varandra blir aldrig flera samtidiga ljus: ett mod-anrop går alltid fram och kan aldrig knuffas undan av ett välkomnande, välkomnanden är tysta i 15 sekunder efter ett visat ljus, och ett ljus som redan lyser hålls kvar i stället för att blinka om – som mest dubbelt så länge som det är inställt på, så kanterna slocknar alltid till slut även mitt i en raid.
-- @-förslag och emote-väljare i dockens skrivfält. Se [Skriva i chatten](#skriva-i-chatten).
-- Twitch-metadata för broadcaster, moderator, VIP, subscriber med lokala markörer.
-- Riktiga Twitch-badge-bilder när Client ID och OAuth-token anges.
-- Automatisk återanslutning, PING/PONG-hantering och tydligt stopp vid nekad inloggning.
-- Uppläsning av chattares namn via DeepSeek och ElevenLabs, för namn som är svåra att läsa högt.
-- **Uppläsning av tittarnas meddelanden**, köpta med bits (custom Power-up) eller channel points, med godkännande i docken och ljudet via en egen browserkälla i OBS. Se [Uppläsning av tittarnas meddelanden](#uppläsning-av-tittarnas-meddelanden).
-- **Chatbot** på ett eget Twitch-konto som säger till tittaren varför poängen kom tillbaka, att uppläsningen fortfarande väntar på svar och att overlayen ligger nere – plus egna kommandon du skriver själv. Varje meddelande går att slå av och skriva om, med kanalens egna ord för både dig och dina pets. Se [Chatbot](#chatbot).
-- **Lyckosnurren**: en belöning som snurrar fram en pet tittaren får behålla, knuten till Twitch-kontot så den överlever namnbyten. Sällsynthet per pet, dubbletter som går att skänka bort, och kommandon för att se sin samling. Se [Lyckosnurren](#lyckosnurren).
-- Egna smeknamn på chattare, synliga i både dock och overlay, sparade med säkerhetskopia vid varje ändring.
-- Inställningar sparas i `%LOCALAPPDATA%\TwitchOverlayHelper\settings.json`, med daterade kopior och en zip av hela profilen vid varje ny version. Se [Dina data](#dina-data). OAuth-token sparas aldrig.
-- Körs som en enda instans; en ny vanlig start öppnar den redan körande appens inställningsfönster.
-- **Uppdaterar sig själv** från GitHub-släppen. Se [Uppdateringar](#uppdateringar).
-- Valbar **Starta med Windows**-inställning som startar appen minimerad i meddelandefältet utan extra bakgrundstjänst.
-
-## Uppdateringar
-
-Appen håller sig själv uppdaterad. Åtta sekunder efter start – och som mest var tolfte timme – frågar den GitHub om det finns ett nyare släpp, och hittar den ett visar den en fråga. Finns inget nytt säger den ingenting: en dialog mitt i en sändning ska bara dyka upp när den har något att erbjuda. Startar appen minimerad i meddelandefältet väntar kontrollen tills fönstret öppnas.
-
-Säger du ja hämtas zip-filen, kontrolleras mot släppets SHA-256-summa och packas upp av en kopia av appen som kör från `%TEMP%`. Den kopian väntar på att appen stängs ordentligt – inställningar och chatthistorik hinner sparas – byter filerna och startar den nya versionen. Varje fil som skrivs över säkerhetskopieras först, så ett avbrott mitt i installationen lämnar den gamla versionen hel i stället för en halv av varje. Ligger appen i en mapp som kräver administratör frågar Windows om godkännande; ligger den i din egen profil frågar den ingenting.
-
-Vill du kolla själv finns **Sök efter uppdateringar** längst ned i inställningsfönstret och i meddelandefältets meny. En lokal `dotnet run`-byggnad har ingen släppt version och uppdaterar sig aldrig – annars skulle den installera ett släpp ovanpå din arbetskopia.
-
-## Dina data
-
-Allt du har ställt in ligger i `%LOCALAPPDATA%\TwitchOverlayHelper\` – inställningar, smeknamn, pets, vinster från lyckosnurren, inloggningar och cache. Knappen **Säkerhetskopior** längst ned i inställningsfönstret öppnar mappen.
-
-Inget av det är värt något om det kan försvinna, så det finns tre skyddsnät, ett för varje sätt det faktiskt går sönder på:
-
-**Halvskriven fil.** Varje sparning skrivs till en temporärfil och byts in med ett namnbyte. En läsare ser antingen hela den gamla filen eller hela den nya – aldrig hälften av en sparning som avbröts när strömmen gick.
-
-**Trasig eller feltömd fil.** Vid varje sparning läggs en daterad kopia i `backups\`; de tjugo senaste sparas. Går huvudfilen inte att läsa svarar appen från den nyaste kopian som fortfarande går att tolka och skriver tillbaka den på plats. Går inte den heller att läsa flyttas den trasiga filen undan till `backups\unreadable\` i stället för att skrivas över – appen startar med standardvärden och säger till var filen tog vägen. Inställningarna får en kopia som mest var femte minut, så att en kväll med reglagen inte fyller hela historiken med samma kväll.
-
-**Ny version.** Första gången appen startar under en version den inte har kört under förut kopieras hela profilen till en zip i `snapshots\`, *innan* något skrivs tillbaka – det är precis då ett program kan läsa en gammal fil, förstå bara hälften av den, och spara tillbaka det den förstod. De åtta senaste behålls. Cachar och loggar hoppas över; resten ligger som vanliga filer i zippen och går att lägga tillbaka med Utforskaren när appen är stängd. Kunde någon fil inte läsas – något annat program höll den öppet – heter zippen `-delvis` och versionen räknas inte som säkrad: nästa start gör om försöket och ersätter den ofullständiga kopian i stället för att lägga en till.
-
-Inställningsfilen har dessutom ett `SchemaVersion`-fält. Byter en framtida version namn på en inställning kan den läsa den gamla formen och flytta över värdet i stället för att tyst börja om från standard. Åt andra hållet: startar du en äldre version ovanpå en nyare fil lämnas allt den inte känner igen orört i stället för att skrivas bort.
-
-## Kör
-
-```powershell
-dotnet run --project src/TwitchOverlayHelper
-```
-
-Skriv kanalnamnet och välj **Anslut**. Använd **Redigera overlay** för att placera den och välj sedan **Lås overlay** så att musklick går rakt igenom till spelet.
+Appen uppdaterar sig själv från GitHub-släppen och säkerhetskopierar inställningarna vid varje sparning. Se [Data och uppdateringar](docs/data-och-uppdateringar.md).
 
 ## Twitch-inloggning (valfritt)
 
-Anonym anslutning räcker för att läsa chatten, se subs, raids och meddelanden och få rollinformation via IRC-taggar. Inloggning behövs för timeout, ban, raid, för att skriva i chatten, för emote-väljaren, för Twitchs egna badgebilder och för de händelser som går över EventSub – belöningar, shoutouts, power-ups och hypetåg. Tabellen under [Händelser i chatten](#händelser-i-chatten) visar vad som kräver vad, och vad som bara fungerar i din egen kanal.
+Utan inloggning kan appen läsa chatten och visa subs, raids och roller. Inloggning behövs för att moderera, raida, skriva i chatten, använda emote-väljaren, visa Twitchs badge-bilder och ta emot händelser via EventSub (belöningar, shoutouts, power-ups, hypetåg). [Tabellen i Händelser](docs/handelser.md#vad-som-kräver-inloggning) visar vad som kräver vad.
 
-Inloggningen sker med **Device Code Flow**: registrera en egen app på [dev.twitch.tv](https://dev.twitch.tv/console/apps) med klienttypen **Public**, klistra in dess Client ID i appen och välj **Logga in med Twitch**. Du får en kod att skriva in på `twitch.tv/activate` – ingen client secret och ingen redirect-URI behövs.
+1. Registrera en app på [dev.twitch.tv](https://dev.twitch.tv/console/apps) med klienttypen **Public**.
+2. Klistra in dess Client ID i appen och välj **Logga in med Twitch**.
+3. Skriv in koden du får på `twitch.tv/activate`.
 
-Refresh-token sparas krypterad med Windows DPAPI (`CurrentUser`) i `%LOCALAPPDATA%\TwitchOverlayHelper\credentials.bin`, så inloggningen överlever omstart utan att ligga i klartext och utan att kunna läsas av ett annat Windows-konto.
+Ingen client secret och ingen redirect-URI behövs. Refresh-token sparas krypterad med Windows DPAPI (`CurrentUser`) i `%LOCALAPPDATA%\TwitchOverlayHelper\credentials.bin`.
 
-## Teknik
+## Dokumentation
 
-Projektet använder .NET 10, WPF, Twitch IRC över TLS WebSocket, Helix och en inbäddad Kestrel-server för OBS-docken. Overlay-fönstret bygger vidare på samma beprövade Win32-mönster som MicMixer: `WS_EX_TRANSPARENT`, `WS_EX_NOACTIVATE`, `WS_EX_TOOLWINDOW` och periodisk topmost-återställning.
+- [Overlayen över spelet](docs/overlay.md): snabbtangenter, utseende och kantljus
+- [Chatten i OBS](docs/chatt.md): dock, streamchatt, historik, skrivfält och smeknamn
+- [Händelser i chatten](docs/handelser.md): korttyper och behörigheter
+- [Pets och lyckosnurren](docs/pets.md)
+- [Väntskärm med fajt](docs/fajt.md): kommandon, egna karaktärer och arenor
+- [Uppläsning](docs/upplasning.md): namn och tittarnas meddelanden
+- [Chatbot](docs/chatbot.md)
+- [Data och uppdateringar](docs/data-och-uppdateringar.md)
 
-Docken serveras från inbäddade resurser eftersom appen publiceras som en enda självständig fil.
+## Utveckling
 
-## Nästa produktsteg
+Kräver .NET 10 SDK på Windows.
 
-- Uppmärksamhetspuff: mods triggar en dämpad kantglöd på streamerns skärm när något behöver kollas, med `WDA_EXCLUDEFROMCAPTURE` så tittarna inte ser den.
-- OpenDyslexic/Atkinson Hyperlegible som paketerade webfonts i docken i stället för att kräva installation i Windows.
-- Uppläsning av mentions.
-- Val av skärm, fästpunkter och OBS Browser Source-läge.
+```powershell
+dotnet run --project src/TwitchOverlayHelper
+dotnet test
+```
+
+Appen är skriven i WPF och pratar med Twitch via IRC över WebSocket, Helix och EventSub. En inbäddad Kestrel-server på `127.0.0.1` serverar docken och de andra OBS-sidorna från inbäddade resurser, eftersom appen publiceras som en enda fil. Overlay-fönstret använder `WS_EX_TRANSPARENT`, `WS_EX_NOACTIVATE` och `WS_EX_TOOLWINDOW` och återställer topmost med jämna mellanrum.
+
+Pushar till `main` som ändrar `src/**` bygger och publicerar ett nytt släpp via `.github/workflows/release.yml`.
+
+## Stöd och tack
+
+Twitch Overlay Helper byggs och underhålls av BenjiButten och är gratis och öppen källkod. Ett särskilt tack till [Pixlexi](https://www.twitch.tv/pixlexi), som har bidragit med användningsfallen bakom appen, testat den i skarpt läge och gett återkoppling under hela utvecklingen.
+
+Gillar du appen och vill ge något tillbaka? Ge gärna bort en sub till [Pixlexi](https://www.twitch.tv/pixlexi) på Twitch.
+
+Emojis ritas med [Twemoji](https://github.com/jdecked/twemoji) (CC-BY 4.0).
+
+## Licens
+
+Twitch Overlay Helper är licensierad under [Apache License 2.0](LICENSE). Den som sprider appen vidare ska också behålla uppgifterna i [NOTICE](NOTICE), som licensen kräver.
+
+Släpp till och med `v2026.10.6` gavs ut under MIT och finns kvar under de villkoren. Källkoden från och med bytet till Apache-2.0 är licensierad under Apache-2.0.

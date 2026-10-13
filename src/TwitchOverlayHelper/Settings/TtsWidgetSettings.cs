@@ -28,23 +28,15 @@ public enum TtsWidgetAnimation
     /// <summary>Slides in from the edge it is anchored to.</summary>
     Slide,
 
-    /// <summary>Springs up to size. The loudest of the three, for a card that is the point.</summary>
+    /// <summary>Springs up to size. The loudest of the three.</summary>
     Pop
 }
 
 /// <summary>
 /// The card the viewers see while a paid message is being read out loud.
 ///
-/// <para>Its own settings rather than a corner of <see cref="StreamSettings"/>: that one is a column
-/// of chat that is always there and read in passing, this one appears for the twenty seconds a
-/// reading lasts and is the thing on screen while it does. What they do share is the medium – both
-/// are drawn over video nobody knows the colour of – so the plate behind the text and the rim around
-/// the letters exist here for the same reason they exist there.</para>
-///
-/// <para>Off by default, and deliberately: the reading page has always been a 1×1 source that only
-/// carries sound, and an upgrade must not put a card on somebody's stream because they installed a
-/// new version. Turning it on is also the moment the source has to be resized in OBS, which is
-/// something only the streamer can do.</para>
+/// <para>Off by default: without the card the reading page is a 1×1 source that only carries
+/// sound, and showing it means the streamer has to resize that source in OBS.</para>
 /// </summary>
 public sealed class TtsWidgetSettings
 {
@@ -65,7 +57,7 @@ public sealed class TtsWidgetSettings
 
     /// <summary>
     /// The widest the card may grow, in pixels of the browser source. A limit rather than a size: a
-    /// three-word message should not be stretched across the screen to fill a box.
+    /// short message is not stretched to fill it.
     /// </summary>
     public double Width { get; set; } = 720;
 
@@ -90,10 +82,8 @@ public sealed class TtsWidgetSettings
     public bool ShowName { get; set; } = true;
 
     /// <summary>
-    /// Whether the message is written out as well as read out. On by default – a viewer who paid for
-    /// their words wants them seen, and a synthetic voice is not always caught first time – but it is
-    /// the one switch here that puts a stranger's text on the broadcast, so it can be turned off and
-    /// leave a card that only says who is speaking.
+    /// Whether the message is written out as well as read out. The one switch here that puts a
+    /// stranger's text on the broadcast; off leaves a card that only says who is speaking.
     /// </summary>
     public bool ShowText { get; set; } = true;
 
@@ -101,9 +91,8 @@ public sealed class TtsWidgetSettings
     public bool ShowCost { get; set; }
 
     /// <summary>
-    /// The little row of bars that moves while the voice is talking. Not a real equaliser – the audio
-    /// is nowhere near this element – but it is what makes the card read as "this is being said now"
-    /// rather than as another notification that has got stuck.
+    /// The little row of bars that moves while the voice is talking. Decorative, not an equaliser:
+    /// the audio does not drive it.
     /// </summary>
     public bool ShowWave { get; set; } = true;
 
@@ -113,9 +102,8 @@ public sealed class TtsWidgetSettings
     public TtsWidgetAnimation Animation { get; set; } = TtsWidgetAnimation.Slide;
 
     /// <summary>
-    /// How long the card stays after the last word, in milliseconds. A short pause reads as the card
-    /// finishing rather than being cut off, and it covers the gap between two readings in a queue –
-    /// without it the card would blink out and straight back in.
+    /// How long the card stays after the last word, in milliseconds. Covers the gap between two
+    /// readings in a queue, so the card does not blink out and straight back in.
     /// </summary>
     public int LingerMilliseconds { get; set; } = 900;
 
@@ -123,8 +111,7 @@ public sealed class TtsWidgetSettings
     {
         FontFamily = string.IsNullOrWhiteSpace(FontFamily) ? "Verdana" : FontFamily.Trim();
         AccentColor = IsHexColor(AccentColor) ? AccentColor : "#A970FF";
-        // Trimmed rather than rejected: a caption is a handful of words, and the space it has is the
-        // width of the card.
+        // Cut rather than rejected: the caption only has the width of the card.
         Label = (Label ?? string.Empty).Trim();
         if (Label.Length > 40) Label = Label[..40];
         OffsetX = Clamp(OffsetX, 0, 600, 64);

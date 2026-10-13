@@ -23,8 +23,8 @@ public partial class OverlayWindow : Window
     private const double GiantEmoteScale = 3;
 
     /// <summary>
-    /// How tall a chat GIF may be, in text lines. Big enough to be worth sending and small enough
-    /// that one picture cannot push the rest of the conversation off the overlay.
+    /// How tall a chat GIF may be, in text lines, so one picture cannot push the rest of the
+    /// conversation off the overlay.
     /// </summary>
     private const double GifLineHeights = 7;
 
@@ -43,18 +43,15 @@ public partial class OverlayWindow : Window
     private readonly AppSettings _settings;
     private readonly TwitchBadgeCatalog _badges;
     /// <summary>
-    /// The names given to chatters. Read here as well as in the dock: the overlay is where the chat
-    /// is actually watched during a stream, and a name that only helped in one of the two views
-    /// would be worth half as much. Only read – the overlay stays click-through, so nothing here is
-    /// ever set from this window.
+    /// The names given to chatters. Only read: the overlay stays click-through, so nothing is ever
+    /// set from this window.
     /// </summary>
     private readonly NicknameBook _nicknames;
     private readonly AnimatedEmoteLoader _animatedEmotes = new(EmoteHttpClient);
 
     /// <summary>
-    /// The GIFs tier 2 and tier 3 subscribers send. A loader of its own rather than the emote one so
-    /// the two cannot evict each other: a single GIF is worth a hundred emotes in bytes, and the
-    /// emotes are what almost every line is made of.
+    /// The GIFs tier 2 and tier 3 subscribers send. A loader of its own so GIFs and emotes cannot
+    /// evict each other: a single GIF is worth a hundred emotes in bytes.
     /// </summary>
     private readonly AnimatedEmoteLoader _chatGifs = new(EmoteHttpClient, MaxGifBytes, MaxGifCacheBytes);
     private readonly DispatcherTimer _topmostTimer;
@@ -65,16 +62,13 @@ public partial class OverlayWindow : Window
     private bool _editMode;
 
     /// <summary>
-    /// The fonts and brushes the cards are built from. A rebuild draws up to
-    /// <see cref="AppSettings.MaxMessages"/> cards with three or four <see cref="FontFamily"/>
-    /// objects each, and dragging a slider rebuilds several times a second – so constructing them
-    /// per TextBlock meant hundreds of font lookups per frame for a handful of distinct values.
+    /// The cap on each cache of the fonts and brushes the cards are built from. A rebuild draws up
+    /// to <see cref="AppSettings.MaxMessages"/> cards and dragging a slider rebuilds several times
+    /// a second, so the handful of distinct values is shared rather than built per TextBlock.
     ///
-    /// <para>Instance fields rather than statics, and unlocked: like every other field on this
-    /// window they are only ever touched while building cards, which happens on the UI thread and
-    /// nowhere else. Capped so a channel full of custom name colours cannot grow them without
-    /// limit; past the cap the value is built fresh each time, which is what happened everywhere
-    /// before.</para>
+    /// <para>Unlocked: the caches are only touched while building cards, on the UI thread. Past
+    /// the cap a value is built fresh each time, so a channel full of custom name colours cannot
+    /// grow them without limit.</para>
     /// </summary>
     private const int MaxCachedValues = 512;
     private readonly Dictionary<string, FontFamily> _fontCache = new(StringComparer.Ordinal);
@@ -92,8 +86,7 @@ public partial class OverlayWindow : Window
     {
         if (_brushCache.TryGetValue(color, out SolidColorBrush? cached)) return cached;
         var brush = new SolidColorBrush(color);
-        // Frozen so WPF can skip change tracking and share it freely – nothing here ever mutates a
-        // brush after building it.
+        // Frozen so WPF can skip change tracking; a brush is never mutated after it is built.
         brush.Freeze();
         if (_brushCache.Count < MaxCachedValues) _brushCache[color] = brush;
         return brush;
@@ -132,8 +125,8 @@ public partial class OverlayWindow : Window
         _renderSettings = current;
 
         // Rebuilt from the tags, so a settings change keeps events in the reading order they landed in.
-        // Switching a kind of event off takes the cards that are up down with it; switching it back
-        // on cannot bring them back, and only applies to what happens from here.
+        // Switching a kind of event off takes its cards down; switching it back on only applies to
+        // events from then on.
         ChatTimelineItem[] items = MessagePanel.Children.OfType<Border>().Select(card => card.Tag)
             .OfType<ChatTimelineItem>().Where(IsShown).TakeLast(_settings.MaxMessages).ToArray();
         ClearMessages();
@@ -162,9 +155,8 @@ public partial class OverlayWindow : Window
     }
 
     /// <summary>
-    /// Throws away what is on screen and draws this instead. Used when history arrives out of order
-    /// with what is already up – lines fetched from before we connected belong above the live ones,
-    /// and there is no way to put them there by adding.
+    /// Throws away what is on screen and draws this instead. For history that belongs above the
+    /// live lines, where adding cannot put it.
     /// </summary>
     public void ReplaceItems(IReadOnlyList<ChatTimelineItem> items)
     {
@@ -175,17 +167,16 @@ public partial class OverlayWindow : Window
     }
 
     /// <summary>
-    /// Whether this line is one the overlay has been asked to draw. Chat messages always are – the
-    /// switches are about event cards, which is where a quiet overlay over a game earns its keep.
+    /// Whether this line is one the overlay has been asked to draw. Chat messages always are; the
+    /// switches are about event cards.
     /// </summary>
     private bool IsShown(ChatTimelineItem item) =>
         item.Event is not { } chatEvent || _settings.Events.Allows(chatEvent.Type);
 
     /// <summary>
-    /// Replaces a line already on screen with a changed version of itself. Only one thing needs it:
-    /// a Gigantify an Emote power-up that reached the app after the message it belongs to. A line
-    /// that has already scrolled off the top is simply not found, which is the right answer for a
-    /// marker there is no longer anywhere to put.
+    /// Replaces a line already on screen with a changed version of itself, for a Gigantify an Emote
+    /// power-up that reached the app after the message it belongs to. Does nothing when the line
+    /// has scrolled off the top.
     /// </summary>
     public void UpdateMessage(ChatMessage message)
     {
@@ -195,8 +186,8 @@ public partial class OverlayWindow : Window
             if (card.Tag is not ChatTimelineItem { Message: { } existing }) continue;
             if (!string.Equals(existing.Id, message.Id, StringComparison.Ordinal)) continue;
 
-            // Assigning over the index throws – WPF wants the old visual off the panel before the new
-            // one takes its place – so the card is swapped by removing and putting the new one back.
+            // Assigning over the index throws – WPF wants the old visual off the panel first – so
+            // the card is removed and the new one inserted.
             MessagePanel.Children.RemoveAt(i);
             MessagePanel.Children.Insert(i, CreateMessageCard(message));
             // The card just grew by a couple of lines; the newest message must stay the visible one.
@@ -209,11 +200,8 @@ public partial class OverlayWindow : Window
     /// Takes the lines a moderator's action reached off the overlay – a deleted message, everything
     /// from a user who was timed out or banned, or the whole room when the chat was cleared.
     ///
-    /// <para>Removed rather than struck through the way the dock marks them. The dock is the
-    /// streamer's own reading surface, where seeing that something was dealt with is the point; this
-    /// window sits over the game, where a line with a line through it is the same words still on
-    /// screen. Nothing here needs to know why – the rule for what an action reaches lives on the
-    /// event, next to the one the chat timeline asks.</para>
+    /// <para>Removed rather than struck through the way the dock marks them: over the game, a line
+    /// with a line through it is the same words still on screen.</para>
     /// </summary>
     public void ApplyModeration(ChatModerationEvent moderation)
     {
@@ -290,8 +278,7 @@ public partial class OverlayWindow : Window
         if (_settings.UseTwitchNameColors && !string.IsNullOrWhiteSpace(message.NameColor))
             try { nameColor = (Color)ColorConverter.ConvertFromString(message.NameColor)!; } catch (FormatException) { }
         identity.Children.Add(new TextBlock { Text = message.DisplayName, Foreground = Fill(EnsureReadable(nameColor)), FontWeight = FontWeights.Bold, FontSize = _settings.FontSize * 0.78, FontFamily = Font(_settings.FontFamily), VerticalAlignment = VerticalAlignment.Center });
-        // Beside the Twitch name, never instead of it, and in the quiet grey the timestamps use: it
-        // is a note about who is writing, not a second thing shouting for the same attention.
+        // Beside the Twitch name, never instead of it, in the quiet grey the timestamps use.
         if (_nicknames.For(message.UserId, message.UserLogin) is { Length: > 0 } nickname)
             identity.Children.Add(new TextBlock { Text = $"  {nickname}", Foreground = Fill(Color.FromRgb(183, 180, 194)), FontSize = _settings.FontSize * 0.7, FontFamily = Font(_settings.FontFamily), VerticalAlignment = VerticalAlignment.Center });
         if (message.IsFirstMessage)
@@ -400,8 +387,8 @@ public partial class OverlayWindow : Window
         ChatEventType.RewardRedemption => ("BELÖNING", Color.FromRgb(15, 124, 138)),
         ChatEventType.ShoutoutSent or ChatEventType.ShoutoutReceived => ("SHOUTOUT", Color.FromRgb(192, 40, 127)),
         ChatEventType.Celebration => ("FIRANDE", Color.FromRgb(139, 92, 246)),
-        // The overlay has nowhere to put a strip, so a train shows as the two moments that are
-        // moments: it started, and it ended on this level. The minutes in between are the dock's.
+        // The overlay has nowhere to put a strip, so a train shows as two cards: it started, and it
+        // ended on this level.
         ChatEventType.HypeTrainBegin or ChatEventType.HypeTrainEnd => ("HYPETÅG", Color.FromRgb(240, 168, 30)),
         _ => ("HÄNDELSE", Color.FromRgb(150, 150, 170))
     };
@@ -418,7 +405,7 @@ public partial class OverlayWindow : Window
 
     /// <summary>
     /// The one line that says this is an answer rather than a fresh thought. Small, grey and cut off
-    /// at one row: it is context for the sentence below it and must never outweigh what was written.
+    /// at one row, so it never outweighs what was written.
     /// </summary>
     private TextBlock CreateReplyLine(ChatReply reply) => new()
     {
@@ -436,9 +423,8 @@ public partial class OverlayWindow : Window
 
     /// <summary>
     /// The words of a line, with the pictures put back where they belong. Emotes and GIFs are two
-    /// lists of ranges over the same text and are walked together in reading order, because they can
-    /// share a line – "hej Kappa [Yes GIF by Someone]" – and each range may only be drawn once the
-    /// cursor has reached it.
+    /// lists of ranges over the same text, walked together in reading order because they can share
+    /// a line – "hej Kappa [Yes GIF by Someone]".
     /// </summary>
     private TextBlock CreateBody(
         string text,
@@ -570,9 +556,9 @@ public partial class OverlayWindow : Window
     }
 
     /// <summary>
-    /// A chat GIF, drawn over the description Twitch wrote into the message. The description is not
-    /// thrown away but left standing behind the picture: it is what the card shows while the file is
-    /// still on the wire, and what it falls back to when the download or the decode comes to nothing.
+    /// A chat GIF, drawn over the description Twitch wrote into the message. The description stays
+    /// behind the picture: it shows while the file is loading, and when the download or the decode
+    /// fails.
     /// </summary>
     private Inline CreateGifInline(GifSpan gif, string description)
     {
@@ -648,7 +634,7 @@ public partial class OverlayWindow : Window
             catch (Exception)
             {
                 // A GIF somebody else picked must never be able to take the overlay down; the
-                // description is still there and still says what was sent.
+                // description stays in its place.
             }
         }
     }
@@ -754,9 +740,8 @@ public partial class OverlayWindow : Window
     {
         string key = decodePixelWidth + ":" + url;
         if (_imageCache.TryGetValue(key, out BitmapImage? cached)) return cached;
-        // The oldest goes, rather than the whole cache. Emptying it meant every emote, badge and
-        // emoji on screen was fetched from the CDN again the moment the cap was reached – a burst
-        // of a few hundred requests, in the middle of whatever chat was busy enough to fill it.
+        // The oldest goes, rather than the whole cache: emptying it would refetch every emote,
+        // badge and emoji on screen from the CDN the moment the cap is reached.
         while (_imageCache.Count >= 512 && _imageOrder.TryDequeue(out string? oldest))
             _imageCache.Remove(oldest);
 
@@ -779,21 +764,18 @@ public partial class OverlayWindow : Window
         Child = new TextBlock { Text = text, Foreground = Brushes.White, FontSize = 10, FontWeight = FontWeights.ExtraBold, VerticalAlignment = VerticalAlignment.Center }
     };
 
-    /// <summary>
-    /// The body is the last thing in the card – a reply line can sit above the name row, and an
-    /// event card may have no body at all, so it is found from the end rather than by index.
-    /// </summary>
     private void ApplyMessageTypography(Border card)
     {
         if (card.Child is not StackPanel stack || stack.Children.Count < 2) return;
+        // The body is found from the end: a reply line can sit above the name row, and an event
+        // card may have no body at all.
         if (stack.Children[^1] is not TextBlock body) return;
         body.FontFamily = Font(_settings.FontFamily);
         body.FontSize = _settings.FontSize;
 
-        // Every line is normally locked to the same height, which is what makes a column of messages
-        // scannable. A gigantified emote is three times that and a GIF is taller still, and
-        // BlockLineHeight would crop either to the line box instead of showing it – so a card
-        // carrying one is allowed to let its lines grow to whatever is in them.
+        // Lines are normally locked to one height, which keeps the column scannable. A gigantified
+        // emote or a GIF is taller, and BlockLineHeight would crop it to the line box, so a card
+        // carrying one lets its lines grow.
         bool tall = card.Tag is ChatTimelineItem { Message: { } message }
             && ((_settings.GiantEmotes && message.GigantifiedEmoteIndex >= 0)
                 || (_settings.ShowGifs && message.Gifs.Count > 0));

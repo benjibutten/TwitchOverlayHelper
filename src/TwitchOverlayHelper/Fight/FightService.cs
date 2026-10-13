@@ -36,8 +36,8 @@ public sealed class FightService(AppSettings settings, FightCatalog catalog, Act
     private (string? P1, string? P2) _lineup;
 
     /// <summary>
-    /// Who the wait screen says is in the ring right now. With a character select that is the
-    /// chat's choice rather than the settings', and a cheer by name has to find the fighter there.
+    /// Who the wait screen says is in the ring right now, for cheering a fighter by name. With a
+    /// character select that is the chat's choice rather than the settings'.
     /// </summary>
     public void SetLineup(string? p1, string? p2)
     {
@@ -45,8 +45,8 @@ public sealed class FightService(AppSettings settings, FightCatalog catalog, Act
     }
 
     /// <summary>
-    /// Whether anybody is watching. A command with no wait screen open would only start a cooldown
-    /// for nothing, so it is ignored instead; null treats every screen as open.
+    /// Whether a wait screen is open. While it returns false, commands are ignored and start no
+    /// cooldown; null treats the screen as always open.
     /// </summary>
     public Func<bool>? IsShowing { get; set; }
 
@@ -125,7 +125,7 @@ public sealed class FightService(AppSettings settings, FightCatalog catalog, Act
     private static FighterDefinition? Lookup(IReadOnlyList<FighterDefinition> roster, string squashed) =>
         roster.FirstOrDefault(f => Squash(f.Id) == squashed) ?? roster.FirstOrDefault(f => Squash(f.Name) == squashed);
 
-    /// <summary>A name as it can be typed: lower case, with no spaces, dashes or underscores.</summary>
+    /// <summary>A name as it can be typed: lower case, with no spaces, dashes, underscores or '@'.</summary>
     internal static string Squash(string name) =>
         new(name.ToLowerInvariant().Where(ch => ch is not (' ' or '-' or '_' or '@')).ToArray());
 

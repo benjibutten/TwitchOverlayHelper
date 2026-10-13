@@ -13,9 +13,7 @@ namespace TwitchOverlayHelper;
 /// <summary>
 /// Every pet in the pets folder, one row each: rename it, set its rarity and whether it is a spin
 /// prize, and open it in the browser – alone in the inspector, or on the overlay's own page.
-///
-/// <para>Writes straight through rather than collecting an OK, into each pet's own pet.json – the
-/// same as every other settings window in the app.</para>
+/// Changes are written straight through to each pet's own pet.json; there is no OK button.
 /// </summary>
 public partial class PetsWindow : Window
 {
@@ -32,7 +30,6 @@ public partial class PetsWindow : Window
     /// <param name="reload">Re-reads the pets folder, the way the button on the pets tab does.</param>
     /// <param name="inspectUrl">
     /// The address of one pet's inspection view, or null while the local server is not running.
-    /// Handed in because the server is the main window's, not this one's.
     /// </param>
     /// <param name="previewUrl">The same for the page that shows the pet as the overlay draws it.</param>
     public PetsWindow(
@@ -59,8 +56,7 @@ public partial class PetsWindow : Window
     }
 
     /// <summary>
-    /// Rebuilds the rows from the catalog. Also how the main window hands over a change made
-    /// somewhere else; a rename in progress keeps what has been typed so far.
+    /// Rebuilds the rows from the catalog. A rename in progress keeps what has been typed so far.
     /// </summary>
     public void RefreshPets()
     {
@@ -83,8 +79,8 @@ public partial class PetsWindow : Window
     }
 
     /// <summary>
-    /// Writes one pet's rarity and prize flag into its own pet.json. The list is rebuilt when that
-    /// fails, because the row is then showing something that is not true of the pet.
+    /// Writes one pet's rarity and prize flag into its own pet.json. When that fails the list is
+    /// rebuilt, so the row goes back to showing what is true of the pet.
     /// </summary>
     private void Pet_Changed(object sender, RoutedEventArgs e)
     {
@@ -103,10 +99,7 @@ public partial class PetsWindow : Window
         RefreshPets();
     }
 
-    /// <summary>
-    /// Opens one row for renaming, closing whichever was open. One at a time because that is what
-    /// the two boxes are: the row's own name, not a column the whole list has.
-    /// </summary>
+    /// <summary>Opens one row for renaming, closing whichever was open.</summary>
     private void BeginEdit(PetRow row)
     {
         foreach (PetRow other in _pets) other.IsEditing = other == row;
@@ -144,13 +137,10 @@ public partial class PetsWindow : Window
         e.Handled = true;
     }
 
-    /// <summary>
-    /// Puts the cursor in the name box the moment the row opens for editing. Done from the box's
-    /// own visibility rather than from <see cref="BeginEdit"/>, because the template has not built
-    /// the box yet at the point the row is told to open.
-    /// </summary>
+    /// <summary>Puts the cursor in the name box the moment the row opens for editing.</summary>
     private void PetEditBox_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
+        // Driven by the box's own visibility: when BeginEdit runs, the template has not built the box.
         if (e.NewValue is not true || sender is not TextBox box) return;
         box.Dispatcher.BeginInvoke(() =>
         {
@@ -161,12 +151,7 @@ public partial class PetsWindow : Window
 
     /// <summary>
     /// Writes a renamed pet to its pet.json, and moves everything that pointed at the old id along
-    /// with it: the wins that are the whole point of the spin, the open gifts still looking for a
-    /// home, and the channel's default pet.
-    ///
-    /// <para>Order matters. The manifest is written first because it is the one step that can be
-    /// refused – a name another pet already answers to – and nothing else may move until the pet
-    /// really has the new id.</para>
+    /// with it: the spin wins, the open gifts and the channel's default pet.
     /// </summary>
     private void CommitEdit(PetRow row)
     {
@@ -178,6 +163,8 @@ public partial class PetsWindow : Window
             return;
         }
 
+        // The manifest goes first: it is the one step that can be refused (a name another pet
+        // already answers to), and nothing else may move until the pet really has the new id.
         if (!_catalog.TryRename(row.Id, newId, newName, out string error))
         {
             StatusText.Text = error;
@@ -201,8 +188,8 @@ public partial class PetsWindow : Window
     }
 
     /// <summary>
-    /// The inspector: one pet alone with every animation to try. Opened in the browser because that
-    /// is where a WebP spritesheet can actually be watched – WPF draws its first cell and no more.
+    /// Opens the inspector in the browser: one pet alone with every animation to try. WPF itself
+    /// draws only a sheet's first cell.
     /// </summary>
     private void PetInspect_Click(object sender, RoutedEventArgs e) => OpenPetPage(sender, _inspectUrl);
 

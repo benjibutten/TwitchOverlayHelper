@@ -3,12 +3,11 @@ using TwitchOverlayHelper.Diagnostics;
 namespace TwitchOverlayHelper.Bot;
 
 /// <summary>
-/// Twitch's write allowance, counted the way Twitch counts it: a rolling thirty seconds. Kept apart
-/// from the sending so the arithmetic can be tested without waiting for real seconds to pass.
+/// Twitch's write allowance, counted the way Twitch counts it: a rolling thirty seconds.
 /// </summary>
 internal sealed class BotRateLimiter
 {
-    /// <summary>Twitch's own window. Not a setting – it is their number, not ours.</summary>
+    /// <summary>Twitch's own window, so not a setting.</summary>
     public static readonly TimeSpan Window = TimeSpan.FromSeconds(30);
 
     private readonly Queue<DateTimeOffset> _sent = new();
@@ -26,9 +25,8 @@ internal sealed class BotRateLimiter
 }
 
 /// <summary>
-/// Remembers what was said recently, because Twitch drops a message identical to one the same
-/// account sent within thirty seconds – silently, with no notice and no error. A bot that repeated
-/// itself would look like it had stopped working rather than like it was being ignored.
+/// Remembers what was said recently: Twitch silently drops a message identical to one the same
+/// account sent within thirty seconds.
 /// </summary>
 internal sealed class BotDuplicateGuard
 {
@@ -46,7 +44,7 @@ internal sealed class BotDuplicateGuard
         _recent[text] = now;
     }
 
-    /// <summary>Forgets everything – the room changed, and Twitch counts duplicates per room.</summary>
+    /// <summary>Forgets everything. Twitch counts duplicates per room, so call it when the room changes.</summary>
     public void Forget() => _recent.Clear();
 
     private void Prune(DateTimeOffset now)
@@ -61,19 +59,12 @@ internal sealed class BotDuplicateGuard
 /// The one way a bot line reaches chat: queued, spaced out to stay inside Twitch's allowance, and
 /// dropped when it would be a duplicate Twitch is going to swallow anyway.
 ///
-/// <para><b>Why it queues rather than sends.</b> The moments the bot has something to say arrive in
-/// clumps – a lawn that empties settles half a dozen redemptions in the same second – and a straight
-/// send per event would spend the whole allowance in a burst. What is on the other side of that
-/// ceiling is not a rejected message but a global write ban on the account, so the queue is the
-/// feature rather than an optimisation.</para>
+/// <para>Bot lines arrive in bursts, and exceeding Twitch's allowance costs the account a global
+/// write ban rather than one rejected message.</para>
 /// </summary>
 public sealed class BotSender : IAsyncDisposable
 {
-    /// <summary>
-    /// How many lines may wait at once. A queue longer than this is one that has stopped being
-    /// answers and started being a backlog; the newest are dropped, because the ones already waiting
-    /// belong to viewers who have been waiting longer.
-    /// </summary>
+    /// <summary>How many lines may wait at once; when the queue is full the newest line is dropped.</summary>
     private const int MaxQueued = 20;
 
     /// <summary>The longest message Twitch accepts; a longer one is refused whole.</summary>
@@ -88,12 +79,8 @@ public sealed class BotSender : IAsyncDisposable
     private readonly CancellationTokenSource _lifetime = new();
     private Task? _pump;
 
-    /// <summary>
-    /// Which pump <see cref="_pump"/> refers to. A pump that finds the queue empty clears the field
-    /// under the lock, so the next <see cref="Enqueue"/> starts a fresh one – and that new pump would
-    /// otherwise be cleared again a moment later by the old one's finally, leaving two of them
-    /// running over the same queue. Counted so each pump only ever lets go of its own.
-    /// </summary>
+    // Identifies the pump _pump refers to, so a finishing pump's finally cannot clear the field after
+    // Enqueue has started a successor, which would leave two pumps on the same queue.
     private int _pumpGeneration;
     private bool _disposed;
 
@@ -103,18 +90,18 @@ public sealed class BotSender : IAsyncDisposable
         _allowedPerWindow = allowedPerWindow;
     }
 
-    /// <summary>Lines actually written, for the app's own status line and for the tests.</summary>
+    /// <summary>Lines actually written.</summary>
     public int SentCount { get; private set; }
 
-    /// <summary>Raised after a line has gone out, so the app can show what the bot last said.</summary>
+    /// <summary>Raised with the line after it has gone out.</summary>
     public event Action<string>? Sent;
 
     /// <summary>Raised when a line could not be written, with Twitch's reason.</summary>
     public event Action<string>? Failed;
 
     /// <summary>
-    /// Puts a line in the queue. Never waits for it: every caller is an event handler on the chat
-    /// thread, the EventSub thread or a timer, and none of them has half a minute to spare.
+    /// Puts a line in the queue and returns at once. A line longer than Twitch accepts is truncated;
+    /// one that is already waiting, or that arrives when the queue is full, is dropped.
     /// </summary>
     public void Enqueue(string text)
     {
@@ -129,9 +116,8 @@ public sealed class BotSender : IAsyncDisposable
                 AppLog.Warn($"Bot: kön är full ({MaxQueued}), meddelandet skrevs aldrig: {line}");
                 return;
             }
-            // Already waiting to be said. Worth catching here as well as at the send: the queue can
-            // hold a line for half a minute, which is exactly the span in which the same event
-            // happening twice would produce it again.
+            // Already waiting to be said. The send-time duplicate check only knows lines that have gone
+            // out, and a line can wait here for half a minute.
             if (_queue.Contains(line, StringComparer.Ordinal)) return;
             _queue.Enqueue(line);
             if (_pump is null)
@@ -143,13 +129,8 @@ public sealed class BotSender : IAsyncDisposable
     }
 
     /// <summary>
-    /// Throws away everything still waiting – the channel changed, or the bot was switched off.
-    ///
-    /// <para>What was recently said goes with it. Twitch counts duplicates per channel, so a line
-    /// already said in the channel we have left is a new line in the one we are joining, and
-    /// remembering it would silence the first thing the bot has to say there. The rate allowance is
-    /// deliberately kept: it belongs to the account rather than to the room, and carrying it over is
-    /// the safe direction to be wrong in.</para>
+    /// Throws away everything still waiting, and the memory of what was recently said (Twitch counts
+    /// duplicates per channel). The rate allowance is kept: it belongs to the account, not the room.
     /// </summary>
     public void Clear()
     {
@@ -170,9 +151,8 @@ public sealed class BotSender : IAsyncDisposable
                 TimeSpan wait;
                 lock (_gate)
                 {
-                    // Finding the queue empty and letting go of it are one step under the lock, so an
-                    // Enqueue arriving now either lands before this and is taken, or after it and
-                    // starts a pump of its own. A gap here would leave a line with nobody to send it.
+                    // Finding the queue empty and clearing _pump are one step under the lock, so a
+                    // concurrent Enqueue is either taken here or starts a pump of its own.
                     if (_queue.Count == 0) { _pump = null; return; }
                     line = _queue.Peek();
                     wait = _rate.TimeUntilSlot(_allowedPerWindow(), DateTimeOffset.UtcNow);
@@ -186,8 +166,7 @@ public sealed class BotSender : IAsyncDisposable
 
                 lock (_gate)
                 {
-                    // Taken now rather than at the peek: the wait above can be half a minute long,
-                    // and Clear() during it means this line is no longer wanted.
+                    // Dequeued here rather than at the peek: Clear() may have run during the wait.
                     if (_queue.Count == 0 || !string.Equals(_queue.Peek(), line, StringComparison.Ordinal)) continue;
                     _queue.Dequeue();
                     if (_duplicates.IsDuplicate(line, DateTimeOffset.UtcNow))
@@ -195,10 +174,8 @@ public sealed class BotSender : IAsyncDisposable
                         AppLog.Info($"Bot: hoppade över en upprepning Twitch ändå hade svalt: {line}");
                         continue;
                     }
-                    // The allowance is spent on the attempt rather than on the success: a run of
-                    // sends that fail fast – the bot is not connected – would otherwise cost nothing
-                    // to make, and the moment the connection came back the whole backlog would go
-                    // out at once into the ceiling this exists to stay under.
+                    // The allowance is spent on the attempt, not the success: sends that fail fast
+                    // while disconnected must not let the whole backlog out at once on reconnect.
                     _rate.Record(DateTimeOffset.UtcNow);
                 }
 
@@ -206,9 +183,8 @@ public sealed class BotSender : IAsyncDisposable
                 {
                     await _send(line, _lifetime.Token).ConfigureAwait(false);
                     SentCount++;
-                    // Written down only now. A line Twitch never received is not one Twitch will
-                    // swallow as a repeat, and remembering a failed send would block the same
-                    // perfectly good sentence for the next thirty seconds.
+                    // Recorded only after a successful send: a line Twitch never received is not one
+                    // it will swallow as a repeat.
                     lock (_gate) _duplicates.Record(line, DateTimeOffset.UtcNow);
                     AppLog.Info($"Bot: {line}");
                     Sent?.Invoke(line);
@@ -216,8 +192,8 @@ public sealed class BotSender : IAsyncDisposable
                 catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { return; }
                 catch (Exception ex)
                 {
-                    // Not connected, not logged in, refused by Twitch. The line is gone either way –
-                    // retrying a greeting or a refund notice minutes later is worse than dropping it.
+                    // Not connected, not logged in or refused by Twitch. The line is dropped: a
+                    // greeting or refund notice retried minutes later is worse than none.
                     AppLog.Warn($"Bot: kunde inte skriva i chatten: {ex.Message}");
                     Failed?.Invoke(ex.Message);
                 }
@@ -230,9 +206,8 @@ public sealed class BotSender : IAsyncDisposable
         }
         finally
         {
-            // Whatever happened, the pump must not stay marked as running – nothing would ever start
-            // it again and the bot would go quiet until the app restarted. Only its own, though: a
-            // successor started after this one gave the queue up is the live pump now.
+            // A pump left marked as running would never be restarted. Only its own mark is cleared: a
+            // successor may already be the live pump.
             lock (_gate)
             {
                 if (_pumpGeneration == generation) _pump = null;

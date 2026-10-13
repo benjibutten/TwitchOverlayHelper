@@ -16,15 +16,12 @@ public sealed record SettingsLoadReport(
     bool StartedFresh);
 
 /// <summary>
-/// settings.json, which by now holds most of what the user has ever configured – the overlay, the
-/// dock, the stream view, two voices, the pets, the bot.
+/// settings.json, which holds most of what the user has configured – the overlay, the dock, the
+/// stream view, two voices, the pets, the bot.
 ///
-/// <para>It used to be written straight over itself and read with a catch that answered any
-/// problem with a blank <see cref="AppSettings"/>. That is the shape of every settings file that
-/// has ever quietly emptied itself: one unreadable byte, one save afterwards, and the evening's
-/// work is the new truth. It now goes through <see cref="BackedUpJsonFile"/> – atomic writes, a
-/// dated copy beside every save, a read that falls back through them – and a file nothing can make
-/// sense of is moved aside rather than overwritten.</para>
+/// <para>Goes through <see cref="BackedUpJsonFile"/> – atomic writes, a dated copy beside every
+/// save, a read that falls back through them – and a file nothing can make sense of is moved aside
+/// rather than overwritten.</para>
 /// </summary>
 public sealed class SettingsStore
 {
@@ -34,8 +31,8 @@ public sealed class SettingsStore
 
     /// <summary>
     /// How close together two dated copies may be taken. The settings are written on a timer while
-    /// a slider is being dragged, so without a gap an evening's tuning would be the whole history
-    /// the folder holds – and the state from before the tuning is the one worth having.
+    /// a slider is being dragged, and without a gap those saves would push the state from before
+    /// the tuning out of the history.
     /// </summary>
     public static readonly TimeSpan DefaultBackupInterval = TimeSpan.FromMinutes(5);
 
@@ -70,9 +67,8 @@ public sealed class SettingsStore
             _file.RecoveredFromBackup,
             _file.QuarantinedPath,
             migration,
-            // Whether there was a file, not whether it could be read. A settings file too broken to
-            // parse is the opposite of a first run, and calling it one is how the start that most
-            // needs a snapshot of the profile ends up being the one that skips it.
+            // Whether there was a file, not whether it could be read: a file too broken to parse is
+            // not a first run, and that start is the one that most needs the profile snapshot.
             StartedFresh: !_file.FoundOnDisk);
         return settings;
     }

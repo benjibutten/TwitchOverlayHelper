@@ -4,9 +4,8 @@ namespace TwitchOverlayHelper.History;
 
 /// <summary>
 /// Puts two accounts of the same chat together: the lines this app saw itself, and the lines the
-/// recent-messages service kept for the stretch we were away. They overlap – the service holds
-/// everything, including what we already have – so the join has to be by identity rather than by
-/// appending, or a restart would show every line twice.
+/// recent-messages service kept for the stretch we were away. They overlap, so the join is by
+/// identity rather than by appending, or a restart would show every line twice.
 /// </summary>
 public static class ChatHistoryMerge
 {
@@ -14,8 +13,7 @@ public static class ChatHistoryMerge
     /// One timeline, oldest first, newest <paramref name="limit"/> lines kept.
     ///
     /// <para>Where the two sources disagree about a line, <paramref name="mine"/> wins: our own copy
-    /// has been through reward-name and power-up enrichment that the raw feed knows nothing about,
-    /// so taking the fetched version would quietly strip a redemption of its name.</para>
+    /// carries the reward-name and power-up enrichment the raw feed lacks.</para>
     /// </summary>
     public static IReadOnlyList<ChatTimelineItem> Combine(
         IReadOnlyList<ChatTimelineItem> mine,
@@ -45,13 +43,8 @@ public static class ChatHistoryMerge
     }
 
     /// <summary>
-    /// What makes a line itself. Twitch's message id is the honest answer and is on everything that
-    /// came off the wire; a line without one is ours alone – a local echo – and cannot be a duplicate
-    /// of anything the service has, so it is kept under a key of its own.
-    ///
-    /// <para>Shared rather than private because the same question is asked in a second place: before
-    /// the overlay is redrawn, the lines still waiting to be drawn on it have to be told apart from
-    /// the ones the redraw already covers.</para>
+    /// What makes a line itself: Twitch's id for anything that came off the wire. A local echo has
+    /// only its own invented id, which cannot collide with anything the service has.
     /// </summary>
     internal static string? IdOf(ChatTimelineItem item) =>
         item.Message is { } message ? "m:" + message.Id

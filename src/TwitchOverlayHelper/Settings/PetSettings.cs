@@ -17,27 +17,25 @@ public sealed class PetRewardRule
 
     /// <summary>
     /// The reward's name on stream. Only EventSub knows it, so it is matched alongside the id
-    /// rather than instead of it: in a channel where we cannot read the rewards, the id is still
-    /// the only thing a redemption carries.
+    /// rather than instead of it: where the rewards cannot be read, the id is all a redemption carries.
     /// </summary>
     public string RewardName { get; set; } = string.Empty;
 
     public int Minutes { get; set; } = 5;
 
     /// <summary>
-    /// This app created the reward on Twitch, which is the only thing that makes its redemptions
-    /// answerable: Twitch lets an app fulfil or refund a redemption only on a reward its own client
-    /// id made. A rule pointed at a reward set up by hand in the dashboard stays false forever, and
-    /// keeps the old behaviour – the pet spawns and the points are simply spent.
+    /// Whether this app created the reward on Twitch. Twitch lets an app fulfil or refund a
+    /// redemption only on a reward its own client id made; for a reward set up by hand in the
+    /// dashboard the pet spawns and the points are simply spent.
     ///
-    /// <para>Written by the app, never by hand. Setting it on a reward the app did not create only
-    /// buys a 403 from Twitch at the moment a refund was supposed to happen.</para>
+    /// <para>Written by the app, never by hand: set on a reward the app did not create, it turns a
+    /// refund into a 403 from Twitch.</para>
     /// </summary>
     public bool Managed { get; set; }
 
     /// <summary>
-    /// The price the reward was created with, kept so the settings can show what a rule costs
-    /// without a round trip. Twitch's own copy is the truth; this is a note.
+    /// The price the reward was created with, so the settings can show it without a round trip.
+    /// Twitch's own copy is the truth.
     /// </summary>
     public int Cost { get; set; } = 500;
 
@@ -83,8 +81,8 @@ public sealed class PetSettings
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// Legacy single reward, from before rewards could differ in length. Migrated into
-    /// <see cref="Rewards"/> on load and then left empty.
+    /// The single reward id of older settings files. Migrated into <see cref="Rewards"/> on load
+    /// and then left empty.
     /// </summary>
     public string RewardId { get; set; } = string.Empty;
 
@@ -101,14 +99,9 @@ public sealed class PetSettings
     public double Scale { get; set; } = 1.0;
 
     /// <summary>
-    /// How fast the creatures are animated, as a multiple of their natural pace. Each behaviour
-    /// already has a pace of its own – a wave is a gesture and runs slower than a run cycle – so
-    /// this scales the whole set rather than any one animation, and 1.0 is the balance the overlay
-    /// was drawn for.
-    ///
-    /// <para>It exists because the right speed depends on the sheet: a creature drawn with six
-    /// frames of idle breathes at a different rate than one drawn with three, and no default fits
-    /// every pet somebody downloads.</para>
+    /// How fast the creatures are animated, as a multiple of their natural pace. Scales every
+    /// behaviour together; 1.0 is the balance the overlay was drawn for. Adjustable because the
+    /// right speed depends on how many frames a pet's sheet has.
     /// </summary>
     public double AnimationSpeed { get; set; } = 1.0;
 
@@ -118,32 +111,21 @@ public sealed class PetSettings
     /// <summary>Lets the broadcaster and moderators spawn a pet with "!pet", to test without points.</summary>
     public bool AllowModTestCommand { get; set; } = true;
 
-    /// <summary>
-    /// Species used when the redemption text names no pet. Empty means a random one, which keeps
-    /// the surprise for viewers who did not read the reward description.
-    /// </summary>
+    /// <summary>Species used when the redemption text names no pet. Empty means a random one.</summary>
     public string DefaultPet { get; set; } = string.Empty;
 
-    /// <summary>
-    /// The label under each pet, carrying the name of the viewer who redeemed it. Turning it off
-    /// leaves only the creatures, for a cleaner overlay.
-    /// </summary>
+    /// <summary>The label under each pet, carrying the name of the viewer who redeemed it.</summary>
     public bool ShowNames { get; set; } = true;
 
     /// <summary>
     /// The aura every pet wears in its rarity's colour – a breathing halo, and a sheen sweeping
-    /// across the rarer ones. Something a viewer can read at a glance is worth more than a tier
-    /// written down in a settings window, but it is still light on the picture the stream is
-    /// really about, so it can be switched off.
+    /// across the rarer ones.
     /// </summary>
     public bool RarityEffects { get; set; } = true;
 
     /// <summary>
-    /// How long the aura burns before it fades away and leaves the creature alone. The glow is
-    /// there to say "look what just landed", and six of them lit for the whole five minutes is an
-    /// overlay competing with the game behind it – so it is loud on arrival and gone shortly after.
-    /// Zero keeps every pet lit for as long as it lives, for a channel that wants the tier readable
-    /// at any moment.
+    /// How long the aura burns before it fades away, so a lawn of lit pets does not compete with
+    /// the game behind it. Zero keeps every pet lit for as long as it lives.
     /// </summary>
     public int RarityFadeSeconds { get; set; } = 10;
 
@@ -157,19 +139,14 @@ public sealed class PetSettings
         return RuleFor(rewardId, rewardTitle)?.Minutes;
     }
 
-    /// <summary>
-    /// Which rule a redemption falls under, or null when none claims it. Told apart from
-    /// <see cref="LifetimeMinutesFor"/> because refunding needs the rule itself: only a rule holding
-    /// a reward this app created may answer Twitch about the redemption.
-    /// </summary>
+    /// <summary>Which rule a redemption falls under, or null when none claims it.</summary>
     public PetRewardRule? RuleFor(string? rewardId, string? rewardTitle = null)
     {
         foreach (PetRewardRule rule in Rewards)
             if (rule.Matches(rewardId, rewardTitle))
                 return rule;
 
-        // A rule that names nothing is the catch-all, so "every other redemption" can still be
-        // worth something without pasting every reward in the channel.
+        // A rule that names nothing is the catch-all for redemptions no other rule claimed.
         foreach (PetRewardRule rule in Rewards)
             if (rule.IsCatchAll) return rule;
 
@@ -185,34 +162,30 @@ public sealed class PetSettings
         DefaultPet = DefaultPet?.Trim() ?? string.Empty;
         LifetimeMinutes = Math.Clamp(LifetimeMinutes, 1, 60);
         Scale = Math.Clamp(double.IsFinite(Scale) ? Scale : 1.0, 0.4, 2.5);
-        // Outside this range the animations stop reading as movement: too slow is a slideshow, too
-        // fast a blur, and neither is a setting worth letting a hand-edited file ask for.
+        // Outside this range the animations stop reading as movement: a slideshow or a blur.
         AnimationSpeed = Math.Clamp(double.IsFinite(AnimationSpeed) ? AnimationSpeed : 1.0, 0.5, 1.5);
         MaxPets = Math.Clamp(MaxPets, 1, 20);
 
-        // A hand-edited settings.json can hold "rewards": [null]; a missing rule is worth ignoring,
-        // never worth refusing to start over.
+        // A hand-edited settings.json can hold "rewards": [null]; such entries are ignored.
         Rewards = Rewards?.Where(rule => rule is not null).ToList() ?? [];
         foreach (PetRewardRule rule in Rewards) rule.Normalize();
 
-        // Settings written before rewards could differ in length carried a single id; it becomes
-        // the first rule so an upgrade keeps spawning pets from the same reward.
+        // Older settings files carry a single reward id; it becomes the first rule so the same
+        // reward keeps spawning pets.
         RewardId = RewardId?.Trim() ?? string.Empty;
         if (RewardId.Length > 0 && Rewards.Count == 0)
             Rewards.Add(new PetRewardRule { RewardId = RewardId, Minutes = LifetimeMinutes });
         RewardId = string.Empty;
 
-        // Two rules for the same reward would make the second one dead weight, and two catch-alls
-        // are the same trap; the first one written wins. The key joins id and name with a separator
-        // neither can contain, so id "ab" with no name cannot collide with id "a" and name "b".
+        // A second rule for the same reward, or a second catch-all, could never match; the first wins.
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         Rewards = Rewards.Where(rule => seen.Add(RuleKey(rule))).ToList();
     }
 
     /// <summary>
-    /// Identity of a rule, for dropping duplicates. The halves are joined by a unit separator –
-    /// spelled as a character code rather than written into the string, because an invisible
-    /// control character in source is a trap for whoever reads this next.
+    /// Identity of a rule, for dropping duplicates. Id and name are joined by a unit separator,
+    /// which neither can contain, so id "ab" with no name cannot collide with id "a" and name "b".
+    /// It is spelled as a character code because an invisible control character in source is a trap.
     /// </summary>
     private static string RuleKey(PetRewardRule rule) =>
         rule.RewardId + (char)0x1F + rule.RewardName;

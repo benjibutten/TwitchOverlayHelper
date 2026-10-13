@@ -52,8 +52,8 @@ public sealed class EventSubPlanTests
         Assert.False(plan.Redemptions);
     }
 
-    // The point of the whole scope check: a login granted before the scope existed must not send a
-    // request Twitch answers with 403, and must not stop anything else from working either.
+    // A login granted before the scope existed must not send a request Twitch answers with 403, and
+    // must not stop anything else from working either.
     [Fact]
     public void SkipsRedemptionsWhenTheStoredLoginPredatesTheScope()
     {
@@ -64,8 +64,7 @@ public sealed class EventSubPlanTests
     }
 
     // Twitch takes either scope on the redemption topic, and the manage scope is the wider of the
-    // two. A login holding only that half used to lose its redemptions over a permission it
-    // already had.
+    // two, so a login holding only that half keeps its redemptions.
     [Fact]
     public void TheManageScopeAloneIsEnoughToReadRedemptions()
     {

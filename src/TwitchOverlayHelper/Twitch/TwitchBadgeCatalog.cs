@@ -10,12 +10,10 @@ public sealed class TwitchBadgeCatalog
 {
     private readonly HttpClient _httpClient = new();
 
-    // Read from the IRC and dock-server threads while the UI thread loads new badges into them,
-    // so a plain Dictionary would occasionally corrupt or throw mid-lookup.
+    // Concurrent: read from the IRC and dock-server threads while the UI thread loads badges.
     //
-    // Kept apart because they have different lifetimes. A global badge looks the same in every chat
-    // on Twitch and can stay; a channel's own badges – subscriber tiers above all – belong to one
-    // streamer, and the same "subscriber/6" is a different picture in the next channel.
+    // Kept apart because they have different lifetimes: a global badge is the same in every chat,
+    // while "subscriber/6" is a different picture in the next channel.
     private readonly ConcurrentDictionary<(string Set, string Version), BadgeInfo> _global = new();
     private readonly ConcurrentDictionary<(string Set, string Version), BadgeInfo> _channel = new();
 
@@ -24,10 +22,9 @@ public sealed class TwitchBadgeCatalog
         _channel.TryGetValue((set, version), out badge) || _global.TryGetValue((set, version), out badge);
 
     /// <summary>
-    /// Drops the badges belonging to the channel being left. Called on every channel switch, not
-    /// only on the ones we can reload after: without a login Twitch will not hand out badges at all,
-    /// and the views then fall back to the plain word "SUB" – which is at least true, where the
-    /// previous streamer's sub icon next to a stranger's name is not.
+    /// Drops the badges belonging to the channel being left. Call on every channel switch, even
+    /// when no reload can follow: without a login Twitch hands out no badges, and the views' text
+    /// fallback beats the previous streamer's sub icon.
     /// </summary>
     public void ForgetChannel() => _channel.Clear();
 
@@ -41,8 +38,8 @@ public sealed class TwitchBadgeCatalog
         await LoadEndpointAsync("https://api.twitch.tv/helix/chat/badges/global", _global, clientId, token, cancellationToken);
         if (string.IsNullOrWhiteSpace(broadcasterId)) return;
 
-        // Replaced rather than merged: a set the previous channel had and this one does not would
-        // otherwise survive underneath, and be picked over the global fallback that should show.
+        // Replaced rather than merged: a set only the previous channel had would otherwise be
+        // picked over the global fallback.
         _channel.Clear();
         await LoadEndpointAsync(
             $"https://api.twitch.tv/helix/chat/badges?broadcaster_id={Uri.EscapeDataString(broadcasterId)}",

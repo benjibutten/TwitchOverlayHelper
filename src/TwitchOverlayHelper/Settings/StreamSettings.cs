@@ -6,11 +6,9 @@ namespace TwitchOverlayHelper.Settings;
 /// <summary>
 /// The chat as the viewers see it: a transparent browser source laid over the stream.
 ///
-/// <para>Its own settings rather than a second reading of the dock's, because the two are read by
-/// different people at different distances. The dock is the streamer's own surface – it may show
-/// everything the app knows, and it is read at arm's length. This page is on the broadcast: it is
-/// glanced at in a corner of a video, so it is bigger, shorter and carries only what a viewer has
-/// any business seeing. What is deliberately absent is listed in the page itself.</para>
+/// <para>Its own settings rather than the dock's: the dock is the streamer's own surface and may
+/// show everything the app knows, while this page is on the broadcast – bigger, shorter, and
+/// carrying only what a viewer has any business seeing.</para>
 /// </summary>
 public sealed class StreamSettings
 {
@@ -24,8 +22,7 @@ public sealed class StreamSettings
 
     /// <summary>
     /// Seconds a line stays before it fades out on its own. 0 leaves it until a newer line pushes it
-    /// off, which is what a chat box in a fixed corner usually wants; a number suits an overlay lying
-    /// over the game, where an old line during a quiet stretch is just something in the way.
+    /// off.
     /// </summary>
     public int FadeAfterSeconds { get; set; }
 
@@ -48,7 +45,7 @@ public sealed class StreamSettings
     public bool GiantEmotes { get; set; } = true;
     /// <summary>
     /// Draws the GIFs tier 2 and tier 3 subscribers can send. Off leaves the line as Twitch worded
-    /// it – "[Yes GIF by Someone]" – which is a sentence in its own right, so nothing goes missing.
+    /// it – "[Yes GIF by Someone]".
     /// </summary>
     public bool ShowGifs { get; set; } = true;
     /// <summary>Off by default: the viewers can see the clock on their own stream.</summary>
@@ -61,33 +58,27 @@ public sealed class StreamSettings
     public bool CalmShouting { get; set; }
 
     /// <summary>
-    /// Hides "!command" lines outright rather than dimming them the way the dock does. The dock dims
-    /// because the streamer may still want to see who asked for what; on the broadcast a command is
-    /// noise with a bot answer coming right behind it.
+    /// Hides "!command" lines outright rather than dimming them the way the dock does: on the
+    /// broadcast a command is noise with a bot answer coming right behind it.
     /// </summary>
     public bool HideCommands { get; set; } = true;
 
     /// <summary>
-    /// Accounts whose lines never reach the stream, written the way a person would: names separated
-    /// by comma, space or newline. Chat bots by default, because their answers are the other half of
-    /// the command traffic hidden above.
+    /// Accounts whose lines never reach the stream: names separated by comma, space or newline.
+    /// Chat bots by default, because their answers are the other half of the hidden command traffic.
     ///
-    /// <para>Kept as the text that was typed rather than as a parsed list. The page is the only thing
-    /// that ever looks a name up, so it does the splitting, and the settings file holds exactly what
-    /// the user wrote instead of that plus a copy of it they cannot edit.</para>
+    /// <para>Kept as the text that was typed rather than as a parsed list; the page does the
+    /// splitting.</para>
     /// </summary>
     public string IgnoredAccounts { get; set; } = "nightbot, streamelements, streamlabs, moobot, fossabot, sery_bot";
 
     /// <summary>
-    /// Which event cards the stream overlay draws. A third list rather than a shared one: subs and
-    /// raids on the broadcast are a thank-you to the viewers, and that is a different decision from
-    /// what the streamer wants in their own column.
+    /// Which event cards the stream overlay draws. A list of its own: what the viewers are shown is
+    /// a different decision from what the streamer wants in their own column.
     ///
-    /// <para><see cref="ChatEventVisibility.HypeTrain"/> is the one member this view never reads, and
-    /// there is deliberately no switch for it in the settings window. Twitch already puts a hype
-    /// train in front of the viewers itself, on every player watching – drawing a second one over the
-    /// video would be this app telling them something they can already see. The field is only here
-    /// because the three views share one shape.</para>
+    /// <para><see cref="ChatEventVisibility.HypeTrain"/> is never read by this view and has no
+    /// switch in the settings window: Twitch already shows a hype train on every player. The field
+    /// is only here because the three views share one shape.</para>
     /// </summary>
     public ChatEventVisibility Events { get; set; } = new();
 

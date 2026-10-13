@@ -33,8 +33,8 @@ internal static class DarkTitleBar
         if (handle == nint.Zero) return;
 
         int on = 1;
-        // Windows 10 builds before 20H1 used a different attribute number, and anything older than
-        // that simply returns a failure code – a light caption bar, which is what we had anyway.
+        // Windows 10 builds before 20H1 use a different attribute number; anything older returns a
+        // failure code and keeps its light caption bar.
         if (DwmSetWindowAttribute(handle, UseImmersiveDarkMode, ref on, sizeof(int)) != 0)
             DwmSetWindowAttribute(handle, UseImmersiveDarkModeBefore20H1, ref on, sizeof(int));
     }

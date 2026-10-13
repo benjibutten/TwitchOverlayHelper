@@ -16,9 +16,8 @@ public enum HypeTrainPhase
 public sealed record HypeTrainContribution(string DisplayName, string Kind, int Total);
 
 /// <summary>
-/// A hype train as it stands right now. Unlike everything else the chat views carry, this is not a
-/// line in a log: it is a state that lives for minutes and is replaced rather than appended to,
-/// which is why the dock draws it as a strip instead of a card that would scroll away under it.
+/// A hype train as it stands right now. Not a line in a log but a state that lives for minutes and
+/// is replaced rather than appended to, which is why the dock draws it as a strip instead of a card.
 /// </summary>
 public sealed record HypeTrainState(
     string Id,
@@ -76,9 +75,8 @@ public sealed record HypeTrainState(
         : ExpiresAt is not { } expires || now < expires;
 
     /// <summary>
-    /// The two moments in a train that are worth a card of their own. A progress update is not one
-    /// of them: a bar that moves every few seconds belongs in the dock's strip, and a card per
-    /// contribution would bury the chat it sits next to.
+    /// The card for a train's start or end, or null for a progress update: a card per contribution
+    /// would bury the chat it sits next to.
     /// </summary>
     public ChatEvent? ToChatEvent() => Phase switch
     {

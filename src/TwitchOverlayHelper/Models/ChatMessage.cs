@@ -8,8 +8,8 @@ public sealed record EmoteSpan(string EmoteId, int Start, int Length);
 /// <summary>
 /// A GIF a tier 2 or tier 3 subscriber sent, and the stretch of <see cref="ChatMessage.Text"/> it
 /// replaces. Twitch writes the picture's own description into the message – "[Yes GIF by Someone]" –
-/// and names the range covering it in the gifs tag, so a view that knows nothing about this still
-/// shows a sentence that reads, and one that does swaps the picture in over those characters.
+/// and names the range covering it in the gifs tag, so a view that ignores GIFs still shows a
+/// sentence that reads.
 ///
 /// <para><paramref name="Url"/> is Twitch's, passed on exactly as it arrived: their documentation
 /// asks that the address not be rewritten, and the signed query it carries is what makes it load.</para>
@@ -57,10 +57,9 @@ public sealed record ChatMessage(
     public bool IsAction { get; init; }
 
     /// <summary>
-    /// A line we wrote that Twitch never gave an id to. It is shown like any other message – that is
-    /// the whole point of echoing it – but <see cref="Id"/> is then a local invention, and calling
-    /// Helix with it to pin or delete the message can only ever answer "no such message". So the
-    /// views drop the two buttons that would do that, rather than offering an action that cannot work.
+    /// A line we wrote that Twitch never gave an id to. <see cref="Id"/> is then a local invention,
+    /// and Helix can only answer "no such message" to a pin or delete, so the views drop those two
+    /// buttons.
     /// </summary>
     public bool IsLocalEcho { get; init; }
 
@@ -104,12 +103,10 @@ public sealed record ChatMessage(
     public string? GigantifiedEmoteId { get; init; }
 
     /// <summary>
-    /// Which emote span is the enlarged one, or -1 when none is. Twitch does not mark it – that is
-    /// the whole of open issue twitchdev/issues#1047 – and the convention every client renders by is
-    /// that the gigantified emote is the *last* one in the message. This rests on that convention,
-    /// not on a contract. When channel.bits.use did name the emote we can do better than guess and
-    /// take the last span carrying that id, falling back to the convention if the message no longer
-    /// contains it.
+    /// Which emote span is the enlarged one, or -1 when none is. Twitch does not mark it (open issue
+    /// twitchdev/issues#1047); the convention every client renders by, not a contract, is that it
+    /// is the last emote in the message. When channel.bits.use named the emote, the last span
+    /// carrying that id is taken, falling back to the convention if the message does not contain it.
     /// </summary>
     public int GigantifiedEmoteIndex
     {
@@ -124,20 +121,17 @@ public sealed record ChatMessage(
 
     /// <summary>
     /// Twitch's own answer to "may this account moderate this room", taken from the mod tag on the
-    /// message. It is the only place the answer is actually stated: badges say what the room
-    /// *displays*, and a mod who carries a fancier one – lead_moderator, staff – is shown that badge
-    /// instead of the plain moderator badge rather than next to it.
+    /// message. Badges only say what the room displays: a mod who carries a fancier one –
+    /// lead_moderator, staff – is shown that badge instead of the plain moderator badge.
     /// </summary>
     public bool HasModTag { get; init; }
 
     public bool IsBroadcaster => HasBadge("broadcaster");
 
     /// <summary>
-    /// Anyone who can moderate the room. The tag decides it; the badges stay as a fallback for
-    /// messages that reach us without tags – history written by an older version, a line rebuilt by
-    /// hand – and lead_moderator is listed alongside moderator for the reason given on
-    /// <see cref="HasModTag"/>: it replaces that badge, so asking for "moderator" alone answers no
-    /// for the channel's most senior mods.
+    /// Anyone who can moderate the room. The tag decides it; the badges are a fallback for messages
+    /// that reach us without tags, and lead_moderator is listed because it replaces the moderator
+    /// badge rather than joining it.
     /// </summary>
     public bool IsModerator => HasModTag || HasBadge("moderator") || HasBadge("lead_moderator");
 
@@ -169,10 +163,9 @@ public sealed record ChatModerationEvent(
     DateTimeOffset At)
 {
     /// <summary>
-    /// Whether this action reaches a given line. Asked by every surface that holds chat – the
-    /// timeline the browser pages replay from, the file on disk, the overlay's own cards – and it
-    /// has to be the same question in all of them: a line one of them still shows after a ban is a
-    /// line the moderator thinks is gone.
+    /// Whether this action reaches a given line. The one rule for every surface that holds chat –
+    /// the timeline the browser pages replay from, the file on disk, the overlay's own cards – so
+    /// none of them keeps a line the moderator thinks is gone.
     ///
     /// <para>Messages only. A sub or a raid is not something a timeout takes back, so a cleared room
     /// leaves the event cards standing.</para>
@@ -219,13 +212,12 @@ public enum ChatEventType
     ShoutoutReceived,
     /// <summary>
     /// A Celebration power-up: bits spent on an animation across the stream rather than on a
-    /// message. It is the one power-up with nothing to attach itself to, which is why it gets a
-    /// card of its own while the other two only mark a chat line.
+    /// message. With no chat line to mark, it gets a card of its own.
     /// </summary>
     Celebration,
     /// <summary>
-    /// A hype train started. The train itself is a state rather than an event – the dock draws it as
-    /// a strip – but its start is a moment, and the overlay has nowhere to put a strip.
+    /// A hype train started. The train itself is a state the dock draws as a strip; the overlay
+    /// has nowhere to put one, so its start and end are cards.
     /// </summary>
     HypeTrainBegin,
     /// <summary>A hype train ended, with the level it reached.</summary>
@@ -287,7 +279,7 @@ public sealed record ChatEvent(
     /// <summary>Twitch id of the redeemed reward. Matches the IRC custom-reward-id on the same redemption.</summary>
     public string? RewardId { get; init; }
 
-    /// <summary>What the reward is called on stream – the part a GUID could never tell anyone.</summary>
+    /// <summary>What the reward is called on stream.</summary>
     public string? RewardTitle { get; init; }
 
     /// <summary>Channel points the redemption cost.</summary>
@@ -306,8 +298,8 @@ public sealed record ChatEvent(
     public bool HypeIsShared { get; init; }
 
     /// <summary>
-    /// Who carried the train. Only the first is put on the card – the overlay card is one line, and
-    /// the full list belongs in the dock's strip where there is room for it.
+    /// Who carried the train. Only the first is put on the overlay's one-line card; the full list
+    /// goes in the dock's strip.
     /// </summary>
     public IReadOnlyList<HypeTrainContribution> TopContributions { get; init; } = Array.Empty<HypeTrainContribution>();
 }
@@ -321,11 +313,6 @@ public readonly record struct ChatTimelineItem(ChatMessage? Message, ChatEvent? 
     public static ChatTimelineItem Of(ChatMessage message) => new(message, null);
     public static ChatTimelineItem Of(ChatEvent chatEvent) => new(null, chatEvent);
 
-    /// <summary>
-    /// When the line happened, whichever of the two kinds it is. Three things cut a timeline by
-    /// time – what is young enough to restore, how the two accounts of the same chat are woven
-    /// together, and where an earlier sitting ends – and none of them should have to know which half
-    /// of the item is filled in.
-    /// </summary>
+    /// <summary>When the line happened, whichever of the two kinds it is.</summary>
     public DateTimeOffset At => Message?.SentAt ?? Event?.At ?? DateTimeOffset.MinValue;
 }

@@ -110,9 +110,8 @@ internal sealed class GitHubUpdateService
                 ?? throw new InvalidOperationException("Kunde inte avgöra var appens exe-fil ligger.");
             string installDirectory = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
 
-            // Installs under Program Files need an elevated updater. Asking for it only when the probe
-            // says the folder is read-only keeps the common case (a folder in the user's profile) free
-            // of UAC prompts.
+            // Installs under Program Files need an elevated updater. Probing first keeps the common
+            // case (a folder in the user's profile) free of UAC prompts.
             bool requiresElevation = !CanWriteToDirectory(installDirectory);
 
             progress?.Report(new UpdateProgress("Förbereder installationen…"));

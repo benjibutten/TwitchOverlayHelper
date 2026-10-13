@@ -126,9 +126,8 @@ public sealed class HypeTrainStateTests
 public sealed class HypeTrainTextTests
 {
     /// <summary>
-    /// Swedish groups thousands with a non-breaking space, so a total can never be broken across
-    /// two lines. Taken from the culture rather than typed into the expected strings, because the
-    /// two kinds of space look identical in a source file and one of them would go unnoticed.
+    /// The non-breaking space Swedish groups thousands with. Taken from the culture rather than
+    /// typed into the expected strings, because the two kinds of space look identical in a source file.
     /// </summary>
     private static readonly string Nbsp = CultureInfo.GetCultureInfo("sv-SE").NumberFormat.NumberGroupSeparator;
 

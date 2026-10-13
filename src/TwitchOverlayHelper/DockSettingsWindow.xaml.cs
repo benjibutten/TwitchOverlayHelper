@@ -6,8 +6,7 @@ using TwitchOverlayHelper.Settings;
 namespace TwitchOverlayHelper;
 
 /// <summary>
-/// Reading settings for the OBS dock. They live here rather than in the dock itself: the dock is a
-/// reading surface where space is scarce, and this window can afford to explain what each option does.
+/// Reading settings for the OBS dock, kept out of the dock itself, where space is scarce.
 /// </summary>
 public partial class DockSettingsWindow : Window
 {

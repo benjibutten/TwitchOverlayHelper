@@ -326,9 +326,8 @@ public sealed class TtsServiceTests
     }
 
     /// <summary>
-    /// The one mistake here that silently keeps a viewer's money: stopping during the ElevenLabs
-    /// call is a reading nobody heard a syllable of, and it used to be booked as delivered because
-    /// the same catch covered both the synthesis and the playback.
+    /// Stopping during the ElevenLabs call is a reading nobody heard a syllable of, so it must not
+    /// be booked as delivered the way a stop during playback is.
     /// </summary>
     [Fact]
     public async Task PaysBackAReadingStoppedBeforeItWasHeard()
@@ -382,8 +381,7 @@ public sealed class TtsServiceTests
 
     /// <summary>
     /// A test started over a paid reading would take that reading off the air – there is one audio
-    /// element at the far end – and leave the queue behind it waiting on an acknowledgement that is
-    /// never coming. A viewer who paid outranks a button.
+    /// element at the far end – and leave the queue waiting on an acknowledgement that never comes.
     /// </summary>
     [Fact]
     public async Task TheTestButtonWaitsForAPaidReading()
@@ -407,8 +405,8 @@ public sealed class TtsServiceTests
 
     /// <summary>
     /// The stop button reaches whatever is at the speakers, a test included. It has to arrive as the
-    /// exception the settings window already handles – a bare cancellation out of here would take an
-    /// async void click handler, and the app, with it.
+    /// exception the settings window handles – a bare cancellation would escape an async void click
+    /// handler and take the app with it.
     /// </summary>
     [Fact]
     public async Task StoppingATestIsAnOrdinaryErrorRatherThanACrash()
@@ -434,8 +432,7 @@ public sealed class TtsServiceTests
 
     /// <summary>
     /// Letting go is not the same as settling: the app is closing or has left the channel, and the
-    /// redemption is meant to stay unfulfilled for the next connection's sweep to find. Answering it
-    /// from under a disappearing window is how a refund gets fired at the wrong channel.
+    /// redemption stays unfulfilled for the next connection's sweep to find.
     /// </summary>
     [Fact]
     public void LettingGoOfTheQueueAnswersNobody()
@@ -454,8 +451,7 @@ public sealed class TtsServiceTests
 
     /// <summary>
     /// What the sweep asks before it pays back a redemption from before the app was listening. A
-    /// reconnect gives it a fresh cutoff, and everything waiting on the streamer is older than that
-    /// – so without this, coming back from a dropped connection would refund the request on screen.
+    /// reconnect gives it a fresh cutoff that everything waiting on the streamer is older than.
     /// </summary>
     [Fact]
     public void SaysWhichRedemptionsItIsStillHolding()
@@ -474,10 +470,9 @@ public sealed class TtsServiceTests
     }
 
     /// <summary>
-    /// SpeakAsync answers rather than throws for everything that was foreseen. Anything unforeseen
-    /// used to leave the entry marked as speaking and the speakers claimed for good – the loop refuses
-    /// to start a reading while they are held – so every request after it queued and none of them were
-    /// ever read.
+    /// SpeakAsync answers rather than throws for everything that was foreseen. An unforeseen
+    /// exception must not leave the speakers claimed: the loop refuses to start a reading while
+    /// they are held, so every later request would queue and never be read.
     /// </summary>
     [Fact]
     public async Task AnUnexpectedFailureDoesNotTakeTheWholeQueueWithIt()
@@ -506,9 +501,9 @@ public sealed class TtsServiceTests
     }
 
     /// <summary>
-    /// The streamer worked the channel's own queue while the request sat here waiting for a yes. The
-    /// refund is final – Twitch has taken the redemption out of the queue – so the message must not be
-    /// read after all, and above all must not be answered at a redemption that is no longer there.
+    /// The streamer refunded it in the channel's own queue while the request waited here for a yes.
+    /// Twitch has taken the redemption out of the queue, so the message must be neither read nor
+    /// answered.
     /// </summary>
     [Fact]
     public async Task ARedemptionRefundedInTwitchIsNeitherReadNorAnswered()
@@ -564,8 +559,7 @@ public sealed class TtsServiceTests
 
     /// <summary>
     /// Settled in the dashboard some other way. The streamer never said no, so the reading goes ahead
-    /// – but the answer at the end is dropped: Twitch has closed the redemption and would refuse it
-    /// five times over before the app gave up on it.
+    /// – but the answer at the end is dropped, because Twitch has closed the redemption.
     /// </summary>
     [Fact]
     public async Task AReadingClosedInTwitchIsStillReadButNoLongerAnswered()
