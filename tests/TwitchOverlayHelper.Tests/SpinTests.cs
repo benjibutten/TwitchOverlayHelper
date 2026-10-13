@@ -263,10 +263,9 @@ public sealed class SpinWinStoreTests : IDisposable
         Assert.True(reloaded.Owes("r1"));
     }
 
-    // Gifts written before a duplicate's points were answered at the draw. Their redemption is
-    // still open on Twitch, and nothing on today's record can say so – so the load has to finish
+    // Gift rows in the legacy file format left their redemption open on Twitch, so the load finishes
     // them: the one still open is answered as delivered, and the one that ran out while the app was
-    // closed is let go, back to the sweep whose job paying it back is.
+    // closed is let go to the sweep that pays it back.
     [Fact]
     public void GiftsFromBeforeTheDuplicateWasPaidForAreSettledOnTheWayIn()
     {
@@ -304,7 +303,7 @@ public sealed class SpinWinStoreTests : IDisposable
         Assert.False(store.Owes("r2"));
         Assert.Null(store.PendingFor("8"));
 
-        // And the file is in today's shape, so the same two rows are not settled all over again.
+        // The file is rewritten in the current format, so the same two rows are not settled again.
         Assert.DoesNotContain("Refundable", File.ReadAllText(StorePath));
         var reloaded = new SpinWinStore(StorePath);
         Assert.True(reloaded.HoldsPending("r1"));
@@ -756,9 +755,8 @@ public sealed class SpinServiceTests : IDisposable
         Harness harness = Build();
         harness.Spins.HandleRedemption(Redemption());
 
-        // The streamer re-tiers the art in the settings window while its reel is still turning. The
-        // draw is long since made against the old odds, and that is what the winner is owed the word
-        // for – the new tier belongs to the next spin.
+        // The streamer re-tiers the art while its reel is still turning. The draw was made against
+        // the old odds, so the winner is told the old tier; the new one belongs to the next spin.
         Assert.True(harness.Catalog.TrySetWinnable("drake", winOnly: true, PetRarity.Common, out _));
 
         harness.Spins.OnSpinShown(harness.Spins.CurrentSpinId!);

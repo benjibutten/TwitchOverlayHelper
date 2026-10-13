@@ -106,9 +106,8 @@ public sealed class EdgeAlertSchedulerTests
     }
 
     /// <summary>
-    /// The ceiling has to reach the light itself, not only the decision to light it. A glow being
-    /// held open is given what is left of its twelve seconds – answering with a full six instead
-    /// would have the window play on until fourteen, which is the one thing the ceiling is for.
+    /// The ceiling has to reach the light itself, not only the decision to light it: a glow being
+    /// held open is given what is left of its twelve seconds rather than a full six.
     /// </summary>
     [Fact]
     public void AHeldGlowIsOnlyGivenTheTimeLeftUnderTheCeiling()

@@ -244,8 +244,8 @@ public sealed class NicknameStoreTests
         finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
     }
 
-    // A truncated main file used to mean an empty book. It now means the newest copy that still
-    // reads, put back in place so the next save carries on from there rather than from nothing.
+    // A truncated main file means the newest copy that still reads, put back in place so the next
+    // save carries on from there rather than from nothing.
     [Fact]
     public void AnswersFromTheNewestCopyWhenTheFileIsUnreadable()
     {

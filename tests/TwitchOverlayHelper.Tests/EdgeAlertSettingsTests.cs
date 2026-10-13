@@ -45,8 +45,7 @@ public sealed class EdgeAlertSettingsTests
 
     /// <summary>
     /// A mod whose badge is not the moderator badge. Twitch shows a lead moderator the
-    /// lead_moderator badge *instead of* the moderator one, so the call went unheard for exactly the
-    /// mods most likely to make it.
+    /// lead_moderator badge *instead of* the moderator one, and their call has to be heard too.
     /// </summary>
     [Theory]
     [InlineData("lead_moderator")]

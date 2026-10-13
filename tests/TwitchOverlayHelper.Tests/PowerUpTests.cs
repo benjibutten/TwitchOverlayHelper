@@ -182,9 +182,9 @@ public sealed class PowerUpTrackerTests
         Assert.Null(tracker.Match(PowerUp("12", "25", "hej")));
     }
 
-    // Twitch marks the message field optional on channel.bits.use. Without the words, the emote is
-    // the only thing left holding the match together – so it has to actually be checked, or the
-    // viewer's next line would take the marker whatever it said.
+    // Twitch marks the message field optional on channel.bits.use. Without the words the emote is
+    // all that holds the match together, or the viewer's next line would take the marker whatever
+    // it said.
     [Fact]
     public void StillNeedsTheRightEmoteWhenThePowerUpCameWithoutItsText()
     {

@@ -27,10 +27,9 @@ public sealed class ChatHistoryMergeTests
     }
 
     /// <summary>
-    /// Identity is asked for in two places now – here, and before the overlay is redrawn, to tell the
-    /// lines still waiting to be drawn from the ones the redraw already covers. A message and an event
-    /// that happen to share an id are two different lines, and if the answer let them collide the
-    /// second place would quietly drop a sub notice because a message had the same id.
+    /// Identity is asked for in two places – here, and before the overlay is redrawn, to tell the
+    /// lines still waiting to be drawn from the ones the redraw covers. A message and an event that
+    /// share an id are two different lines, or a sub notice is dropped because a message had its id.
     /// </summary>
     [Fact]
     public void AMessageAndAnEventAreNeverTheSameLine()

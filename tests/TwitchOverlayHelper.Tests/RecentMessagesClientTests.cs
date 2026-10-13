@@ -72,8 +72,7 @@ public sealed class RecentMessagesClientTests
     /// <summary>
     /// The service rebuilds its stored lines without the ":" before the text when the message is a
     /// single word – IRC only requires the colon when the trailing part contains a space. Roughly
-    /// one line in eight of a busy channel's history comes back this way, so reading only the
-    /// colon form dropped them all without a trace.
+    /// one line in eight of a busy channel's history comes back this way.
     /// </summary>
     [Fact]
     public void ReadsALineWhoseTextHasNoLeadingColon()

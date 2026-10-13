@@ -75,7 +75,7 @@ public sealed class SettingsDurabilityTests
         var store = new SettingsStore(path);
         store.Save(new AppSettings { Channel = "demo", FontSize = 28 });
 
-        // What a power cut mid-write used to leave behind – and what used to cost every setting.
+        // A file cut off mid-write, as a power cut could leave it.
         File.WriteAllText(path, """{"Channel":"de""");
         AppSettings loaded = new SettingsStore(path).Load();
 

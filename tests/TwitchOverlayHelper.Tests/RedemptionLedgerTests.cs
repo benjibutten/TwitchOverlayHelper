@@ -181,8 +181,7 @@ public sealed class RedemptionLedgerTests
 
     /// <summary>
     /// The sweep must not undo the very thing it backs up. A reconnect mid-stream runs it again with
-    /// a fresh cutoff, and a reading still waiting for the streamer's yes was redeemed before that
-    /// moment – so it would be paid back while it was sitting on screen being decided.
+    /// a fresh cutoff, and a reading still waiting for the streamer's yes was redeemed before it.
     /// </summary>
     [Fact]
     public async Task TheSweepLeavesRedemptionsAnotherQueueIsHolding()
@@ -275,8 +274,7 @@ public sealed class RedemptionLedgerTests
         Assert.Equal(0, ledger.PendingCount);
     }
 
-    // A pet pushed off a full lawn stopped being delivered the moment it left the screen. Before
-    // this it sat out the rest of its time and was booked as a full life.
+    // A pet pushed off a full lawn stopped being delivered the moment it left the screen.
     [Fact]
     public async Task APetEvictedToMakeRoomIsPaidBackRatherThanBookedAsDelivered()
     {
@@ -309,9 +307,8 @@ public sealed class RedemptionLedgerTests
         Assert.Equal(1, ledger.PendingCount);
     }
 
-    // A token being refreshed under the ledger throws from a layer below the Twitch API types. It
-    // used to travel past the retry list and take the entry with it, which is a viewer quietly out
-    // of pocket for a pet nobody saw.
+    // A token being refreshed under the ledger throws from a layer below the Twitch API types, and
+    // has to be retried like one of them rather than take the entry with it.
     [Fact]
     public async Task AnAuthErrorMidRoundPutsTheEntryBackInsteadOfLosingIt()
     {
@@ -331,9 +328,8 @@ public sealed class RedemptionLedgerTests
         Assert.Equal(["r1"], gateway.Refunded);
     }
 
-    // The verdict has to survive the wait. An entry put back and then judged afresh would have a
-    // failed refund come round again as a fulfilment, which is the one mistake here that silently
-    // keeps the viewer's points.
+    // The verdict has to survive the wait: an entry put back and then judged afresh would have a
+    // failed refund come round again as a fulfilment.
     [Fact]
     public async Task ARefundThatFailedDoesNotComeBackAsAFulfilment()
     {
@@ -369,8 +365,7 @@ public sealed class RedemptionLedgerTests
     }
 
     // The spawn frame leaves before the entry is written, so on a machine running both the app and
-    // the lawn the receipt can beat the bookkeeping. It used to land on nothing, and the pet that
-    // everybody watched was paid back when the grace period ran out.
+    // the lawn the receipt can beat the bookkeeping, and still has to count.
     [Fact]
     public async Task AReceiptThatArrivesBeforeTheEntryStillCounts()
     {

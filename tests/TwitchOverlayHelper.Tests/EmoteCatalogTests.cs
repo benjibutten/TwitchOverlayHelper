@@ -80,10 +80,9 @@ public sealed class EmoteCatalogTests
     }
 
     /// <summary>
-    /// A name in two lists belongs to the nearer one: an emote the channel owns should be found
-    /// under the channel. The order the three are claimed in is not the order they are drawn in –
-    /// the global set is claimed before the personal one precisely because almost every global emote
-    /// is in the personal list too, and letting that claim them would file Kappa under "yours".
+    /// A name in two lists belongs to the nearer one: an emote the channel owns is found under the
+    /// channel. The global set is claimed before the personal one because almost every global emote
+    /// is in the personal list too, which would file Kappa under "yours".
     /// </summary>
     [Fact]
     public async Task TheChannelKeepsANameTheGlobalListAlsoUses()
@@ -155,8 +154,7 @@ public sealed class EmoteCatalogTests
 
     /// <summary>
     /// Get User Emotes takes user_id, broadcaster_id and after, and nothing else. An undocumented
-    /// "first" is ignored today at best, and the day it stops being ignored it takes the personal
-    /// list with it – which is the one list that says what this account may send.
+    /// "first" could be refused, taking with it the one list that says what this account may send.
     /// </summary>
     [Fact]
     public async Task AsksTheUserEmoteEndpointForNothingItDoesNotDocument()
@@ -174,12 +172,10 @@ public sealed class EmoteCatalogTests
     }
 
     /// <summary>
-    /// A login granted before the scope existed gets the one third that needs no permission at all –
-    /// the global emotes – and is told why the rest is absent, rather than meeting an error.
-    ///
-    /// <para>Emphatically not the channel's list: without the personal one there is nothing to hold
-    /// it against, and offering a subscriber emote to somebody who is not subscribed puts a picture
-    /// in the box that reaches the chat as loose words.</para>
+    /// A login granted before the scope existed gets the global emotes, which need no permission,
+    /// and is told why the rest is absent. Not the channel's list: without the personal one there is
+    /// nothing to hold it against, and a subscriber emote sent by a non-subscriber reaches the chat
+    /// as loose words.
     /// </summary>
     [Fact]
     public async Task WithoutTheScopeOnlyTheGlobalEmotesCanBeVouchedFor()
@@ -195,9 +191,8 @@ public sealed class EmoteCatalogTests
     }
 
     /// <summary>
-    /// A personal list that hit the page cap cannot rule anything out – the emote missing from it
-    /// may simply be on a page we never asked for – so the channel's section goes with it rather
-    /// than being offered on a guess.
+    /// A personal list that hit the page cap cannot rule anything out, so the channel's section goes
+    /// with it rather than being offered on a guess.
     /// </summary>
     [Fact]
     public async Task APersonalListCutShortByThePageCapLeavesTheChannelOut()

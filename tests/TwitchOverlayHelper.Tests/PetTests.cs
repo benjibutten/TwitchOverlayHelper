@@ -235,9 +235,8 @@ public sealed class PetRewardRuleTests
         Assert.Equal(60, rule.Minutes);
     }
 
-    // Settings written before refunding existed carry no flag, and a reward set up by hand in the
-    // dashboard cannot be answered whatever the settings say. Both have to keep working exactly as
-    // they did: pet spawns, points spent, nothing else changes.
+    // Settings that carry no refund flag, and a reward set up by hand in the dashboard, cannot be
+    // answered: the pet spawns, the points are spent, and nothing else happens.
     [Fact]
     public void ARewardTheAppDidNotCreateIsNeverRefundable()
     {
@@ -556,8 +555,7 @@ public sealed class PetServiceTests
         Assert.Single(registry.Snapshot());
     }
 
-    // The whole reason EventSub was worth building: a reward with no text field never reaches IRC,
-    // so before this it could not spawn anything at all.
+    // A reward with no text field never reaches IRC, so EventSub is the only route that can spawn it.
     [Fact]
     public void SpawnsAPetForARedemptionThatCarriesNoText()
     {
@@ -569,10 +567,9 @@ public sealed class PetServiceTests
     }
 
     /// <summary>
-    /// The reading reward is claimed before the pets ever see it – but only on the EventSub route. The
-    /// chat route runs when EventSub is down, and a channel with no pet rules configured spawns for
-    /// every reward id it meets, so the reading redemption would quietly become a creature on the lawn
-    /// on top of never being read.
+    /// The reading reward is claimed before the pets see it only on the EventSub route. The chat
+    /// route runs when EventSub is down, and a channel with no pet rules spawns for every reward id
+    /// it meets, so the reading reward has to be excluded there too.
     /// </summary>
     [Fact]
     public void TheReadingRewardIsNeverAPetEvenWhenEventSubIsDown()
@@ -630,7 +627,7 @@ public sealed class PetServiceTests
     }
 
     // Without EventSub – someone else's channel, or a login that predates the scope – IRC is the
-    // only route there is, and it has to keep working exactly as it did.
+    // only route there is.
     [Fact]
     public void StillSpawnsFromIrcAloneWhenEventSubIsNotRunning()
     {
@@ -642,8 +639,7 @@ public sealed class PetServiceTests
         Assert.Single(registry.Snapshot());
     }
 
-    // The failure the flag could cause if it were ever left switched on: EventSub drops, its events
-    // reach nobody, and IRC has been told to keep quiet – so a redemption spawns nothing at all.
+    // If EventSub drops while IRC is still told to keep quiet, a redemption spawns nothing at all.
     // Dropping coverage is what hands the job back to IRC.
     [Fact]
     public void GoesBackToIrcWhenEventSubStopsCovering()
@@ -769,11 +765,9 @@ public sealed class PetServiceTests
         Assert.Empty(registry.Snapshot());
     }
 
-    // ---------------------------------------------------------------- the answer to a redemption
-    //
-    // Every case below turns into a verdict the app owes Twitch, but only for the rewards it made
-    // itself. The Refundable flag is what carries that, and the outcome is what decides whether the
-    // redemption waits for the pet to live or is paid back on the spot.
+    // The answer to a redemption: every case below turns into a verdict the app owes Twitch, but
+    // only for the rewards it made itself. The Refundable flag carries that, and the outcome decides
+    // whether the redemption waits for the pet to live or is paid back on the spot.
 
     private static PetRewardRule Managed(string rewardId) =>
         new() { Label = "Pet 5 min", RewardId = rewardId, Minutes = 5, Managed = true };
@@ -834,9 +828,8 @@ public sealed class PetServiceTests
     }
 
     // IRC carries the reward id but never the redemption's own id, so a pet handed out on this
-    // route could never be booked as delivered. It would sit unanswered in the queue and be paid
-    // back by the next sweep – the viewer keeping both the pet and the points. Leaving it alone is
-    // what lets the queue settle it exactly once.
+    // route could never be booked as delivered: the next sweep would pay it back and the viewer
+    // would keep both. Left alone, the queue settles it exactly once.
     [Fact]
     public void TheChatRouteLeavesRefundableRewardsToEventSub()
     {

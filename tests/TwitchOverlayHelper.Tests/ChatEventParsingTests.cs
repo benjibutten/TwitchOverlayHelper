@@ -150,8 +150,8 @@ public sealed class ChatEventParsingTests
         Assert.Equal("hej allihop", result.Message);
     }
 
-    // The whole point of keeping system-msg: a msg-id nobody has seen before still becomes a
-    // readable line rather than vanishing from the chat views.
+    // system-msg is kept so a msg-id nobody has seen before still becomes a readable line rather
+    // than vanishing from the chat views.
     [Fact]
     public void FallsBackToTwitchsOwnWordingForAnUnknownMsgId()
     {

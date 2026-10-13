@@ -3,8 +3,8 @@ using TwitchOverlayHelper.Twitch;
 namespace TwitchOverlayHelper.Tests;
 
 /// <summary>
-/// Badges have two lifetimes in one catalogue. Getting them mixed up is what once put the previous
-/// streamer's subscriber icon next to a stranger's name in the next channel.
+/// Badges have two lifetimes in one catalogue. Mixing them up puts the previous streamer's
+/// subscriber icon next to a stranger's name in the next channel.
 /// </summary>
 public sealed class BadgeCatalogTests
 {
@@ -30,8 +30,8 @@ public sealed class BadgeCatalogTests
         Assert.Equal("6 månader", badge.Title);
     }
 
-    // The bug, in one test: leaving a channel has to take its subscriber tiers with it, whether or
-    // not a replacement set can be fetched afterwards.
+    // Leaving a channel has to take its subscriber tiers with it, whether or not a replacement set
+    // can be fetched afterwards.
     [Fact]
     public void ForgetsTheChannelsOwnBadgesWhenTheChannelChanges()
     {

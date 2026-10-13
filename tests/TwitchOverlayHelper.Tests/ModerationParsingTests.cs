@@ -96,11 +96,9 @@ public sealed class ModerationParsingTests
         Assert.False(IrcMessageParser.TryParseModerationEvent(raw, out _));
     }
 
-    // ------------------------------------------------------------- what an action reaches
-    //
-    // One rule, asked by everything that holds chat: the timeline the browser pages replay from, the
-    // file on disk and the overlay's own cards. A line one of them still shows after a ban is a line
-    // the moderator believes is gone.
+    // What an action reaches: one rule, asked by everything that holds chat – the timeline the
+    // browser pages replay from, the file on disk and the overlay's own cards. A line one of them
+    // still shows after a ban is a line the moderator believes is gone.
 
     private static ChatMessage From(string id, string login, string userId) =>
         new(id, login, "hej", null, [], false, false, DateTimeOffset.Now) { UserId = userId, UserLogin = login };

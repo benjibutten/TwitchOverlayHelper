@@ -41,9 +41,8 @@ public sealed class TwitchApiClientTests
     }
 
     /// <summary>
-    /// The one call in this client that is not shaped like its neighbours. Every other write here
-    /// posts a JSON body, and pinning was written that way first – Twitch answers that with a 404
-    /// that never mentions the verb, so nothing but a test spells out why this one is different.
+    /// The one write in this client that does not post a JSON body: Twitch answers a pin sent that
+    /// way with a 404 that never mentions the verb.
     /// </summary>
     [Fact]
     public async Task PinsWithAPutAndPutsEverythingInTheQueryString()
@@ -58,7 +57,6 @@ public sealed class TwitchApiClientTests
         Assert.Contains("message_id=msg-1", handler.Url.Query, StringComparison.Ordinal);
         // The moderator is whoever is logged in, never the channel being watched.
         Assert.Contains("moderator_id=42", handler.Url.Query, StringComparison.Ordinal);
-        // A body is not merely unnecessary here; sending one is how the call was broken.
         Assert.Null(handler.Body);
         // A pin stays until it is taken down, so no duration rides along.
         Assert.DoesNotContain("duration", handler.Url.Query, StringComparison.Ordinal);
