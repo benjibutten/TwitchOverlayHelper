@@ -16,7 +16,7 @@ Varje match börjar med att chatten röstar om vilka som ska slåss. Alla karakt
 - `!p2 zelda2` röstar på Zelda i klädsel 2 till spelare 2. En siffra direkt efter namnet väljer klädsel.
 - Namn med mellanslag skrivs som de är: `!p1 dj jenni`.
 
-En tittare har en röst per hörn, och en ny röst flyttar den gamla. När tiden är ute får varje hörn den karaktär och klädsel som fått flest röster. Ett hörn ingen röstat på behåller den som stod där.
+En tittare har en röst per hörn, och en ny röst flyttar den gamla. När tiden är ute får varje hörn den karaktär och klädsel som fått flest röster. Ett hörn ingen röstat på får en slumpad karaktär och klädsel – den visas i hörnet medan rösten pågår, så samma par går inte om och om igen när chatten är tyst.
 
 Matchen spelas först till 3 vunna ronder (eller 1, 2, 4, 5, 7 eller utan slut). Sedan koras vinnaren och det är dags att välja igen. Rutnätet bläddrar mellan sidor när karaktärerna inte får plats i läsbar storlek. Rösttid, matchlängd och röstorden ställs in i appen, och karaktärsvalet kan stängas av.
 

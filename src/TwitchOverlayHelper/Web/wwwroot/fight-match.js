@@ -56,14 +56,26 @@ function rosterEntry(id) {
   return setup.roster.find(f => f.id === id) || null;
 }
 
-/* The character select, seeded with who is in each corner now – a corner nobody votes for keeps it. */
+/* Who a corner gets when nobody votes for it: anyone on the roster, in any outfit, so a quiet chat does
+   not mean the same pair match after match. Each corner steers clear of the two in the ring now and of
+   the other corner, for as long as the roster has somebody else to give. */
+function randomCorners() {
+  const any = list => list[Math.floor(Math.random() * list.length)];
+  const pick = (...avoids) => {
+    const pool = avoids.map(avoid => setup.roster.filter(f => !avoid.includes(f.id))).find(p => p.length) || setup.roster;
+    const f = any(pool);
+    const outfits = f.outfits || [];
+    return { id: f.id, outfit: outfits.length ? any(outfits).code : 1 };
+  };
+  const ring = [p1.id || (setup.p1 && setup.p1.id), p2.id || (setup.p2 && setup.p2.id)];
+  const first = pick(ring);
+  return { 1: first, 2: pick([...ring, first.id], [first.id]) };
+}
+
+/* The character select, with a random fighter waiting in each corner for the chat to vote over. */
 function startSelect() {
   if (!setup.match.characterSelect || !setup.roster.length) { startMatch(); return; }
-  const now = side => side.id ? { id: side.id, outfit: side.outfit || 1 } : null;
-  select.begin(setup.roster, setup.match.selectSeconds, {
-    1: now(p1) || (setup.p1 && { id: setup.p1.id, outfit: setup.p1.outfit }),
-    2: now(p2) || (setup.p2 && { id: setup.p2.id, outfit: setup.p2.outfit })
-  });
+  select.begin(setup.roster, setup.match.selectSeconds, randomCorners());
   setPhase("select");
 }
 

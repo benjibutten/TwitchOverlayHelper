@@ -3,7 +3,8 @@
 /* The character select between matches. Every fighter on the roster gets a tile; the chat votes with
    "!p1 my2" – a corner, a fighter, and the digit for an outfit – and when the time is up each corner
    goes to whatever got the most votes there. One vote per viewer per corner: voting again moves it.
-   A corner nobody voted for keeps the fighter it had.
+   A corner nobody voted for gets a fighter drawn at random when the select opens, so a quiet chat
+   does not mean the same pair every time.
 
    The roster is whatever the app has, so the grid is laid out from the count rather than for a fixed
    number: tiles grow to fill the space when there are few and shrink when there are many, and past
@@ -20,7 +21,7 @@ const select = {
   active: false,
   roster: [],
   votes: { 1: new Map(), 2: new Map() }, // voter key → { key, fighter, outfit, viewer, color, at }
-  fallback: { 1: null, 2: null },        // { id, outfit } a corner keeps when nobody votes for it
+  fallback: { 1: null, 2: null },        // { id, outfit } a corner gets when nobody votes for it
   duration: 30,
   t: 0,
   feed: [],                              // the latest votes, shown under each corner's preview
