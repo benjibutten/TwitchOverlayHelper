@@ -110,10 +110,13 @@ node process-arena.js   <gen>/out/<id>.png       <gen>/out/<id>/arena.webp --opa
 ### Special attacks
 
 A fighter's own super, described under `special` in fighter.json:
-`{ "name": "Molotov", "style": "throw" | "swing" | "saw" | "confuse", "spritePath": "special.webp", "propPath": "prop.webp", "color": "#4dff6a" }`.
+`{ "name": "Molotov", "style": "throw" | "swing" | "saw" | "confuse" | "shout", "spritePath": "special.webp", "propPath": "prop.webp", "color": "#4dff6a" }`.
 `throw` needs `prop.webp`, the thing thrown, and falls back to `swing` without it. `confuse` is cast
 from mid-range: question marks spiral into the other fighter, then circle their head while they stumble
-about and swing at nothing. It needs no prop. The strike pose is a cast, not a blow.
+about and swing at nothing. It needs no prop. The strike pose is a cast, not a blow. `shout` is yelled
+from mid-range too: the special's `name` flies out of the mouth in big shaking letters behind rings of
+sound and knocks the other fighter back. So the name is the word shouted, and it needs no prop. The wind-up
+is a deep breath and the strike is the scream itself, mouth wide open.
 
 An outfit can have a special of its own, drawn in its clothes: put `special` inside its `outfits` entry,
 `{ "code": 2, "name": "Rutig", "special": { "name": "Bitchslap", "style": "swing", "color": "#ff4fc3" } }`.
