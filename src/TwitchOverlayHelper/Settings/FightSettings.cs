@@ -26,7 +26,7 @@ public sealed class FightSettings
 
     /// <summary>
     /// Whether every match starts with a character select the chat votes in. Off, the two fighters
-    /// above simply go again. On, they are what a corner nobody voted for falls back to.
+    /// above simply go again. On, a corner nobody voted for gets a fighter drawn at random.
     /// </summary>
     public bool CharacterSelect { get; set; } = true;
 

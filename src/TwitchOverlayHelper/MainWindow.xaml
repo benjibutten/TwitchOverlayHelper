@@ -645,7 +645,7 @@
                                         <TextBlock Text="Match och karaktärsval" Style="{StaticResource SubTitle}" />
                                         <CheckBox x:Name="FightSelectCheck" Content="Karaktärsval före varje match – chatten röstar" Margin="0,12,0,0"
                                                   Checked="FightRules_Changed" Unchecked="FightRules_Changed"
-                                                  ToolTip="Varje match börjar med en skärm där alla karaktärer visas och chatten röstar. Flest röster vinner hörnet. Ett hörn ingen röstar på behåller sin karaktär." />
+                                                  ToolTip="Varje match börjar med en skärm där alla karaktärer visas och chatten röstar. Flest röster vinner hörnet. Ett hörn ingen röstar på får en slumpad karaktär." />
                                         <Grid Margin="0,10,0,0">
                                             <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="10" /><ColumnDefinition /></Grid.ColumnDefinitions>
                                             <StackPanel>
