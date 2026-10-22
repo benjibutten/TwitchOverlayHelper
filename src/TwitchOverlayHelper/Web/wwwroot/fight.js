@@ -299,11 +299,17 @@ class Fighter {
 
   get windup() { return this.move === "kick" ? (this.charged ? 0.32 : 0.2) : 0.13; }
 
-  /* How close the special has to be. A throw goes the length of the ring, a confusion half of it; a
-     swing lunges in. */
+  /* How close the special has to be. A throw goes the length of the ring, a confusion or a shout half
+     of it; a swing lunges in. */
   get specialReach() {
     const style = this.special ? this.special.style : "swing";
-    return style === "throw" ? 4000 : style === "confuse" ? this.reach + 480 : this.reach + 260;
+    return style === "throw" ? 4000 : style === "confuse" || style === "shout" ? this.reach + 480 : this.reach + 260;
+  }
+
+  /* Whether the special is sent across the ring rather than landed by hand. */
+  get specialRanged() {
+    const style = this.special && this.special.style;
+    return style === "throw" || style === "confuse" || style === "shout";
   }
 
   /* Wind-up and how long the whole move lasts, per style. */
@@ -312,6 +318,7 @@ class Fighter {
       case "throw": return { windup: 0.5, total: 1.05 };
       case "saw": return { windup: 0.45, total: 1.3 };
       case "confuse": return { windup: 0.6, total: 1.45 };
+      case "shout": return { windup: 0.55, total: 1.4 };
       default: return { windup: 0.55, total: 1.05 };
     }
   }
@@ -321,14 +328,14 @@ class Fighter {
     const style = this.special.style;
     const close = () => this.distance <= this.reach + 160 && !this.foe.down;
     // Swings and saws lunge in at the end of the wind-up, so the blow lands from where they stood.
-    if (style !== "throw" && style !== "confuse" && !this.lunged && this.t >= windup - 0.12) {
+    if (!this.specialRanged && !this.lunged && this.t >= windup - 0.12) {
       this.lunged = true;
       this.vx = this.facing * Math.min(1400, Math.max(300, (this.distance - this.reach + 120) * 5));
     }
-    if (style === "throw" || style === "confuse") {
+    if (this.specialRanged) {
       if (this.t >= windup && !this.hasHit) {
         this.hasHit = true;
-        if (style === "throw") throwProp(this); else castConfusion(this);
+        if (style === "throw") throwProp(this); else if (style === "shout") shout(this); else castConfusion(this);
       }
     } else if (style === "saw") {
       // A burst of quick cuts while the blade is in, the last one the big one.
@@ -355,8 +362,7 @@ class Fighter {
         const sp = this.specialSprite;
         return { img: sp, frame: strike ? 2 : 1, cw: sp.naturalWidth / 3, ch: sp.naturalHeight };
       }
-      const style = this.special.style;
-      return { img: this.sprite, frame: strike ? (style === "throw" || style === "confuse" ? FRAME.punch : FRAME.kick) : FRAME.walk };
+      return { img: this.sprite, frame: strike ? (this.specialRanged ? FRAME.punch : FRAME.kick) : FRAME.walk };
     }
     return { img: this.sprite, frame: this.frame() };
   }
@@ -519,8 +525,9 @@ function strike(attacker, target, move) {
 /* The special's name, big over the fighter, and the screen tinted in its colour for a moment. */
 function announceSpecial(f, viaMeter) {
   const sp = f.special;
-  // At chest height rather than over the head, where the cheers and "laddad" already float.
-  popText(`${sp.name.toUpperCase()}!`, f.x, Math.max(440, stage.ground - 330 * f.size), sp.color, 86, 1.3);
+  // At chest height rather than over the head, where the cheers and "laddad" already float. A shout
+  // says its name itself, out of the mouth, so it is not written twice.
+  if (sp.style !== "shout") popText(`${sp.name.toUpperCase()}!`, f.x, Math.max(440, stage.ground - 330 * f.size), sp.color, 86, 1.3);
   if (!viaMeter) popText("SISTA UTVÄGEN", f.x, Math.max(510, stage.ground - 250 * f.size), "#ffffff", 40, 1.3);
   effects.push({ kind: "flash", color: sp.color, t: 0, life: 0.35 });
   shake(8);
@@ -621,6 +628,27 @@ function castConfusion(f) {
   }
 }
 
+/* A shout: the special's name leaves the mouth in big shaking letters, growing as it crosses the ring
+   behind rings of sound, and hits the other fighter like a wall. */
+function shout(f) {
+  const target = f.foe;
+  const x0 = f.x + f.facing * 80 * f.size;
+  const y0 = stage.ground - 450 * f.size;
+  const color = f.special.color;
+  shake(18);
+  for (let i = 0; i < 6; i++)
+    effects.push({ kind: "soundwave", x: x0, y: y0, dir: f.facing, target, color: i % 2 ? color : "#ffffff", t: -i * 0.08, life: 0.5 });
+  effects.push({
+    kind: "shout", target, text: `${f.special.name.toUpperCase()}!`, color,
+    x0, y0, x: x0, y: y0, t: 0, life: 0.42,
+    onEnd() {
+      sparks(target.x, stage.ground - 400 * target.size, f.facing, 24, [color, "#ffffff", "#ffd43b"]);
+      // A shouter knocked out while the word was on its way has lost the round; it dies away.
+      if (!target.down && !f.down && phase === "fight") specialHit(f, target, rand(24, 30), true);
+    }
+  });
+}
+
 /* One lick of fire: a soft blob that rises, swells and fades, added rather than painted over. */
 function flame(x, y, color) {
   effects.push({ kind: "flame", x, y, vx: rand(-40, 40), vy: rand(-260, -120), r: rand(14, 32), t: 0, life: rand(0.35, 0.7), color: color || "#ff8a1a" });
@@ -664,6 +692,11 @@ function updateEffects(dt) {
       e.x = e.x0 + (tx - e.x0) * k + Math.cos(k * 14 + e.phase) * swirl * 0.4;
       e.y = e.y0 + (ty - e.y0) * k + Math.sin(k * 14 + e.phase) * swirl;
       e.angle += dt * 8;
+    } else if (e.kind === "shout") {
+      // Homing too, straight at the head – a shout has no arc.
+      const k = clamp(e.t / e.life, 0, 1);
+      e.x = e.x0 + (e.target.x - e.x0) * k;
+      e.y = e.y0 + (stage.ground - 430 * e.target.size - e.y0) * k;
     } else if (e.kind === "flame") {
       e.x += e.vx * dt;
       e.y += e.vy * dt;
@@ -731,6 +764,27 @@ function drawEffects() {
         ctx.translate(e.x, e.y);
         ctx.rotate(Math.sin(e.angle) * 0.5);
         inkText("?", 0, 0, 70, e.color, "#111", 12);
+      }
+    } else if (e.kind === "shout") {
+      // Grows on the way and shakes the whole time, the letters too loud to hold still.
+      const size = 48 + 78 * k;
+      ctx.translate(e.x + rand(-7, 7), e.y + rand(-7, 7));
+      ctx.rotate(rand(-0.05, 0.05));
+      inkText(e.text, 0, 0, size, e.color, "#111", size * 0.18);
+    } else if (e.kind === "soundwave") {
+      // A ring of sound fanning out from the mouth towards the other fighter, ink under colour.
+      if (e.t >= 0) {
+        const r = 40 + k * (Math.abs(e.target.x - e.x) + 60);
+        const a = e.dir > 0 ? 0 : Math.PI;
+        ctx.globalAlpha = 1 - k;
+        ctx.lineCap = "round";
+        for (const [color, width] of [["#111", 16], [e.color, 8]]) {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = width;
+          ctx.beginPath();
+          ctx.arc(e.x, e.y, r, a - 0.5, a + 0.5);
+          ctx.stroke();
+        }
       }
     } else if (e.kind === "projectile") {
       ctx.translate(e.x, e.y);
